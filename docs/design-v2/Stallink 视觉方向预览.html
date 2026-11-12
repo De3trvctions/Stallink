@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stallink 视觉方向预览</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%2316171A'/%3E%3Ctext x='32' y='46' font-family='Songti SC,serif' font-size='36' fill='%23FAF8F3' text-anchor='middle'%3Es.%3C/text%3E%3C/svg%3E">
+<style>
+/* ===== tokens ===== */
+:root{
+  --paper:#FAF8F3;
+  --paper-2:#F0ECE2;
+  --ink:#16171A;
+  --ink-2:#55575C;
+  --rule:#DAD3C3;
+  --blue:#1E36A8;
+  --signal:#FF4A1F;
+  --display:"Songti SC","Noto Serif SC","Source Han Serif SC","STSong",serif;
+  --sans:"PingFang SC","Hiragino Sans GB","Noto Sans SC",system-ui,sans-serif;
+  --mono:"SF Mono","Menlo","IBM Plex Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:var(--sans);font-size:15px;line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+img{display:block;width:100%;height:100%;object-fit:cover}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+::selection{background:var(--blue);color:var(--paper)}
+
+.mono{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--ink-2);text-transform:none}
+.rule{height:1px;background:var(--rule);border:0;margin:0}
+
+/* ===== topbar ===== */
+.topbar{position:sticky;top:0;z-index:30;background:var(--paper);border-bottom:1px solid var(--rule)}
+.topbar__in{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;
+  height:60px;padding:0 20px;max-width:1440px;margin:0 auto;
+}
+.brand{display:inline-flex;align-items:center;gap:9px;flex:0 0 auto}
+.brand__mark{
+  display:grid;place-items:center;width:24px;height:24px;
+  background:var(--ink);color:var(--paper);
+  font-family:var(--display);font-size:17px;line-height:1;padding-bottom:2px;
+}
+.brand__name{font-family:var(--display);font-size:15px;letter-spacing:.06em}
+.views{display:flex;align-items:center;gap:2px;margin-left:auto}
+.views button{
+  padding:8px 10px 7px;font-size:12px;letter-spacing:.06em;color:var(--ink-2);
+  border-bottom:2px solid transparent;
+}
+.views button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink)}
+.views button:hover{color:var(--ink)}
+.top-actions{display:flex;align-items:center;gap:14px}
+.top-actions .link{font-size:12px;letter-spacing:.04em;border-bottom:1px solid var(--ink);padding-bottom:1px}
+.top-actions .solid{
+  display:none;
+  height:34px;padding:0 14px;background:var(--ink);color:var(--paper);
+  font-size:12px;letter-spacing:.08em;
+}
+@media(min-width:760px){
+  .topbar__in{height:66px;padding:0 32px}
+  .top-actions .solid{display:inline-flex;align-items:center}
+}
+
+/* ===== shared page frame ===== */
+.page{max-width:1440px;margin:0 auto;padding:0 20px}
+@media(min-width:760px){.page{padding:0 32px}}
+@media(min-width:1100px){.page{padding:0 56px}}
+
+/* ===== home: hero ===== */
+.hero{padding:44px 0 36px}
+.hero__label{display:flex;align-items:center;gap:10px}
+.hero__label .dash{width:26px;height:1px;background:var(--ink)}
+.hero h1{
+  margin:16px 0 0;font-family:var(--display);font-weight:400;
+  font-size:clamp(44px,11.2vw,84px);line-height:1.02;letter-spacing:-.015em;
+}
+.hero__desc{
+  margin:20px 0 0;max-width:30em;color:var(--ink-2);
+  font-size:15px;line-height:1.85;
+}
+.hero__actions{display:flex;align-items:center;gap:18px;margin-top:26px;flex-wrap:wrap}
+.btn{
+  display:inline-flex;align-items:center;gap:10px;height:48px;padding:0 20px;
+  background:var(--ink);color:var(--paper);font-size:13px;letter-spacing:.08em;
+  transition:background .18s ease;
+}
+.btn:hover{background:var(--blue)}
+.btn svg{width:13px;height:13px;stroke:currentColor;stroke-width:1.4;fill:none}
+.btn-ghost{
+  font-size:13px;letter-spacing:.04em;color:var(--ink);
+  border-bottom:1px solid var(--ink);padding-bottom:2px;
+}
+.btn-ghost:hover{color:var(--blue);border-color:var(--blue)}
+.hero__meta{
+  display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  margin-top:36px;padding-top:12px;border-top:1px solid var(--rule);
+}
+@media(min-width:960px){
+  .hero{
+    display:grid;grid-template-columns:minmax(0,1.06fr) minmax(0,.94fr);
+    gap:clamp(40px,5vw,84px);align-items:center;padding:76px 0 60px;
+  }
+  .hero__copy{min-width:0}
+  .hero__figure{margin:0}
+  .hero__figure .figure__frame{aspect-ratio:1/1}
+  .hero h1{font-size:clamp(56px,6.4vw,88px)}
+}
+
+/* hero figure + placard */
+.figure{margin:32px 0 0}
+.figure__frame{position:relative;overflow:hidden;background:var(--paper-2);aspect-ratio:4/5}
+.figure__frame img{
+  /* one deliberate entrance, no per-block fades */
+  animation:settle .9s cubic-bezier(.22,.61,.36,1) both;
+}
+@keyframes settle{from{opacity:.01;transform:scale(1.05)}to{opacity:1;transform:none}}
+.placard{
+  display:flex;justify-content:space-between;gap:14px;align-items:baseline;
+  padding-top:10px;margin-top:10px;border-top:1px solid var(--rule);
+}
+.placard strong{font-weight:400;font-size:12px;letter-spacing:.02em}
+.placard span{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--ink-2)}
+
+/* ===== home: statement ===== */
+.statement{background:var(--paper-2);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.statement__in{padding:44px 0 48px}
+.statement__head{max-width:20em}
+.statement h2{
+  margin:0 0 14px;font-family:var(--display);font-weight:400;
+  font-size:clamp(26px,5.6vw,44px);line-height:1.2;letter-spacing:-.01em;
+}
+.statement p{margin:0;max-width:26em;color:var(--ink-2);font-size:14px;line-height:1.9}
+.facts{display:grid;gap:0;margin-top:34px;border-top:1px solid var(--rule)}
+.facts div{padding:16px 0;border-bottom:1px solid var(--rule)}
+.facts b{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--blue);font-weight:400;margin-bottom:6px}
+.facts span{font-size:13.5px;color:var(--ink)}
+@media(min-width:760px){
+  .facts{grid-template-columns:repeat(3,1fr);border-bottom:0}
+  .facts div{border-bottom:0;border-right:1px solid var(--rule);padding:18px 22px 4px}
+  .facts div:first-child{padding-left:0}
+  .facts div:last-child{border-right:0}
+  .statement__in{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:48px;align-items:start}
+  .facts{margin-top:6px}
+}
+
+/* ===== works ===== */
+.works{padding:52px 0 58px}
+.works__head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;margin-bottom:26px}
+.works h2{margin:0;font-family:var(--display);font-weight:400;font-size:clamp(22px,4vw,30px);letter-spacing:-.01em}
+.grid{display:grid;gap:28px 22px}
+.card{display:block}
+.card__frame{overflow:hidden;background:var(--paper-2);aspect-ratio:4/5}
+.card__frame img{transition:transform .5s cubic-bezier(.22,.61,.36,1)}
+.card:hover img{transform:scale(1.03)}
+.card__typo{
+  aspect-ratio:4/5;background:var(--blue);color:var(--paper);
+  padding:18px;display:flex;flex-direction:column;justify-content:space-between;
+}
+.card__typo em{font-family:var(--display);font-style:normal;font-size:clamp(20px,4.6vw,30px);line-height:1.3}
+.card__typo .mono{color:rgba(250,248,243,.72)}
+.card__info{padding-top:9px;margin-top:9px;border-top:1px solid var(--rule)}
+.card__info strong{display:block;font-weight:400;font-size:13.5px;letter-spacing:.01em}
+.card__row{display:flex;justify-content:space-between;gap:10px;margin-top:3px}
+.card__row span{font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;color:var(--ink-2)}
+@media(min-width:620px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media(min-width:1000px){.grid{grid-template-columns:repeat(4,1fr);gap:26px}}
+@media(min-width:1000px){.card__typo{padding:20px}}
+
+/* ===== steps ===== */
+.steps{border-top:1px solid var(--rule);padding:46px 0 54px}
+.steps h2{margin:0 0 30px;font-family:var(--display);font-weight:400;font-size:clamp(22px,4vw,30px)}
+.steps__list{display:grid;gap:0}
+.step{display:grid;grid-template-columns:52px minmax(0,1fr);gap:14px;padding:20px 0;border-top:1px solid var(--rule)}
+.step:last-child{border-bottom:1px solid var(--rule)}
+.step__n{font-family:var(--display);font-size:30px;line-height:1;color:var(--blue);padding-top:2px}
+.step__body strong{display:block;font-weight:400;font-size:14.5px;margin-bottom:4px}
+.step__body p{margin:0;color:var(--ink-2);font-size:13px;line-height:1.75;max-width:24em}
+@media(min-width:860px){
+  .steps__list{grid-template-columns:repeat(3,1fr);gap:0}
+  .step{grid-template-columns:1fr;gap:10px;padding:22px 24px 6px;border-bottom:0;border-top:1px solid var(--rule);border-right:1px solid var(--rule)}
+  .step:first-child{padding-left:0}
+  .step:last-child{border-right:0}
+  .step__n{font-size:44px;margin-bottom:6px}
+}
+
+/* ===== footer ===== */
+.foot{border-top:1px solid var(--rule);padding:40px 0 34px}
+.foot__mark{
+  font-family:var(--display);font-weight:400;
+  font-size:clamp(38px,9.4vw,76px);letter-spacing:-.02em;line-height:1;
+  padding-bottom:6px;
+}
+.foot__meta{display:grid;gap:10px;margin-top:26px}
+.foot__meta div{display:flex;justify-content:space-between;gap:12px;padding-top:9px;border-top:1px solid var(--rule)}
+.foot__meta div span:first-child{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--ink-2)}
+.foot__meta div span:last-child{font-size:12px;color:var(--ink-2)}
+@media(min-width:860px){.foot__meta{grid-template-columns:repeat(3,1fr);gap:0 32px}}
+
+/* ===== booth view ===== */
+.booth{padding:36px 0 0}
+.booth__crumb{display:flex;gap:10px;align-items:center}
+.booth__crumb .sep{color:var(--rule);font-family:var(--mono)}
+.booth-hero{padding:22px 0 34px}
+.live{display:inline-flex;align-items:center;gap:8px}
+.live i{width:7px;height:7px;background:var(--signal);border-radius:50%;animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.booth h1{
+  margin:14px 0 0;font-family:var(--display);font-weight:400;
+  font-size:clamp(40px,10vw,72px);line-height:1;letter-spacing:-.015em;
+}
+.booth__en{margin:10px 0 0;font-family:var(--mono);font-size:11px;letter-spacing:.3em;color:var(--blue)}
+.booth__notice{margin:16px 0 0;max-width:28em;color:var(--ink-2);font-size:14.5px;line-height:1.85}
+.pass{
+  margin-top:26px;border:1px solid var(--ink);display:grid;grid-template-columns:minmax(0,1fr) 54px;
+  background:var(--paper);
+}
+.pass__body{padding:16px 16px 14px}
+.pass__label{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--blue)}
+.pass__name{font-family:var(--display);font-size:19px;line-height:1.3;margin:6px 0 8px}
+.pass__meta{display:flex;flex-direction:column;gap:2px}
+.pass__meta span{font-size:12px;color:var(--ink-2)}
+.pass__stub{
+  border-left:1px dashed var(--ink);display:grid;place-items:center;
+  font-family:var(--mono);font-size:9px;letter-spacing:.24em;color:var(--ink-2);
+  writing-mode:vertical-rl;transform:rotate(180deg);
+}
+.booth__copy{display:flex;flex-direction:column;min-width:0}
+.booth__links{display:flex;align-items:baseline;gap:18px;flex-wrap:wrap;margin-top:22px}
+.booth__visual{margin-top:26px}
+.booth__visual .figure__frame{aspect-ratio:1/1}
+@media(min-width:900px){
+  .booth-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.86fr);gap:clamp(36px,5vw,72px);align-items:stretch;padding:30px 0 46px}
+  .booth__visual{margin-top:0}
+  .booth__visual .figure__frame{aspect-ratio:4/3}
+  .booth h1{font-size:clamp(56px,6vw,76px)}
+}
+.shelf{padding:34px 0 46px;border-top:1px solid var(--rule)}
+.shelf__head{display:flex;justify-content:space-between;align-items:baseline;gap:14px;margin-bottom:22px}
+.shelf h2{margin:0;font-family:var(--display);font-weight:400;font-size:clamp(20px,3.4vw,26px)}
+.shelf .grid{gap:26px 18px}
+.product .card__info strong{font-size:12.5px}
+.product .price{font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:var(--ink)}
+
+/* schedule */
+.sched{border-top:1px solid var(--rule);padding:34px 0 48px}
+.sched__grid{display:grid;gap:26px}
+.sched h2{margin:0 0 18px;font-family:var(--display);font-weight:400;font-size:clamp(20px,3.4vw,26px)}
+.rows{border-top:1px solid var(--rule)}
+.row{display:grid;grid-template-columns:64px minmax(0,1fr) 52px;gap:12px;align-items:baseline;padding:13px 0;border-bottom:1px solid var(--rule)}
+.row time{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--blue)}
+.row strong{font-weight:400;font-size:13.5px}
+.row span{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--ink-2);text-align:right}
+.note{background:var(--paper-2);padding:22px 20px;align-self:start}
+.note em{font-family:var(--display);font-style:normal;font-size:19px;line-height:1.55;display:block}
+.note p{margin:12px 0 0;font-size:12.5px;color:var(--ink-2);line-height:1.8}
+@media(min-width:880px){.sched__grid{grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr);gap:44px}}
+
+/* toast */
+.toast{
+  position:fixed;left:50%;bottom:24px;transform:translate(-50%,14px);
+  background:var(--ink);color:var(--paper);padding:10px 16px;
+  font-size:12.5px;letter-spacing:.04em;opacity:0;pointer-events:none;
+  transition:opacity .22s ease,transform .22s ease;z-index:40;
+}
+.toast[data-open="true"]{opacity:1;transform:translate(-50%,0)}
+
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+  .figure__frame img{transform:none;animation:none}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar__in">
+    <a class="brand" href="#home" aria-label="Stallink 首页">
+      <span class="brand__mark" aria-hidden="true">s.</span>
+      <span class="brand__name">Stallink</span>
+    </a>
+    <nav class="views" aria-label="视图切换">
+      <button type="button" data-view="home" aria-selected="true">首页</button>
+      <button type="button" data-view="booth" aria-selected="false">摊位页</button>
+    </nav>
+    <div class="top-actions">
+      <button type="button" class="link" data-toast="视觉预览：登录入口未接入">登录</button>
+      <button type="button" class="solid" data-toast="视觉预览：注册入口未接入">创建账号</button>
+    </div>
+  </div>
+</header>
+
+<!-- ================= 视图：首页 ================= -->
+<main class="page view" id="view-home">
+
+  <section class="hero">
+    <div class="hero__copy">
+      <div class="hero__label"><span class="dash" aria-hidden="true"></span><span class="mono">独立摊位 / 一场一会</span></div>
+      <h1>你的作品，<br>值得被看见。</h1>
+      <p class="hero__desc">一个链接装下这一摊的全部：作品、库存、摊位号。展前线上先逛，开展现场再见。</p>
+      <div class="hero__actions">
+        <button type="button" class="btn" data-toast="视觉预览：登录入口未接入">
+          登录 Stallink
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13L13 3M6 3h7v7"/></svg>
+        </button>
+        <button type="button" class="btn-ghost" data-toast="视觉预览：注册入口未接入">注册顾客账号</button>
+      </div>
+      <div class="hero__meta">
+        <span class="mono">东南亚漫展 / 摊位独立链接</span>
+        <span class="mono">轻量 · 开箱即用</span>
+      </div>
+    </div>
+
+    <figure class="figure hero__figure">
+      <div class="figure__frame"><img src="assets/poster.png" alt="摊位上平放的原创插画海报、铅笔与纸胶带"></div>
+      <figcaption class="placard">
+        <strong>摊位氛围 / 布面印刷与手作周边</strong>
+        <span>2026 / KL</span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="statement">
+    <div class="statement__in">
+      <div class="statement__head">
+        <h2>一家摊，<br>一个链接。</h2>
+        <p>每家摊位有自己的地址，不混进别人的货架。展前把这一场带什么放上来，粉丝按摊位号就能找到你。</p>
+      </div>
+      <div class="facts">
+        <div><b>链接</b><span>独立摊位入口</span></div>
+        <div><b>库存</b><span>按活动隔离余量</span></div>
+        <div><b>开单</b><span>现场收款即扣减</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="works">
+    <div class="works__head">
+      <h2>摊位里长这样</h2>
+      <span class="mono">4 件 / 本场</span>
+    </div>
+    <div class="grid">
+      <a class="card" href="#booth">
+        <div class="card__frame"><img src="assets/poster.png" alt="夏日花田 插画海报"></div>
+        <div class="card__info">
+          <strong>夏日花田 · 插画海报</strong>
+          <div class="card__row"><span>A3 / 微喷</span><span>RM 68</span></div>
+        </div>
+      </a>
+      <a class="card" href="#booth">
+        <div class="card__frame"><img src="assets/acrylic.png" alt="角色亚克力立牌"></div>
+        <div class="card__info">
+          <strong>角色亚克力立牌</strong>
+          <div class="card__row"><span>15cm / 带底座</span><span>RM 89</span></div>
+        </div>
+      </a>
+      <a class="card" href="#booth">
+        <div class="card__frame"><img src="assets/stickers.png" alt="手绘贴纸套装"></div>
+        <div class="card__info">
+          <strong>手绘贴纸套装</strong>
+          <div class="card__row"><span>12 枚 / 模切</span><span>RM 32</span></div>
+        </div>
+      </a>
+      <a class="card" href="#booth">
+        <div class="card__typo">
+          <span class="mono">本场限定</span>
+          <em>海报 + 立牌<br>+ 贴纸<br>三件套</em>
+          <span class="mono">RM 168 / 省 21</span>
+        </div>
+        <div class="card__info">
+          <strong>摊位三件套</strong>
+          <div class="card__row"><span>组合装</span><span>RM 168</span></div>
+        </div>
+      </a>
+    </div>
+  </section>
+
+  <section class="steps">
+    <h2>从线上到收银</h2>
+    <div class="steps__list">
+      <div class="step">
+        <span class="step__n">01</span>
+        <div class="step__body">
+          <strong>展前，上传这一场的货</strong>
+          <p>按活动建库存，只展示这一场真正带来的作品。</p>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step__n">02</span>
+        <div class="step__body">
+          <strong>开展，粉丝按摊位号找到你</strong>
+          <p>活动现场扫码进店，先看图和价，再走到摊位。</p>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step__n">03</span>
+        <div class="step__body">
+          <strong>现场，收银台开单交付</strong>
+          <p>记录订单与收款，库存同步扣减，收摊即可复盘。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <div class="foot__mark">STALLINK</div>
+    <div class="foot__meta">
+      <div><span>顾客端</span><span>画册式摊位页</span></div>
+      <div><span>店员端</span><span>票据式工作台</span></div>
+      <div><span>预览</span><span>2026.11 / 非线上版本</span></div>
+    </div>
+  </footer>
+</main>
+
+<!-- ================= 视图：摊位页 ================= -->
+<main class="page view" id="view-booth" hidden>
+
+  <section class="booth">
+    <div class="booth__crumb">
+      <span class="mono">独立摊位</span>
+      <span class="mono sep">/</span>
+      <span class="mono" style="color:var(--ink)">on-paper</span>
+    </div>
+  </section>
+
+  <section class="booth-hero">
+    <div class="booth__copy">
+      <div class="live"><i aria-hidden="true"></i><span class="mono" style="color:var(--ink)">正在营业 / 今日在展</span></div>
+      <h1>纸上花园</h1>
+      <p class="booth__en">ON PAPER STUDIO</p>
+      <p class="booth__notice">原创插画与手作周边。吉隆坡场限定花色，售完不补。</p>
+
+      <div class="pass">
+        <div class="pass__body">
+          <span class="pass__label">本场摊位</span>
+          <div class="pass__name">吉隆坡漫展 2026</div>
+          <div class="pass__meta">
+            <span>12 月 05 – 07 日 / 10:00 – 19:00</span>
+            <span>展馆 A · 摊位 A28</span>
+          </div>
+        </div>
+        <div class="pass__stub" aria-hidden="true">ADMIT ONE</div>
+      </div>
+
+      <div class="booth__links">
+        <button type="button" class="btn-ghost" data-scroll="shelf">看本场商品 ↓</button>
+        <span class="mono">4 件 / 现场自取</span>
+      </div>
+    </div>
+
+    <figure class="figure booth__visual">
+      <div class="figure__frame"><img src="assets/creator-market-hero.png" alt="摊位上陈列的插画印刷品与手作小物"></div>
+      <figcaption class="placard">
+        <strong>本场主推 / 夏日花田系列</strong>
+        <span>01 / 04</span>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section class="shelf" id="shelf">
+    <div class="shelf__head">
+      <h2>正在贩售</h2>
+      <span class="mono">4 件 / 场内可自取</span>
+    </div>
+    <div class="grid">
+      <a class="card product" href="#booth">
+        <div class="card__frame"><img src="assets/poster.png" alt="夏日花田 插画海报"></div>
+        <div class="card__info">
+          <strong>夏日花田 · 插画海报</strong>
+          <div class="card__row"><span>余 6 / 共 60</span><span class="price">RM 68</span></div>
+        </div>
+      </a>
+      <a class="card product" href="#booth">
+        <div class="card__frame"><img src="assets/acrylic.png" alt="角色亚克力立牌"></div>
+        <div class="card__info">
+          <strong>角色亚克力立牌</strong>
+          <div class="card__row"><span>余 12</span><span class="price">RM 89</span></div>
+        </div>
+      </a>
+      <a class="card product" href="#booth">
+        <div class="card__frame"><img src="assets/stickers.png" alt="手绘贴纸套装"></div>
+        <div class="card__info">
+          <strong>手绘贴纸套装</strong>
+          <div class="card__row"><span>余 23</span><span class="price">RM 32</span></div>
+        </div>
+      </a>
+      <a class="card product" href="#booth">
+        <div class="card__typo">
+          <span class="mono">本场限定</span>
+          <em>三件套<br>带走一整套<br>花色</em>
+          <span class="mono">RM 168</span>
+        </div>
+        <div class="card__info">
+          <strong>摊位三件套</strong>
+          <div class="card__row"><span>余 5</span><span class="price">RM 168</span></div>
+        </div>
+      </a>
+    </div>
+  </section>
+
+  <section class="sched">
+    <div class="sched__grid">
+      <div>
+        <h2>活动与摊位</h2>
+        <div class="rows">
+          <div class="row"><time>12.05</time><strong>开展首日 · 新品全开</strong><span>10:00</span></div>
+          <div class="row"><time>12.06</time><strong>签绘场 · 限 40 位</strong><span>14:00</span></div>
+          <div class="row"><time>12.07</time><strong>收摊日 · 余货折扣</strong><span>18:00</span></div>
+        </div>
+      </div>
+      <div class="note">
+        <em>线上看到的，<br>现场都能拿到。</em>
+        <p>页面上的数量与本场库存一致；现场开单后即时扣减。售罄会在这里标灰。</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <div class="foot__mark">STALLINK</div>
+    <div class="foot__meta">
+      <div><span>摊位</span><span>/c/on-paper</span></div>
+      <div><span>顾客端</span><span>画册式摊位页</span></div>
+      <div><span>预览</span><span>2026.11 / 非线上版本</span></div>
+    </div>
+  </footer>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  var toast = document.getElementById('toast');
+  var timer = 0;
+  function say(text){
+    toast.textContent = text;
+    toast.dataset.open = 'true';
+    clearTimeout(timer);
+    timer = setTimeout(function(){ toast.dataset.open = 'false'; }, 2200);
+  }
+
+  var views = {
+    home: document.getElementById('view-home'),
+    booth: document.getElementById('view-booth')
+  };
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.views button'));
+
+  function show(name){
+    var key = views[name] ? name : 'home';
+    Object.keys(views).forEach(function(k){ views[k].hidden = k !== key; });
+    tabs.forEach(function(t){ t.setAttribute('aria-selected', String(t.dataset.view === key)); });
+    document.documentElement.scrollTop = 0;
+  }
+
+  tabs.forEach(function(t){
+    t.addEventListener('click', function(){
+      var next = t.dataset.view;
+      if (location.hash === '#' + next) show(next);
+      else location.hash = next;
+    });
+  });
+
+  window.addEventListener('hashchange', function(){ show(location.hash.replace('#','')); });
+  show(location.hash.replace('#',''));
+
+  document.addEventListener('click', function(e){
+    var scrollEl = e.target.closest('[data-scroll]');
+    if (scrollEl){
+      e.preventDefault();
+      var target = document.getElementById(scrollEl.dataset.scroll);
+      if (target) target.scrollIntoView({behavior:'smooth', block:'start'});
+      return;
+    }
+    var el = e.target.closest('[data-toast]');
+    if (!el) return;
+    e.preventDefault();
+    say(el.dataset.toast);
+  });
+})();
+</script>
+</body>
+</html>
