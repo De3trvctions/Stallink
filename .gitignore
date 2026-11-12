@@ -1,0 +1,7 @@
+/server/bin/
+/server/data/
+/server/logs/
+/web/node_modules/
+/web/.next/
+.env
+*.exe

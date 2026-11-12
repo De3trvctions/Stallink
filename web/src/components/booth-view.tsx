@@ -3,9 +3,38 @@ import type { Booth } from "@/lib/api";
 import { BundlesGrid, EventList, GoodsGrid } from "@/components/goods-grid";
 
 export function BoothView({ booth }: { booth: Booth }) {
-  const activeEvent = booth.events.live?.[0] ?? booth.events.scheduled?.[0];
-  const featuredGood = booth.goods[0];
+  const featuredEventId = booth.featuredEventId ?? "";
+  const onStage = [...(booth.events.live ?? []), ...(booth.events.scheduled ?? [])];
+  const activeEvent = onStage.find((event) => event.id === featuredEventId) ?? booth.events.live?.[0] ?? booth.events.scheduled?.[0];
   const isLive = Boolean(booth.events.live?.length);
+  const allEvents = [...(booth.events.live ?? []), ...(booth.events.scheduled ?? []), ...(booth.events.ended ?? [])];
+  const statusRank: Record<string, number> = { live: 0, scheduled: 1, ended: 2 };
+  const sections = (() => {
+    const map = new Map<string, { id: string; name: string; status: string; place: string; boothNumber: string; dates: string; goods: typeof booth.goods }>();
+    booth.goods.forEach((good) => {
+      const event = allEvents.find((item) => item.id === good.eventId);
+      const existing = map.get(good.eventId);
+      if (existing) {
+        existing.goods.push(good);
+        return;
+      }
+      map.set(good.eventId, {
+        id: good.eventId,
+        name: event?.name ?? good.eventName,
+        status: event?.status ?? "scheduled",
+        place: [event?.city, event?.venue].filter(Boolean).join(" / "),
+        boothNumber: event?.boothNumber ?? "",
+        dates: event ? `${event.startsOn.slice(5).replace("-", ".")}–${event.endsOn.slice(5).replace("-", ".")}` : "",
+        goods: [good],
+      });
+    });
+    return [...map.values()].sort((a, b) => {
+      if (a.id === featuredEventId) return -1;
+      if (b.id === featuredEventId) return 1;
+      return (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9);
+    });
+  })();
+  const featuredGood = sections.find((section) => section.id === featuredEventId)?.goods[0] ?? booth.goods[0];
 
   return (
     <main className="ed-frame ed-booth">
@@ -78,10 +107,34 @@ export function BoothView({ booth }: { booth: Booth }) {
 
       <section className="ed-shelf" id="goods">
         <div className="ed-shelf__head">
-          <h2>正在贩售</h2>
-          <span className="ed-mono">{booth.goods.length} 件商品</span>
+          <div>
+            <h2>正在贩售</h2>
+            <p className="ed-shelf__meta">按活动分开陈列，同一个商品可在多场活动中分别上架。</p>
+          </div>
+          <span className="ed-mono">{booth.goods.length} 件 · {sections.length} 场</span>
         </div>
-        <GoodsGrid slug={booth.slug} goods={booth.goods} />
+        {sections.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-state__mark" aria-hidden="true">✳</span>
+            <p>当前没有在售活动，新的场次上架后会出现在这里。</p>
+          </div>
+        ) : sections.map((section) => (
+          <section className="ed-event-shelf" id={`event-${section.id}`} key={section.id}>
+            <div className="ed-shelf__head">
+              <div>
+                <h2>{section.name}{section.id === featuredEventId ? <em className="ed-shelf__flag">主推</em> : null}</h2>
+                <p className="ed-shelf__meta">
+                  {section.status === "live" ? "现场进行中" : "即将开始"}
+                  {section.place ? ` · ${section.place}` : ""}
+                  {section.boothNumber ? ` · 摊位 ${section.boothNumber}` : ""}
+                  {section.dates ? ` · ${section.dates}` : ""}
+                </p>
+              </div>
+              <span className="ed-mono">{section.goods.length} 件</span>
+            </div>
+            <GoodsGrid slug={booth.slug} goods={section.goods} showEventName={false} />
+          </section>
+        ))}
       </section>
 
       {booth.bundles.length > 0 ? (

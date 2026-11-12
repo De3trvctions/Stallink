@@ -1,0 +1,14 @@
+server:
+  name: stallink
+  http:
+    addr: ":8080"
+data:
+  database:
+    driver: postgres
+    source: postgres://postgres:123456@127.0.0.1:5432/stallink?sslmode=disable
+storage:
+  dir: ./data
+auth:
+  platform_admin_login: platform
+  platform_admin_password: change-me-please
+  secure_cookies: false

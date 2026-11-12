@@ -1,0 +1,33 @@
+# 发布到 Nacos namespace=stallink, group=DEFAULT_GROUP, dataId=stallink.yaml。
+# 进程不读这个文件，只从 Nacos 读。
+server:
+  name: stallink
+  id: stallink-local
+  version: 0.1.0
+  http:
+    addr: ":8080"
+data:
+  database:
+    driver: postgres
+  source: ${STALLINK_DATABASE_SOURCE}
+storage:
+  dir: ./data
+auth:
+  platform_admin_login: platform
+  platform_admin_password: ${STALLINK_PLATFORM_ADMIN_PASSWORD}
+  secure_cookies: false
+orders:
+  require_idempotency: true
+  reservations_enabled: true
+  quote_ttl: 60s
+  reservation_ttl: 15m
+  sweep_interval: 30s
+catalog:
+  bundles_enabled: true
+pricing:
+  max_states: 100000
+logging:
+  level: info
+  format: console
+  outputs: ["stdout"]
+  environment: local

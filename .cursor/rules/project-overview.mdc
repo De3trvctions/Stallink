@@ -1,0 +1,13 @@
+---
+description: Stallink 仓库结构、应用边界与常用入口
+alwaysApply: true
+---
+
+# Stallink 项目总览
+
+- `server/` 是独立 Go 模块，包含 API 启动入口、配置、持久化和运行数据。
+- `web/` 是 Next.js 前端；浏览器 API 请求通过同源 `/api/*` 代理到 Go 服务。
+- `docs/` 保存产品与实现文档；根 `Makefile` 统一转发 `test`、`dev`、`nacos-publish`，并启动 `web`。
+- 从仓库根运行 `make test`、`make dev`、`make nacos-publish` 或 `make web`。直接执行 Go 命令时先进入 `server/`。
+- 本地 Nacos 引导配置位于 `server/configs/local/`；Nacos 远程配置由 `server/configs/nacos/` 的发布目标上传。
+- 修改时遵循目标目录现有实现；不要顺手重构另一个应用。

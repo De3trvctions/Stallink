@@ -1,0 +1,17 @@
+# 只负责定位 Nacos，不放运行参数。
+server:
+  name: stallink
+  id: stallink-local
+nacos:
+  host: 127.0.0.1
+  port: 8848
+  namespace: stallink
+  group_name: DEFAULT_GROUP
+  username: ${STALLINK_NACOS_USERNAME}
+  password: ${STALLINK_NACOS_PASSWORD}
+  log_dir: ./logs/nacos/stallink/config
+  cache_dir: ./logs/nacos/stallink/config-cache
+  log_level: error
+  remote_config:
+    data_id: stallink.yaml
+    group: DEFAULT_GROUP

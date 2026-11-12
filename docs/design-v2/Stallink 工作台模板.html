@@ -1,0 +1,1112 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stallink 工作台模板 · 票据式</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2316171a'/%3E%3Ctext x='16' y='23' font-family='Georgia,serif' font-size='19' fill='%23faf8f3' text-anchor='middle'%3Es%3C/text%3E%3C/svg%3E">
+<style>
+  :root{
+    --canvas:#faf8f3; --surface:#fffdf8; --soft:#f0ece2;
+    --ink:#16171a; --ink-soft:#3c3d42; --muted:#6b685f;
+    --line:#dad3c3; --line-strong:#c6bdaa;
+    --accent:#1e36a8; --accent-soft:#e9edfb; --warn:#b23a18;
+    --serif:"Songti SC","Noto Serif SC","Source Han Serif SC","STSong",serif;
+    --ui:"PingFang SC","Hiragino Sans GB","Noto Sans SC",system-ui,sans-serif;
+    --mono:"SF Mono","Menlo","IBM Plex Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:#e8e3d6; color:var(--ink);
+    font:14px/1.55 var(--ui); -webkit-font-smoothing:antialiased;
+    display:flex; flex-direction:column;
+  }
+  button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
+  h1,h2,h3,p{margin:0}
+  a{color:inherit; text-decoration:none}
+
+  /* ===== 顶部：模板工具条 ===== */
+  .topbar{
+    display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+    padding:12px 20px; background:var(--canvas); border-bottom:1px solid var(--line);
+  }
+  .topbar__brand{display:flex; align-items:center; gap:10px}
+  .topbar__mark{
+    width:24px; height:24px; display:grid; place-items:center;
+    background:var(--ink); color:var(--canvas); font:400 17px/1 var(--serif);
+  }
+  .topbar__name{font-family:var(--serif); font-size:15px; letter-spacing:.02em}
+  .topbar__note{font:400 10.5px/1.4 var(--mono); letter-spacing:.14em; color:var(--muted)}
+  .topbar__spacer{flex:1}
+  .switcher{display:flex; border:1px solid var(--line-strong)}
+  .switcher button{
+    padding:7px 11px; font:400 11.5px/1 var(--mono); letter-spacing:.06em; color:var(--muted);
+    border-right:1px solid var(--line);
+  }
+  .switcher button:last-child{border-right:0}
+  .switcher button[aria-pressed="true"]{background:var(--ink); color:var(--canvas)}
+  .readout{font:400 10.5px/1 var(--mono); letter-spacing:.1em; color:var(--muted); min-width:130px}
+
+  /* ===== 舞台与设备框 ===== */
+  .stage{flex:1; display:flex; justify-content:center; align-items:flex-start; padding:22px 16px 10px; overflow:auto}
+  .device{
+    position:relative; width:1280px; max-width:100%;
+    height:min(820px, 78vh); overflow:auto;
+    background:var(--canvas); border:1px solid var(--line-strong);
+    box-shadow:0 18px 40px rgba(22,23,26,.10);
+    container-type:inline-size;
+    transition:width .28s cubic-bezier(.2,.7,.2,1);
+  }
+  .device[data-device="tablet"]{width:834px}
+  .device[data-device="phone"]{width:390px}
+  .device::-webkit-scrollbar{width:9px}
+  .device::-webkit-scrollbar-thumb{background:var(--line); border-radius:0}
+
+  .foot{
+    padding:9px 20px 14px; font:400 10.5px/1.5 var(--mono); letter-spacing:.1em; color:#6d6a60;
+    display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
+  }
+
+  /* ===== 工作台外壳 ===== */
+  .shell{display:grid; grid-template-columns:220px minmax(0,1fr); min-height:100%}
+  .rail{
+    position:sticky; top:0; align-self:start;
+    background:var(--surface); border-right:1px solid var(--line);
+    padding:14px 0 18px; min-height:100%;
+  }
+  .rail__head{padding:0 16px 12px; border-bottom:1px solid var(--line); margin-bottom:8px}
+  .rail__shop{font-family:var(--serif); font-size:16px; line-height:1.3}
+  .rail__meta{font:400 10px/1.5 var(--mono); letter-spacing:.1em; color:var(--muted); margin-top:3px}
+  .rail__group{font:400 9.5px/1 var(--mono); letter-spacing:.16em; color:var(--muted); padding:14px 16px 6px}
+  .rail__item{
+    display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+    padding:9px 16px; font-size:12.5px; color:var(--muted); border-left:2px solid transparent;
+  }
+  .rail__item:hover{background:var(--soft); color:var(--ink)}
+  .rail__item[aria-current="page"]{color:var(--ink); border-left-color:var(--accent); background:var(--accent-soft)}
+  .rail__item em{font:400 9.5px/1 var(--mono); letter-spacing:.08em; color:var(--line-strong); font-style:normal; margin-left:auto}
+  .rail__item[aria-current="page"] em{color:var(--accent)}
+
+  .pane{padding:18px 20px 26px; min-width:0}
+  .pane__head{display:flex; align-items:flex-end; justify-content:space-between; gap:14px; flex-wrap:wrap; padding-bottom:12px; border-bottom:1px solid var(--line)}
+  .pane__title{font-family:var(--serif); font-weight:400; font-size:22px; line-height:1.15; letter-spacing:-.01em}
+  .pane__sub{font:400 10.5px/1.5 var(--mono); letter-spacing:.12em; color:var(--muted); margin-top:4px}
+  .pane__tools{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+
+  .back{display:inline-flex; align-items:center; gap:6px; font:400 11px/1 var(--mono); letter-spacing:.08em; color:var(--muted); padding:6px 0}
+  .back:hover{color:var(--ink)}
+
+  /* ===== 通用件 ===== */
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:36px; padding:0 13px; background:var(--ink); color:var(--canvas); font-size:12.5px; letter-spacing:.03em}
+  .btn:hover{background:var(--accent)}
+  .btn--ghost{background:transparent; color:var(--ink); border:1px solid var(--line-strong)}
+  .btn--ghost:hover{background:var(--ink); border-color:var(--ink); color:var(--canvas)}
+  .btn--sm{min-height:30px; padding:0 9px; font-size:11.5px}
+  .btn--danger{background:transparent; color:var(--warn); border:1px solid var(--line-strong)}
+  .btn--danger:hover{background:var(--warn); border-color:var(--warn); color:#fff}
+  .btn:disabled{background:var(--soft); color:var(--muted); border:1px solid var(--line); cursor:not-allowed; opacity:1}
+  .btn--ghost:disabled{background:transparent}
+
+  .chip{display:inline-flex; align-items:center; gap:5px; font:400 10.5px/1 var(--mono); letter-spacing:.08em; color:var(--muted); white-space:nowrap}
+  .chip i{width:6px; height:6px; background:var(--line-strong); display:block}
+  .chip--paid{color:var(--accent)} .chip--paid i{background:var(--accent)}
+  .chip--due{color:var(--warn)} .chip--due i{background:var(--warn)}
+  .chip--live{color:var(--ink)} .chip--live i{background:var(--warn)}
+
+  .filters{display:flex; gap:6px; flex-wrap:wrap; margin:14px 0 2px}
+  .filters button{border:1px solid var(--line); padding:6px 10px; font:400 11px/1 var(--mono); letter-spacing:.06em; color:var(--muted)}
+  .filters button[aria-pressed="true"]{border-color:var(--ink); color:var(--ink); background:var(--surface)}
+
+  /* KPI 横带 */
+  .kpis{display:grid; grid-template-columns:repeat(4,1fr); margin:16px 0 4px; border-top:1px solid var(--line); border-bottom:1px solid var(--line)}
+  .kpis > div{padding:12px 14px 13px; border-right:1px solid var(--line)}
+  .kpis > div:last-child{border-right:0}
+  .kpis > div:first-child{padding-left:0}
+  .kpis span{display:block; font:400 9.5px/1.4 var(--mono); letter-spacing:.14em; color:var(--muted)}
+  .kpis b{display:block; font:400 21px/1.2 var(--mono); letter-spacing:-.02em; margin-top:5px}
+  .kpis small{display:block; font-size:10.5px; color:var(--muted); margin-top:2px}
+
+  /* 小节 */
+  .block{margin-top:22px}
+  .block__head{display:flex; align-items:baseline; justify-content:space-between; gap:10px; padding-bottom:8px; border-bottom:1px solid var(--line)}
+  .block__head h2{font-family:var(--serif); font-weight:400; font-size:16px}
+  .block__head span{font:400 10px/1 var(--mono); letter-spacing:.12em; color:var(--muted)}
+
+  /* 票根：本场活动 */
+  .ticket{display:grid; grid-template-columns:minmax(0,1fr) 34px; border:1px solid var(--ink); margin-top:16px; background:var(--surface)}
+  .ticket__body{padding:12px 14px 11px}
+  .ticket__label{font:400 9.5px/1 var(--mono); letter-spacing:.16em; color:var(--accent)}
+  .ticket__name{font-family:var(--serif); font-size:15px; line-height:1.35; margin:5px 0 6px}
+  .ticket__meta{display:flex; flex-wrap:wrap; gap:2px 14px; font:400 10.5px/1.6 var(--mono); letter-spacing:.04em; color:var(--muted)}
+  .ticket__stub{display:grid; place-items:center; border-left:1px dashed var(--ink); font:400 8.5px/1 var(--mono); letter-spacing:.2em; color:var(--muted); writing-mode:vertical-rl; transform:rotate(180deg)}
+
+  /* 行列表 */
+  .rows{border-top:1px solid var(--line); margin-top:2px}
+  .row{
+    display:grid; grid-template-columns:78px minmax(0,1.4fr) minmax(0,1fr) 84px 76px;
+    align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line);
+  }
+  .row:first-child{border-top:0}
+  .row:hover{background:var(--soft)}
+  .row__mono{font:400 10.5px/1.5 var(--mono); letter-spacing:.04em; color:var(--muted)}
+  .row__name{font-size:12.5px; line-height:1.4; min-width:0; overflow-wrap:anywhere}
+  .row__money{font:400 12px/1.5 var(--mono); letter-spacing:.02em; text-align:right}
+  .row__act{display:flex; justify-content:flex-end; gap:6px; white-space:nowrap}
+  .row--link{cursor:pointer}
+  .row--link:focus-visible{outline:1px solid var(--accent); outline-offset:2px}
+
+  /* 商品行：缩略图 */
+  .thumb{width:34px; height:42px; display:grid; place-items:center; background:var(--soft); font-family:var(--serif); font-size:15px; color:var(--a, #1e36a8); border:1px solid var(--line)}
+  .goods-row{grid-template-columns:46px minmax(0,1.5fr) 96px 72px 132px}
+  .cellname{display:flex; flex-direction:column; gap:2px; min-width:0}
+  .cellname b{font-weight:400; font-size:12.5px; line-height:1.35}
+  .cellname span{font:400 10px/1.4 var(--mono); letter-spacing:.04em; color:var(--muted)}
+
+  /* 收银 */
+  .counter-head{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; margin-top:14px}
+  .field{display:flex; flex-direction:column; gap:5px}
+  .field label{font:400 9.5px/1 var(--mono); letter-spacing:.14em; color:var(--muted)}
+  .field select,.field input{
+    height:40px; padding:0 10px; background:var(--surface); border:1px solid var(--line-strong);
+    font:400 16px/1 var(--ui); color:var(--ink); border-radius:0; appearance:none;
+  }
+  .counter-body{display:grid; grid-template-columns:minmax(0,1fr); gap:0; margin-top:16px}
+  .goods-grid{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px}
+  .good{
+    display:flex; flex-direction:column; align-items:flex-start; gap:3px; text-align:left;
+    padding:10px 11px 11px; background:var(--surface); border:1px solid var(--line); min-height:82px;
+  }
+  .good:hover{border-color:var(--line-strong)}
+  .good[aria-pressed="true"]{border-color:var(--ink); box-shadow:inset 0 0 0 1px var(--ink)}
+  .good[disabled]{opacity:.5}
+  .good__name{font-size:12.5px; line-height:1.35}
+  .good__meta{margin-top:auto; display:flex; width:100%; justify-content:space-between; gap:6px; font:400 10.5px/1.4 var(--mono); letter-spacing:.04em}
+  .good__price{color:var(--ink)}
+  .good__left{color:var(--muted)}
+
+  .cartbar{
+    position:sticky; bottom:0; z-index:4;
+    display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:center;
+    margin-top:14px; padding:11px 14px calc(11px + env(safe-area-inset-bottom));
+    background:var(--surface); border-top:1px solid var(--ink); border-bottom:0;
+  }
+  .cartbar__nums{display:flex; align-items:baseline; gap:12px}
+  .cartbar__total{font:400 20px/1.1 var(--mono); letter-spacing:-.02em}
+  .cartbar__count{font:400 10.5px/1.4 var(--mono); letter-spacing:.08em; color:var(--muted)}
+  .cartbar__act{display:flex; gap:8px}
+  .cart-toggle{display:none}
+  .cart-sheet{border-top:1px solid var(--line); margin-top:14px; padding-top:10px}
+  .cart-line{display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:6px 10px; padding:9px 0; border-bottom:1px solid var(--line)}
+  .cart-line__name{grid-column:1 / -1; font-size:12.5px; line-height:1.35}
+  .qty{display:flex; align-items:center; justify-self:start; width:max-content; border:1px solid var(--line)}
+  .qty button{width:30px; height:30px; font:400 14px/1 var(--mono)}
+  .qty span{min-width:26px; text-align:center; font:400 12px/1 var(--mono); border-left:1px solid var(--line); border-right:1px solid var(--line); padding:8px 0}
+  .cart-line__sum{font:400 12px/1 var(--mono); min-width:64px; text-align:right}
+
+  /* 结算 */
+  .checkout{display:grid; grid-template-columns:minmax(0,1fr); gap:18px; margin-top:14px; align-items:start}
+  .checkout__panel{border:1px solid var(--line); background:var(--surface); padding:14px}
+  .checkout__total{display:flex; justify-content:space-between; align-items:baseline; padding-top:12px; margin-top:10px; border-top:1px solid var(--ink)}
+  .checkout__total b{font:400 24px/1 var(--mono)}
+  .pay-options{display:grid; gap:8px; margin-top:10px}
+  .pay-option{display:flex; align-items:center; gap:10px; padding:11px 12px; border:1px solid var(--line); background:var(--surface); text-align:left; width:100%}
+  .pay-option[aria-pressed="true"]{border-color:var(--ink)}
+  .pay-option i{width:6px; height:6px; background:var(--line-strong)}
+  .pay-option[aria-pressed="true"] i{background:var(--warn)}
+  .pay-option span{font-size:12.5px}
+  .pay-option em{margin-left:auto; font:400 10px/1 var(--mono); letter-spacing:.08em; color:var(--muted); font-style:normal}
+
+  /* 提示条 */
+  .toast{
+    position:absolute; top:10px; left:12px; right:12px; z-index:20; margin:0; padding:9px 12px;
+    background:var(--ink); color:var(--canvas); font:400 11px/1.4 var(--mono); letter-spacing:.06em;
+    display:flex; justify-content:space-between; align-items:center; gap:12px;
+    box-shadow:0 12px 26px rgba(22,23,26,.22);
+  }
+  .toast[hidden]{display:none}
+  @container (min-width:761px){ .toast{left:auto; right:14px; top:14px; max-width:560px} }
+
+  .empty{padding:28px 0; text-align:center; color:var(--muted); font-size:12px}
+
+  /* ===== 容器查询：三端 ===== */
+  @container (max-width:760px){
+    .shell{grid-template-columns:1fr}
+    .rail{
+      position:sticky; top:0; z-index:6; display:flex; align-items:center; gap:2px;
+      min-height:0; padding:0 10px; overflow-x:auto;
+      background:var(--canvas); border-right:0; border-bottom:1px solid var(--line);
+    }
+    .rail__head,.rail__group{display:none}
+    .rail__item{
+      width:auto; white-space:nowrap; border-left:0; border-bottom:2px solid transparent;
+      padding:11px 9px; font-size:12px;
+    }
+    .rail__item[aria-current="page"]{background:transparent; border-bottom-color:var(--accent)}
+    .rail__item em{display:none}
+    .pane{padding:14px 14px 22px}
+    .pane__title{font-size:19px}
+    .kpis{grid-template-columns:repeat(2,1fr)}
+    .kpis > div{padding:10px 10px 11px; border-bottom:1px solid var(--line)}
+    .kpis > div:nth-child(2n){border-right:0}
+    .kpis > div:nth-child(n+3){border-bottom:0}
+    .kpis > div:first-child{padding-left:10px}
+    .kpis b{font-size:18px}
+    .row{grid-template-columns:minmax(0,1fr) auto; gap:4px 10px; padding:11px 0}
+    .row__mono:first-child{grid-column:1 / -1; font-size:9.5px; letter-spacing:.1em}
+    .row__money{text-align:left}
+    .row__act{grid-column:1 / -1; justify-content:flex-start; margin-top:2px; white-space:nowrap}
+    .goods-row{grid-template-columns:40px minmax(0,1fr)}
+    .goods-row > .row__mono:nth-child(3),
+    .goods-row > .row__money,
+    .goods-row > .row__act{grid-column:1 / -1; justify-content:flex-start; text-align:left}
+    .counter-head{grid-template-columns:1fr}
+    .good{min-height:92px}
+    .cartbar__total{font-size:18px}
+  }
+  @container (min-width:761px) and (max-width:1099px){
+    .shell{grid-template-columns:196px minmax(0,1fr)}
+    .sidebar-sum{border:1px solid var(--line); background:var(--surface); padding:12px 14px; margin-top:20px}
+    .cartbar{position:static; border-top:0; margin:0; padding:0}
+    .kpis{grid-template-columns:repeat(4,1fr)}
+    .goods-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .checkout{grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr)}
+  }
+  @container (min-width:1100px){
+    .counter-body{grid-template-columns:minmax(0,1fr) 300px}
+    .goods-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .counter{display:grid; grid-template-columns:minmax(0,1fr) 300px; gap:0; align-items:start}
+    .counter__main{padding-right:20px; min-width:0}
+    .sidebar-sum{margin-top:0; padding:0 0 0 20px; border:0; border-left:1px solid var(--line); background:transparent}
+    .checkout{grid-template-columns:minmax(0,1.25fr) minmax(0,.75fr)}
+  }
+
+  /* 行变体与补充件 */
+  .row--todo{grid-template-columns:minmax(0,1fr) auto; padding:12px 0; align-items:start}
+  .row__names{display:flex; flex-direction:column; gap:4px; min-width:0}
+  .row__names p{font-size:12px; color:var(--muted); line-height:1.5}
+  .row--event{grid-template-columns:104px minmax(0,1fr) 70px auto}
+  .row--log{grid-template-columns:64px minmax(0,1fr) 150px}
+  .row--pay{grid-template-columns:46px minmax(0,1fr) 70px auto}
+  .row--sales{grid-template-columns:minmax(0,1fr) 70px 70px auto}
+  .row--item{grid-template-columns:minmax(0,1fr) auto; border-bottom:0; padding:6px 0}
+  .row--shop{grid-template-columns:46px minmax(0,1.2fr) 130px 70px auto}
+  .orow{
+    display:grid; grid-template-columns:118px minmax(0,1.3fr) 104px 96px 86px;
+    grid-template-areas:"id name pay money status";
+    align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid var(--line); cursor:pointer;
+  }
+  .orow:hover{background:var(--soft)}
+  .orow__id{grid-area:id; font:400 10px/1.5 var(--mono); letter-spacing:.06em; color:var(--muted)}
+  .orow__name{grid-area:name; display:flex; flex-direction:column; gap:2px; min-width:0}
+  .orow__name b{font-weight:400; font-size:13px}
+  .orow__name span{font:400 10px/1.4 var(--mono); letter-spacing:.04em; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .orow__pay{grid-area:pay; font:400 10px/1.4 var(--mono); letter-spacing:.06em; color:var(--muted)}
+  .orow__money{grid-area:money; font:400 12.5px/1 var(--mono); text-align:right}
+  .orow__status{grid-area:status; text-align:right; white-space:nowrap}
+  .kv{display:flex; justify-content:space-between; gap:12px; padding:9px 0; border-bottom:1px solid var(--line); font-size:12.5px}
+  .kv span{color:var(--muted); font-family:var(--mono); font-size:10.5px; letter-spacing:.08em}
+  .kv b{font-weight:400; text-align:right; overflow-wrap:anywhere}
+  .frow{display:grid; grid-template-columns:118px minmax(0,1fr); align-items:center; gap:12px; padding:8px 0; border-bottom:1px solid var(--line)}
+  .frow > span{font:400 10px/1.4 var(--mono); letter-spacing:.1em; color:var(--muted)}
+  .frow input,.frow textarea,.frow select{
+    width:100%; border:0; border-bottom:1px solid var(--line); background:transparent;
+    padding:7px 0; font:400 13px/1.45 var(--ui); color:var(--ink); border-radius:0; appearance:none;
+  }
+  .frow textarea{resize:vertical; min-height:52px; line-height:1.5}
+  .frow input:focus,.frow textarea:focus,.frow select:focus{border-bottom-color:var(--ink); outline:none}
+  .frow input:disabled{color:var(--muted)}
+  .hintline{margin-top:12px; font-size:11.5px; color:var(--muted); line-height:1.65}
+  .sidebar-sum{margin-top:20px; border:1px solid var(--line); background:var(--surface); padding:12px 14px}
+  .sum__label{font:400 9.5px/1 var(--mono); letter-spacing:.14em; color:var(--muted); margin-bottom:9px}
+  .detail-actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
+  .wide{width:100%}
+  .review{border-top:1px solid var(--line); padding:12px 0; display:flex; justify-content:space-between; gap:12px; align-items:center; flex-wrap:wrap}
+  .review__main{display:flex; flex-direction:column; gap:3px; min-width:0}
+  .review__main b{font-family:var(--serif); font-weight:400; font-size:14px}
+
+  @container (min-width:1100px){
+    .sidebar-sum{margin-top:0; padding:14px; border:1px solid var(--line); background:var(--surface)}
+    .cartbar{position:static; border-top:0; padding:0; margin:0}
+  }
+  @container (max-width:760px){
+    .sidebar-sum{
+      position:sticky; bottom:0; z-index:5; margin:16px -14px -22px;
+      padding:10px 14px calc(16px + env(safe-area-inset-bottom));
+      border:0; border-top:1px solid var(--ink); background:var(--surface); max-height:62vh; overflow:auto;
+    }
+    .sum__label{margin-bottom:6px}
+    .cart-toggle{display:inline-flex}
+    .cart-sheet{display:none}
+    .sidebar-sum[data-open="true"] .cart-sheet{display:block}
+    .cartbar{position:static; border-top:0; padding:0; margin:0}
+    .row--todo,.row--event{grid-template-columns:1fr; gap:8px}
+    .row--log{grid-template-columns:1fr auto}
+    .row--pay{grid-template-columns:40px 1fr auto}
+    .row--sales{grid-template-columns:1fr auto auto}
+    .row--shop,.goods-row{display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px}
+    .row--shop .cellname,.goods-row .cellname{flex:1 1 150px}
+    .row--shop .row__act,.goods-row .row__act{flex:1 1 100%; justify-content:flex-end; margin-top:2px}
+    .detail-actions .btn{flex:1 1 46%}
+    .frow{grid-template-columns:1fr; gap:2px; padding:10px 0}
+    .orow{
+      grid-template-columns:minmax(0,1fr) auto;
+      grid-template-areas:"name status" "id id" "money pay";
+      gap:5px 12px; padding:12px 0;
+    }
+    .orow__money{text-align:left; font-size:14px}
+    .orow__pay{text-align:right}
+    .row__act{white-space:nowrap}
+  }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar__brand">
+    <span class="topbar__mark">s.</span>
+    <span class="topbar__name">Stallink 工作台模板</span>
+  </div>
+  <span class="topbar__note">票据式 / 店员端</span>
+  <div class="topbar__spacer"></div>
+  <div class="switcher" role="group" aria-label="预览设备">
+    <button type="button" data-device="phone" aria-pressed="false">手机 390</button>
+    <button type="button" data-device="tablet" aria-pressed="false">平板 834</button>
+    <button type="button" data-device="desktop" aria-pressed="true">电脑 1280</button>
+  </div>
+  <span class="readout" id="readout">宽度 1280 · 容器查询</span>
+</div>
+
+<div class="stage">
+  <div class="device" id="device" data-device="desktop">
+    <div class="shell">
+      <nav class="rail" id="rail" aria-label="工作台导航"></nav>
+      <section class="pane" id="pane"></section>
+    </div>
+    <div class="toast" id="toast" role="status" hidden></div>
+  </div>
+</div>
+
+<div class="foot">
+  <span>同一套标记，随容器宽度重排：390 / 834 / 1280</span>
+  <span>数据为演示用示例</span>
+</div>
+
+<script>
+/* ============================================================
+   演示数据（数字为示例，非真实经营数据）
+   ============================================================ */
+const SHOP = { name: "晚风工作室", booth: "A-27", eventName: "吉隆坡同人展 · 创作者市集", eventDates: "11.12 – 11.15", slug: "wanfeng" };
+
+const KPIS = [
+  { label: "今日订单", value: "34", note: "较昨日 +8" },
+  { label: "营业额", value: "2 180.00", note: "RM · 含未收款" },
+  { label: "客单价", value: "64.12", note: "RM · 34 单" },
+  { label: "待收款", value: "2", note: "笔 · RM 268.00" }
+];
+
+const GOODS = [
+  { id: "g1", name: "林间小径 · 丝网版画", event: "本场", price: 128, stock: 6, review: "上架", mark: "林" },
+  { id: "g2", name: "白猫与山茶 · 亚克力立牌", event: "本场", price: 68, stock: 12, review: "上架", mark: "猫" },
+  { id: "g3", name: "花与鸟 · 贴纸套装", event: "本场", price: 38, stock: 21, review: "上架", mark: "花" },
+  { id: "g4", name: "手作线装笔记本", event: "本场", price: 52, stock: 0, review: "上架", mark: "本" },
+  { id: "g5", name: "森林明信片 · 三张套", event: "本场", price: 30, stock: 3, review: "待审", mark: "森" },
+  { id: "g6", name: "猫咪和纸胶带", event: "下一场", price: 24, stock: 40, review: "未上架", mark: "胶" },
+  { id: "g7", name: "旧城速写 · 明信片套", event: "本场", price: 30, stock: 9, review: "上架", mark: "城" },
+  { id: "g8", name: "森之信笺 · 信封组", event: "本场", price: 36, stock: 14, review: "上架", mark: "笺" }
+];
+
+let ORDERS = [
+  { id: "ORD-1048", time: "14:32", customer: "Wen", items: "亚克力立牌 ×2", total: 136, status: "due", pay: "DuitNow QR" },
+  { id: "ORD-1047", time: "14:18", customer: "小林", items: "丝网版画 ×1 · 贴纸 ×1", total: 166, status: "paid", pay: "现金" },
+  { id: "ORD-1046", time: "13:55", customer: "Ahmad", items: "贴纸套装 ×2", total: 68, status: "paid", pay: "TNG eWallet" },
+  { id: "ORD-1045", time: "13:21", customer: "Yuki", items: "线装笔记本 ×1", total: 52, status: "void", pay: "—" },
+  { id: "ORD-1044", time: "12:47", customer: "陈", items: "丝网版画 ×1", total: 128, status: "paid", pay: "DuitNow QR" },
+  { id: "ORD-1043", time: "12:09", customer: "Mei", items: "套餐 A ×1", total: 180, status: "paid", pay: "TNG eWallet" }
+];
+let SEQ = 1049;
+
+const EVENTS = [
+  { id: "e1", name: "吉隆坡同人展 · 创作者市集", dates: "11.12 – 11.15", place: "Sunway Pyramid · A-27", status: "live" },
+  { id: "e2", name: "槟城插画祭", dates: "12.05 – 12.07", place: "Straits Quay · B-08", status: "scheduled" },
+  { id: "e3", name: "新加坡 Art Book Fair", dates: "10.24 – 10.26", place: "Old Kallang · C-12", status: "ended" }
+];
+
+const LOGS = [
+  { time: "14:32", who: "Kai", act: "创建订单", target: "ORD-1048" },
+  { time: "14:18", who: "Kai", act: "收款完成", target: "ORD-1047" },
+  { time: "13:55", who: "Ling", act: "收款完成", target: "ORD-1046" },
+  { time: "13:21", who: "Kai", act: "取消订单", target: "ORD-1045" },
+  { time: "11:40", who: "系统", act: "库存扣减", target: "手作线装笔记本 · 余 0" },
+  { time: "10:12", who: "Ling", act: "上架商品", target: "森林明信片 · 三张套" }
+];
+
+const PAYCODES = [
+  { id: "p1", name: "DuitNow QR · 主号", code: "QR-01", status: "启用" },
+  { id: "p2", name: "TNG eWallet · 摊位机", code: "QR-02", status: "启用" },
+  { id: "p3", name: "银行转账 · 备用手动", code: "BANK-01", status: "停用" }
+];
+
+const SALES = [
+  { id: "s1", name: "Kai", role: "收银", orders: 128, status: "启用" },
+  { id: "s2", name: "Ling", role: "收银", orders: 96, status: "启用" },
+  { id: "s3", name: "阿哲", role: "仅查看", orders: 0, status: "停用" }
+];
+
+const PLATFORM_SHOPS = [
+  { id: "sh1", name: "晚风工作室", booth: "A-27", status: "正常", goods: 24, orders: 34 },
+  { id: "sh2", name: "拾光社", booth: "B-08", status: "待审", goods: 18, orders: 0 },
+  { id: "sh3", name: "猫町", booth: "C-12", status: "正常", goods: 31, orders: 47 },
+  { id: "sh4", name: "纸间", booth: "D-05", status: "暂停", goods: 9, orders: 12 }
+];
+
+let REVIEWS = [
+  { id: "r1", shop: "拾光社", good: "旧城速写 · 明信片套", price: 32, time: "今天 11:08" },
+  { id: "r2", shop: "猫町", good: "猫咪徽章盲盒", price: 28, time: "今天 10:41" },
+  { id: "r3", shop: "纸间", good: "手工装帧小册", price: 64, time: "昨天 21:15" }
+];
+
+const COUNTER_GOODS = GOODS.filter((g) => g.review === "上架").map((g) => ({ id: g.id, name: g.name, price: g.price, left: g.stock }));
+
+/* ============================================================
+   状态与工具
+   ============================================================ */
+const S = {
+  device: "desktop",
+  view: "overview",
+  goodsFilter: "all",
+  orderFilter: "all",
+  cart: {},
+  pay: "duitnow",
+  customer: "",
+  event: "e1",
+  orderId: null,
+  cartOpen: false,
+  toast: null
+};
+
+const money = (n) => "RM " + Number(n).toFixed(2);
+const $ = (sel) => document.querySelector(sel);
+const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+const statusMap = {
+  paid: ["已收款", "chip--paid"],
+  due: ["待收款", "chip--due"],
+  void: ["已取消", ""]
+};
+const statusChip = (s) => {
+  const [label, cls] = statusMap[s] || [s, ""];
+  return `<span class="chip ${cls}"><i></i>${label}</span>`;
+};
+
+function orderRow(o) {
+  return `<div class="orow" data-act="order" data-id="${o.id}" tabindex="0" role="button">
+    <span class="orow__id">${esc(o.time)} · ${esc(o.id)}</span>
+    <span class="orow__name"><b>${esc(o.customer)}</b><span>${esc(o.items)}</span></span>
+    <span class="orow__pay">${esc(o.pay)}</span>
+    <span class="orow__money">${money(o.total)}</span>
+    <span class="orow__status">${statusChip(o.status)}</span>
+  </div>`;
+}
+
+const cartLines = () => Object.keys(S.cart).filter((id) => S.cart[id] > 0).map((id) => {
+  const good = COUNTER_GOODS.find((g) => g.id === id);
+  return { ...good, qty: S.cart[id], sum: good.price * S.cart[id] };
+});
+const cartTotal = () => cartLines().reduce((sum, l) => sum + l.sum, 0);
+const cartCount = () => cartLines().reduce((sum, l) => sum + l.qty, 0);
+
+function setToast(text) {
+  S.toast = text;
+  render();
+  window.clearTimeout(setToast.timer);
+  setToast.timer = window.setTimeout(() => { S.toast = null; render(); }, 3800);
+}
+
+/* ============================================================
+   导航
+   ============================================================ */
+const NAV = [
+  { group: "店铺", items: [
+    { v: "overview", label: "总览", tag: "01" },
+    { v: "events", label: "活动", tag: "02" },
+    { v: "goods", label: "商品", tag: "03" },
+    { v: "orders", label: "订单", tag: "04" },
+    { v: "logs", label: "操作记录", tag: "05" },
+    { v: "paycodes", label: "收款方式", tag: "06" },
+    { v: "sales", label: "销售账号", tag: "07" },
+    { v: "shopinfo", label: "店铺资料", tag: "08" },
+    { v: "counter", label: "现场收银", tag: "POS" }
+  ] },
+  { group: "平台", items: [
+    { v: "pshops", label: "店铺管理", tag: "P1" },
+    { v: "pgoods", label: "商品审核", tag: "P2" }
+  ] }
+];
+
+/* ============================================================
+   视图
+   ============================================================ */
+function paneHead(title, sub, tools = "") {
+  return `<div class="pane__head">
+    <div>
+      <h1 class="pane__title">${esc(title)}</h1>
+      <p class="pane__sub">${sub}</p>
+    </div>
+    <div class="pane__tools">${tools}</div>
+  </div>`;
+}
+
+function renderToast() {
+  const el = $("#toast");
+  if (!S.toast) { el.hidden = true; el.innerHTML = ""; return; }
+  el.hidden = false;
+  el.innerHTML = `<span>${esc(S.toast)}</span><button type="button" data-act="dismiss">关闭</button>`;
+}
+
+function viewOverview() {
+  const todo = [
+    { chip: `<span class="chip chip--due"><i></i>待收款 2 笔</span>`, text: "Wen · RM 136.00 与 Ahmad · RM 132.00 尚未确认收款", btn: `<button class="btn btn--sm" data-go="orders">去处理</button>` },
+    { chip: `<span class="chip chip--live"><i></i>库存告急 3 个</span>`, text: "森林明信片剩 3、线装笔记本售罄、丝网版画剩 6", btn: `<button class="btn btn--sm" data-go="goods">看商品</button>` },
+    { chip: `<span class="chip"><i></i>待审核 1 个</span>`, text: "森林明信片 · 三张套 等待平台审核后才会出现在货架", btn: `<button class="btn btn--sm" data-go="pgoods">看审核</button>` }
+  ];
+
+  return paneHead("总览", `今日 ${esc(SHOP.booth)} · ${esc(SHOP.eventDates)}`, `
+      <button class="btn btn--ghost" data-act="reconcile">今日对账</button>
+      <button class="btn" data-go="counter">现场开单</button>`) + `
+    <div class="kpis">
+      ${KPIS.map((k) => `<div><span>${esc(k.label)}</span><b>${esc(k.value)}</b><small>${esc(k.note)}</small></div>`).join("")}
+    </div>
+
+    <div class="ticket">
+      <div class="ticket__body">
+        <div class="ticket__label">本场摊位 / 进行中</div>
+        <div class="ticket__name">${esc(SHOP.eventName)}</div>
+        <div class="ticket__meta"><span>摊位 ${esc(SHOP.booth)}</span><span>${esc(SHOP.eventDates)}</span><span>剩 3 天</span></div>
+      </div>
+      <div class="ticket__stub" aria-hidden="true">ADMIT ONE</div>
+    </div>
+
+    <div class="block">
+      <div class="block__head"><h2>待办</h2><span>${todo.length} 项</span></div>
+      <div class="rows">
+        ${todo.map((t) => `<div class="row row--todo">
+          <div class="row__names">${t.chip}<p>${esc(t.text)}</p></div>
+          <div class="row__act">${t.btn}</div>
+        </div>`).join("")}
+      </div>
+    </div>
+
+    <div class="block">
+      <div class="block__head"><h2>最近订单</h2><span><a href="#" data-go="orders">全部</a></span></div>
+      <div class="rows">
+        ${ORDERS.slice(0, 4).map(orderRow).join("")}
+      </div>
+    </div>
+    `;
+}
+
+function viewEvents() {
+  const label = { live: ["进行中", "chip--live"], scheduled: ["待开始", ""], ended: ["已结束", ""] };
+  return paneHead("活动", "每场活动独立库存与链接", `<button class="btn" data-act="newEvent">新建活动</button>`) + `
+    <div class="rows">
+      ${EVENTS.map((e) => {
+        const [text, cls] = label[e.status];
+        return `<div class="row row--event">
+          <span class="row__mono">${esc(e.dates)}</span>
+          <div class="row__names">
+            <span class="row__name">${esc(e.name)}</span>
+            <span class="row__mono">${esc(e.place)}</span>
+          </div>
+          <span class="chip ${cls}"><i></i>${text}</span>
+          <div class="row__act">
+            <button class="btn btn--sm btn--ghost" data-act="copyLink" data-id="${e.id}">复制链接</button>
+            <button class="btn btn--sm btn--ghost" data-act="editEvent" data-id="${e.id}">编辑</button>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>
+    <p class="hintline">每场活动有自己的顾客端地址：/c/${esc(SHOP.slug)}/events/&lt;活动 ID&gt;，展前发给粉丝即可。</p>
+    `;
+}
+
+function viewGoods() {
+  const filters = [["all", "全部"], ["on", "在售"], ["out", "售罄"], ["review", "待审"]];
+  const list = GOODS.filter((g) => {
+    if (S.goodsFilter === "on") return g.review === "上架" && g.stock > 0;
+    if (S.goodsFilter === "out") return g.stock === 0;
+    if (S.goodsFilter === "review") return g.review === "待审" || g.review === "未上架";
+    return true;
+  });
+
+  return paneHead("商品", `${GOODS.length} 个 SKU · 在售 ${GOODS.filter((g) => g.review === "上架" && g.stock > 0).length}`, `
+      <button class="btn btn--ghost" data-act="export">导出库存</button>
+      <button class="btn" data-act="newGood">新增商品</button>`) + `
+    <div class="filters">
+      ${filters.map(([v, label]) => `<button type="button" data-act="goodsFilter" data-v="${v}" aria-pressed="${S.goodsFilter === v}">${label}</button>`).join("")}
+    </div>
+    <div class="rows">
+      ${list.length ? list.map((g) => `<div class="row goods-row">
+        <span class="thumb" aria-hidden="true">${esc(g.mark)}</span>
+        <span class="cellname"><b>${esc(g.name)}</b><span>${esc(g.event)} · ${esc(g.id)}</span></span>
+        <span class="row__money">${money(g.price)}</span>
+        <span class="row__mono">${g.stock > 0 ? "余 " + g.stock : "售罄"}</span>
+        <span class="row__act">
+          <span class="chip ${g.review === "上架" ? "chip--paid" : ""}"><i></i>${esc(g.review)}</span>
+          <button class="btn btn--sm btn--ghost" data-act="editGood" data-id="${g.id}">编辑</button>
+        </span>
+      </div>`).join("") : `<p class="empty">这个筛选下没有商品。</p>`}
+    </div>
+    `;
+}
+
+function viewOrders() {
+  const filters = [["all", "全部"], ["paid", "已收款"], ["due", "待收款"], ["void", "已取消"]];
+  const list = ORDERS.filter((o) => S.orderFilter === "all" || o.status === S.orderFilter);
+  const sum = list.reduce((acc, o) => acc + (o.status === "void" ? 0 : o.total), 0);
+
+  return paneHead("订单", `${list.length} 单 · 合计 ${money(sum)}`, `
+      <button class="btn btn--ghost" data-act="exportOrders">导出</button>`) + `
+    <div class="filters">
+      ${filters.map(([v, label]) => `<button type="button" data-act="orderFilter" data-v="${v}" aria-pressed="${S.orderFilter === v}">${label}</button>`).join("")}
+    </div>
+    <div class="rows">
+      ${list.length ? list.map(orderRow).join("") : `<p class="empty">没有这个状态的订单。</p>`}
+    </div>
+    `;
+}
+
+function viewOrderDetail() {
+  const o = ORDERS.find((x) => x.id === S.orderId);
+  if (!o) return viewOrders();
+  return `<button class="back" type="button" data-go="orders">← 返回订单列表</button>` +
+    paneHead(o.id, `${esc(o.time)} · 顾客 ${esc(o.customer)}`, statusChip(o.status)) + `
+    <div class="checkout">
+      <div class="checkout__panel">
+        <div class="block__head"><h2>商品</h2><span>${esc(o.id)}</span></div>
+        <div class="rows">
+          <div class="row row--item"><span class="row__name">${esc(o.items)}</span><span class="row__money">${money(o.total)}</span></div>
+        </div>
+        <div class="checkout__total"><span class="row__mono">合计</span><b>${money(o.total)}</b></div>
+      </div>
+      <div>
+        <div class="checkout__panel">
+          <div class="block__head"><h2>收款</h2><span>${esc(o.pay)}</span></div>
+          <div class="kv"><span>收款方式</span><b>${esc(o.pay)}</b></div>
+          <div class="kv"><span>收款时间</span><b>${o.status === "paid" ? esc(o.time) : "—"}</b></div>
+          <div class="kv"><span>库存</span><b>${o.status === "void" ? "已回补" : "已扣减"}</b></div>
+        </div>
+        <div class="detail-actions">
+          ${o.status === "due" ? `<button class="btn" data-act="markPaid" data-id="${o.id}">标记已收款</button>` : ""}
+          ${o.status === "due" ? `<button class="btn btn--danger" data-act="voidOrder" data-id="${o.id}">取消订单</button>` : ""}
+          ${o.status !== "due" ? `<button class="btn btn--ghost" data-go="orders">返回列表</button>` : ""}
+        </div>
+      </div>
+    </div>
+    `;
+}
+
+function viewLogs() {
+  return paneHead("操作记录", "按时间倒序 · 仅本店", `<button class="btn btn--ghost" data-act="exportLogs">导出</button>`) + `
+    <div class="rows">
+      ${LOGS.map((l) => `<div class="row row--log">
+        <span class="row__mono">${esc(l.time)}</span>
+        <span class="row__name">${esc(l.who)} · ${esc(l.act)}</span>
+        <span class="row__mono">${esc(l.target)}</span>
+      </div>`).join("")}
+    </div>
+    `;
+}
+
+function viewPaycodes() {
+  return paneHead("收款方式", "顾客扫码付款时选择", `<button class="btn" data-act="newPaycode">新增收款码</button>`) + `
+    <div class="rows">
+      ${PAYCODES.map((p) => `<div class="row row--pay">
+        <span class="thumb">QR</span>
+        <span class="cellname"><b>${esc(p.name)}</b><span>${esc(p.code)}</span></span>
+        <span class="chip ${p.status === "启用" ? "chip--paid" : ""}"><i></i>${esc(p.status)}</span>
+        <span class="row__act">
+          <button class="btn btn--sm btn--ghost" data-act="togglePaycode" data-id="${p.id}">${p.status === "启用" ? "停用" : "启用"}</button>
+        </span>
+      </div>`).join("")}
+    </div>
+    <p class="hintline">收银台生成订单后，这里启用的收款码会按顺序出现在顾客端。</p>
+    `;
+}
+
+function viewSales() {
+  return paneHead("销售账号", "店员权限与开单记录", `<button class="btn" data-act="newSales">新增账号</button>`) + `
+    <div class="rows">
+      ${SALES.map((s) => `<div class="row row--sales">
+        <span class="cellname"><b>${esc(s.name)}</b><span>${esc(s.role)}</span></span>
+        <span class="row__mono">${s.orders} 单</span>
+        <span class="chip ${s.status === "启用" ? "chip--paid" : ""}"><i></i>${esc(s.status)}</span>
+        <span class="row__act"><button class="btn btn--sm btn--ghost" data-act="editSales" data-id="${s.id}">权限</button></span>
+      </div>`).join("")}
+    </div>
+    `;
+}
+
+function viewShopinfo() {
+  const ro = (label, value) => `<div class="kv"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;
+  return paneHead("店铺资料", "顾客端看到的信息，改完即生效", `<button class="btn" data-act="saveShop">保存修改</button>`) + `
+    <div class="checkout">
+      <div class="checkout__panel">
+        <div class="block__head"><h2>公开信息</h2><span>顾客可见</span></div>
+        <div class="frow"><span>店铺名称</span><input data-field="shop" data-key="name" type="text" value="${esc(SHOP.name)}" aria-label="店铺名称"></div>
+        <div class="frow"><span>店铺公告</span><textarea data-field="shop" data-key="notice" rows="2" aria-label="店铺公告">手工丝网印刷与原创插画周边，现场自取。</textarea></div>
+        <div class="frow"><span>客服联系</span><input data-field="shop" data-key="contact" type="text" value="IG @wanfeng.studio" aria-label="客服联系"></div>
+        <div class="frow"><span>本场摊位号</span><input data-field="shop" data-key="booth" type="text" value="${esc(SHOP.booth)}" aria-label="摊位号"></div>
+        <div class="frow"><span>默认货币</span><select data-field="shop" data-key="currency" aria-label="默认货币"><option>MYR · RM</option><option>CNY · ¥</option><option>SGD · S$</option></select></div>
+        <p class="hintline">店铺地址 /c/${esc(SHOP.slug)} 由平台分配，不可自行修改。</p>
+      </div>
+      <div>
+        <div class="checkout__panel">
+          <div class="block__head"><h2>展示状态</h2><span>预览</span></div>
+          ${ro("顾客端入口", "/c/" + SHOP.slug)}
+          ${ro("当前活动", SHOP.eventName)}
+          ${ro("在售商品", GOODS.filter((g) => g.review === "上架" && g.stock > 0).length + " 个")}
+          ${ro("最近更新", "今天 09:40")}
+        </div>
+        <div class="detail-actions">
+          <button class="btn btn--ghost wide" data-act="previewShop">打开店铺预览</button>
+        </div>
+      </div>
+    </div>
+    `;
+}
+
+function viewCounter() {
+  const lines = cartLines();
+  return paneHead("现场收银", "点商品加单，合计实时更新", `
+      <button class="btn btn--ghost" data-act="clearCart" ${lines.length ? "" : "disabled"}>清空</button>`) + `
+    <div class="counter">
+      <div class="counter__main">
+        <div class="counter-head">
+          <div class="field">
+            <label for="eventSel">活动场次</label>
+        <select id="eventSel" data-field="event">
+          <option value="e1" ${S.event === "e1" ? "selected" : ""}>吉隆坡同人展 · 11.12–11.15</option>
+          <option value="e2" ${S.event === "e2" ? "selected" : ""}>槟城插画祭 · 12.05–12.07</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="customerInput">顾客称呼（可空）</label>
+        <input id="customerInput" data-field="customer" type="text" value="${esc(S.customer)}" placeholder="例如 Wen">
+      </div>
+    </div>
+
+        <div class="block__head" style="margin-top:18px"><h2>选商品</h2><span>点一下加一件</span></div>
+        <div class="goods-grid">
+          ${COUNTER_GOODS.map((g) => `<button class="good" type="button" data-act="addGood" data-id="${g.id}" ${g.left <= 0 ? "disabled" : ""} aria-pressed="${S.cart[g.id] ? "true" : "false"}">
+            <span class="good__name">${esc(g.name)}</span>
+            <span class="good__meta"><span class="good__price">${money(g.price)}</span><span class="good__left">${g.left <= 0 ? "售罄" : "余 " + g.left}</span></span>
+          </button>`).join("")}
+        </div>
+
+        <div class="block__head" style="margin-top:24px"><h2>今天已开</h2><span>${ORDERS.length} 单 · ${money(ORDERS.filter((o) => o.status !== "void").reduce((t, o) => t + o.total, 0))}</span></div>
+        <div class="rows">
+          ${ORDERS.slice(0, 3).map(orderRow).join("")}
+        </div>
+      </div>
+
+      <aside class="sidebar-sum" data-open="${S.cartOpen}" aria-label="当前订单">
+        <div class="sum__label">当前订单</div>
+        <div class="cartbar">
+          <div>
+            <div class="cartbar__nums"><span class="cartbar__total">${money(cartTotal())}</span><span class="cartbar__count">${cartCount()} 件</span></div>
+            <span class="row__mono">${S.customer ? "顾客 " + esc(S.customer) : "未填顾客称呼"}</span>
+          </div>
+          <div class="cartbar__act">
+            <button class="btn btn--ghost cart-toggle" data-act="toggleCart">${S.cartOpen ? "收起" : "已选 " + cartCount()}</button>
+            <button class="btn" data-act="checkout" ${lines.length ? "" : "disabled"}>生成订单</button>
+          </div>
+        </div>
+        ${lines.length ? `<div class="cart-sheet">
+          ${lines.map((l) => `<div class="cart-line">
+            <span class="cart-line__name">${esc(l.name)}</span>
+            <span class="qty">
+              <button type="button" data-act="dec" data-id="${l.id}" aria-label="减少">−</button>
+              <span>${l.qty}</span>
+              <button type="button" data-act="inc" data-id="${l.id}" aria-label="增加">+</button>
+            </span>
+            <span class="cart-line__sum">${money(l.sum)}</span>
+          </div>`).join("")}
+        </div>` : `<p class="empty">还没有加商品。<br>点左侧商品即可开单。</p>`}
+      </aside>
+    </div>
+    `;
+}
+
+function viewCheckout() {
+  const lines = cartLines();
+  const pays = [["duitnow", "DuitNow QR", "顾客扫码，即时到账"], ["cash", "现金", "当面清点"], ["tng", "TNG eWallet", "转账截图留档"]];
+  return `<button class="back" type="button" data-go="counter">← 返回收银</button>` +
+    paneHead("确认收款", `${cartCount()} 件 · ${esc(S.customer || "未填称呼")}`, "") + `
+    <div class="checkout">
+      <div class="checkout__panel">
+        <div class="block__head"><h2>订单内容</h2><span>${esc(SHOP.eventDates)}</span></div>
+        <div class="rows">
+          ${lines.map((l) => `<div class="row row--item"><span class="row__name">${esc(l.name)} × ${l.qty}</span><span class="row__money">${money(l.sum)}</span></div>`).join("")}
+        </div>
+        <div class="checkout__total"><span class="row__mono">合计</span><b>${money(cartTotal())}</b></div>
+      </div>
+      <div>
+        <div class="checkout__panel">
+          <div class="block__head"><h2>收款方式</h2><span>选一个</span></div>
+          <div class="pay-options">
+            ${pays.map(([v, name, note]) => `<button type="button" class="pay-option" data-act="payMethod" data-v="${v}" aria-pressed="${S.pay === v}">
+              <i></i><span>${name}</span><em>${note}</em>
+            </button>`).join("")}
+          </div>
+        </div>
+        <div class="detail-actions">
+          <button class="btn wide" data-act="confirmPay">确认收款 ${money(cartTotal())}</button>
+          <button class="btn btn--ghost wide" data-act="holdOrder">挂单稍后收</button>
+        </div>
+      </div>
+    </div>
+    `;
+}
+
+function viewPlatformShops() {
+  return paneHead("店铺管理", "平台视角 · 全部摊位", `<button class="btn btn--ghost" data-act="exportShops">导出</button>`) + `
+    <div class="rows">
+      ${PLATFORM_SHOPS.map((s) => `<div class="row row--shop">
+        <span class="thumb">${esc(s.name.slice(0, 1))}</span>
+        <span class="cellname"><b>${esc(s.name)}</b><span>摊位 ${esc(s.booth)}</span></span>
+        <span class="row__mono">${s.goods} 商品 · ${s.orders} 单</span>
+        <span class="chip ${s.status === "正常" ? "chip--paid" : s.status === "待审" ? "chip--due" : ""}"><i></i>${esc(s.status)}</span>
+        <span class="row__act">
+          ${s.status === "待审" ? `<button class="btn btn--sm" data-act="approveShop" data-id="${s.id}">通过</button>` : ""}
+          <button class="btn btn--sm btn--ghost" data-act="openShop" data-id="${s.id}">进入</button>
+        </span>
+      </div>`).join("")}
+    </div>
+    <p class="hintline">平台只做准入与审核，不介入摊位日常经营；停用会同时隐藏顾客端入口。</p>
+    `;
+}
+
+function viewPlatformGoods() {
+  return paneHead("商品审核", `${REVIEWS.length} 个待审`, `<button class="btn btn--ghost" data-act="batchPass">全部通过</button>`) + `
+    ${REVIEWS.length ? `<div class="review-list">
+      ${REVIEWS.map((r) => `<div class="review">
+        <div class="review__main">
+          <span class="row__mono">${esc(r.shop)} · ${esc(r.time)}</span>
+          <b>${esc(r.good)}</b>
+          <span class="row__mono">${money(r.price)}</span>
+        </div>
+        <div class="row__act">
+          <button class="btn btn--sm" data-act="passReview" data-id="${r.id}">通过</button>
+          <button class="btn btn--sm btn--danger" data-act="rejectReview" data-id="${r.id}">驳回</button>
+        </div>
+      </div>`).join("")}
+    </div>` : `<p class="empty">审核队列已清空。</p>`}
+    `;
+}
+
+/* ============================================================
+   渲染
+   ============================================================ */
+const VIEWS = {
+  overview: viewOverview,
+  events: viewEvents,
+  goods: viewGoods,
+  orders: viewOrders,
+  order: viewOrderDetail,
+  logs: viewLogs,
+  paycodes: viewPaycodes,
+  sales: viewSales,
+  shopinfo: viewShopinfo,
+  counter: viewCounter,
+  checkout: viewCheckout,
+  pshops: viewPlatformShops,
+  pgoods: viewPlatformGoods
+};
+
+/* 支持用 ?device=phone&view=counter 直接打开某个状态，方便评审 */
+(function initFromQuery() {
+  const q = new URLSearchParams(location.search);
+  const d = q.get("device");
+  if (d === "phone" || d === "tablet" || d === "desktop") {
+    S.device = d;
+    $("#device").dataset.device = d;
+    document.querySelectorAll(".switcher button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.device === d)));
+    $("#readout").textContent = `宽度 ${{ phone: 390, tablet: 834, desktop: 1280 }[d]} · 容器查询`;
+  }
+  const v = q.get("view");
+  if (v && VIEWS[v]) S.view = v;
+  if (S.view === "order" && !S.orderId) S.orderId = ORDERS[0].id;
+})();
+
+function renderRail() {
+  const active = S.view === "order" ? "orders" : S.view === "checkout" ? "counter" : S.view;
+  $("#rail").innerHTML = `<div class="rail__head">
+      <div class="rail__shop">${esc(SHOP.name)}</div>
+      <div class="rail__meta">${esc(SHOP.slug)} · 摊位 ${esc(SHOP.booth)}</div>
+    </div>` +
+    NAV.map((g) => `<div class="rail__group">${esc(g.group)}</div>` +
+      g.items.map((it) => `<button type="button" class="rail__item" data-go="${it.v}" ${active === it.v ? 'aria-current="page"' : ""}>
+        <span>${esc(it.label)}</span><em>${esc(it.tag)}</em>
+      </button>`).join("")).join("");
+}
+
+function render() {
+  renderRail();
+  $("#pane").innerHTML = (VIEWS[S.view] || viewOverview)();
+  renderToast();
+}
+
+/* ============================================================
+   交互
+   ============================================================ */
+$("#pane").addEventListener("click", (event) => {
+  const target = event.target.closest("[data-act], [data-go]");
+  if (!target) return;
+  const go = target.dataset.go;
+  if (go) {
+    event.preventDefault();
+    S.view = go;
+    S.toast = null;
+    render();
+    return;
+  }
+  const act = target.dataset.act;
+  const id = target.dataset.id;
+
+  if (act === "goodsFilter") { S.goodsFilter = target.dataset.v; render(); }
+  else if (act === "orderFilter") { S.orderFilter = target.dataset.v; render(); }
+  else if (act === "order") { S.orderId = id; S.view = "order"; render(); }
+  else if (act === "dismiss") { S.toast = null; render(); }
+  else if (act === "addGood") {
+    const good = COUNTER_GOODS.find((g) => g.id === id);
+    const current = S.cart[id] || 0;
+    if (current >= good.left) { setToast(`${good.name} 只剩 ${good.left} 件`); return; }
+    S.cart[id] = current + 1;
+    render();
+  }
+  else if (act === "inc" || act === "dec") {
+    const good = COUNTER_GOODS.find((g) => g.id === id);
+    const next = (S.cart[id] || 0) + (act === "inc" ? 1 : -1);
+    if (next > good.left) { setToast(`${good.name} 只剩 ${good.left} 件`); return; }
+    if (next <= 0) delete S.cart[id];
+    else S.cart[id] = next;
+    render();
+  }
+  else if (act === "clearCart") { S.cart = {}; S.cartOpen = false; render(); }
+  else if (act === "toggleCart") { S.cartOpen = !S.cartOpen; render(); }
+  else if (act === "checkout") { if (cartCount()) { S.view = "checkout"; render(); } }
+  else if (act === "payMethod") { S.pay = target.dataset.v; render(); }
+  else if (act === "confirmPay") {
+    const lines = cartLines();
+    if (!lines.length) return;
+    const order = {
+      id: "ORD-" + SEQ++,
+      time: "now",
+      customer: S.customer || "现场顾客",
+      items: lines.map((l) => `${l.name} ×${l.qty}`).join(" · "),
+      total: cartTotal(),
+      status: "paid",
+      pay: S.pay === "cash" ? "现金" : S.pay === "tng" ? "TNG eWallet" : "DuitNow QR"
+    };
+    ORDERS = [order, ...ORDERS];
+    S.cart = {};
+    S.customer = "";
+    S.view = "counter";
+    setToast(`${order.id} 已收款 · ${money(order.total)}`);
+  }
+  else if (act === "holdOrder") {
+    if (!cartCount()) return;
+    S.view = "counter";
+    setToast("已挂单，购物车保留在本机");
+  }
+  else if (act === "markPaid") {
+    ORDERS = ORDERS.map((o) => o.id === id ? { ...o, status: "paid" } : o);
+    render();
+    setToast(`${id} 已标记收款`);
+  }
+  else if (act === "voidOrder") {
+    ORDERS = ORDERS.map((o) => o.id === id ? { ...o, status: "void" } : o);
+    render();
+    setToast(`${id} 已取消，库存已回补`);
+  }
+  else if (act === "passReview") {
+    REVIEWS = REVIEWS.filter((r) => r.id !== id);
+    render();
+    setToast("已通过，商品进入摊位货架");
+  }
+  else if (act === "rejectReview") {
+    REVIEWS = REVIEWS.filter((r) => r.id !== id);
+    render();
+    setToast("已驳回，摊位会收到修改提醒");
+  }
+  else if (act === "batchPass") {
+    const n = REVIEWS.length;
+    REVIEWS = [];
+    render();
+    setToast(`已通过 ${n} 个商品`);
+  }
+  else if (act === "approveShop") {
+    const shop = PLATFORM_SHOPS.find((s) => s.id === id);
+    shop.status = "正常";
+    render();
+    setToast(`${shop.name} 已通过审核`);
+  }
+  else if (act === "openShop") {
+    const shop = PLATFORM_SHOPS.find((s) => s.id === id);
+    setToast(`演示：进入 ${shop.name} 的店铺工作台`);
+  }
+  else if (act === "togglePaycode") {
+    const code = PAYCODES.find((p) => p.id === id);
+    code.status = code.status === "启用" ? "停用" : "启用";
+    render();
+    setToast(`${code.name} 已${code.status}`);
+  }
+  else if (act === "saveShop") { setToast("店铺资料已保存，顾客端即刻更新"); }
+  else if (act === "previewShop") { setToast("演示：在新标签打开顾客端店铺页"); }
+  else if (act === "reconcile") { setToast("演示：今日对账已生成，共 34 单 / RM 2 180.00"); }
+  else if (act === "export" || act === "exportOrders" || act === "exportLogs" || act === "exportShops") { setToast("演示：导出 CSV 已加入下载队列"); }
+  else { setToast("演示按钮：接入后会打开对应的表单或操作"); }
+});
+
+$("#pane").addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const row = event.target.closest("[data-act='order']");
+  if (!row) return;
+  event.preventDefault();
+  S.orderId = row.dataset.id;
+  S.view = "order";
+  render();
+});
+
+$("#pane").addEventListener("input", (event) => {
+  const el = event.target;
+  if (el.dataset.field === "customer") S.customer = el.value;
+  if (el.dataset.field === "shop") SHOP[el.dataset.key] = el.value;
+});
+
+$("#pane").addEventListener("change", (event) => {
+  if (event.target.dataset.field === "event") {
+    S.event = event.target.value;
+    setToast("已切换场次，商品与库存随之切换");
+  }
+});
+
+$("#toast").addEventListener("click", (event) => {
+  if (event.target.closest("[data-act='dismiss']")) { S.toast = null; renderToast(); }
+});
+
+document.querySelectorAll(".switcher button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    S.device = btn.dataset.device;
+    $("#device").dataset.device = S.device;
+    document.querySelectorAll(".switcher button").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+    const width = { phone: 390, tablet: 834, desktop: 1280 }[S.device];
+    $("#readout").textContent = `宽度 ${width} · 容器查询`;
+  });
+});
+
+render();
+
+</script>
+</body>
+</html>

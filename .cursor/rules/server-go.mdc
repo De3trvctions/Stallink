@@ -1,0 +1,14 @@
+---
+description: Stallink Go server 的包职责、数据访问与配置约定
+globs: server/**/*.go
+alwaysApply: false
+---
+
+# Go server 约定
+
+- Go 模块根目录是 `server/`；从仓库根运行命令时用 `make -C server <target>`。
+- 参考 HeronCloud 的职责分层，但按 Stallink 现有包逐步演进：`cmd/stallink` 负责启动和依赖组装；`internal/server` 负责 HTTP server、路由和中间件；`internal/service` 适配 HTTP 请求、身份与调用流程；`internal/data` 负责 SQL、事务、迁移和持久化；`internal/auth`、`internal/catalog` 放独立的领域规则。
+- 当前 `internal/service` 有历史 handler 直接访问数据。新增 SQL 放在 `data`；触及旧逻辑时，只把当前流程逐步移至 `data` 或明确的 use case / biz 包，不做无关的全量分层搬家。
+- 新增或扩展非平凡业务流程时保持 handler 薄。库存、订单状态与扣减等多步写入应由 `data` 层在事务中保持原子性。
+- 本地引导配置位于 `configs/local/`，远程运行参数通过 Nacos 提供；不要把密钥写入仓库。
+- Stallink 手动构造依赖；不要照搬 HeronCloud 的 Wire、Kratos 微服务拓扑或不需要的抽象。

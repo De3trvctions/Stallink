@@ -9,7 +9,7 @@ const statusLabel: Record<string, string> = {
   ended: "已结束",
 };
 
-export function GoodsGrid({ slug, goods }: { slug: string; goods: Good[] }) {
+export function GoodsGrid({ slug, goods, showEventName = true }: { slug: string; goods: Good[]; showEventName?: boolean }) {
   if (goods.length === 0) {
     return (
       <div className="empty-state">
@@ -45,7 +45,7 @@ export function GoodsGrid({ slug, goods }: { slug: string; goods: Good[] }) {
             </figure>
             <div className="product-card__info">
               <h3>{good.name}</h3>
-              <p>{good.eventName}</p>
+              {showEventName ? <p>{good.eventName}</p> : null}
               <div className="product-card__meta">
                 <span className="product-card__price">
                   {offers.length > 0 ? <>{formatMoney(good.currency, Math.round(lowestUnitRate(good.unitPriceMinor, offers)))}<em className="product-card__from">起</em></> : good.priceLabel}
