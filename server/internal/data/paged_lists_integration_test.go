@@ -67,11 +67,11 @@ func TestPagedListsSearchAndShopIsolation(t *testing.T) {
 		}
 	}
 	store := NewShopStore(pool)
-	p1, more, err := store.ListOrderPage(ctx, shop, "", "", 20, 0)
+	p1, more, err := store.ListOrderPage(ctx, shop, "", "", "", 20, 0)
 	if err != nil || len(p1) != 20 || !more {
 		t.Fatalf("page 1: %d %v %v", len(p1), more, err)
 	}
-	p2, more, err := store.ListOrderPage(ctx, shop, "", "", 20, 20)
+	p2, more, err := store.ListOrderPage(ctx, shop, "", "", "", 20, 20)
 	if err != nil || len(p2) != 20 || !more {
 		t.Fatalf("page 2: %d %v %v", len(p2), more, err)
 	}
@@ -84,19 +84,19 @@ func TestPagedListsSearchAndShopIsolation(t *testing.T) {
 			t.Fatalf("duplicate order %s", o.ID)
 		}
 	}
-	p3, more, err := store.ListOrderPage(ctx, shop, "", "", 20, 40)
+	p3, more, err := store.ListOrderPage(ctx, shop, "", "", "", 20, 40)
 	if err != nil || len(p3) != 5 || more {
 		t.Fatalf("page 3: %d %v %v", len(p3), more, err)
 	}
-	result, _, err := store.ListOrderPage(ctx, shop, event, "顾客12", 20, 0)
+	result, _, err := store.ListOrderPage(ctx, shop, event, "", "顾客12", 20, 0)
 	if err != nil || len(result) != 1 {
 		t.Fatalf("search: %d %v", len(result), err)
 	}
-	result, _, err = store.ListOrderPage(ctx, other, "", "", 20, 0)
+	result, _, err = store.ListOrderPage(ctx, other, "", "", "", 20, 0)
 	if err != nil || len(result) != 0 {
 		t.Fatalf("tenant isolation: %d %v", len(result), err)
 	}
-	result, _, err = store.ListOrderPage(ctx, shop, "", "%", 20, 0)
+	result, _, err = store.ListOrderPage(ctx, shop, "", "", "%", 20, 0)
 	if err != nil || len(result) != 0 {
 		t.Fatalf("literal search: %d %v", len(result), err)
 	}

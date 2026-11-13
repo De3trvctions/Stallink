@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/De3trvctions/Stallink/internal/auth"
@@ -91,6 +92,35 @@ func (a *API) AdminPayCodes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, payCodesJSON(codes))
 }
 
+func (a *API) CreateCashPayCode(w http.ResponseWriter, r *http.Request) {
+	account, ok := a.shopAdmin(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Name      string `json:"name"`
+		IsDefault bool   `json:"isDefault"`
+	}
+	if err := readJSON(r, &body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_json")
+		return
+	}
+	name := strings.TrimSpace(body.Name)
+	if name == "" {
+		name = "现金"
+	}
+	if utf8.RuneCountInString(name) > 40 {
+		writeErr(w, http.StatusBadRequest, "invalid_name")
+		return
+	}
+	id, err := a.DB.CreateCashPayCode(r.Context(), *account.ShopID, name, body.IsDefault)
+	if err != nil {
+		writeDataErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "name": name, "kind": "cash", "isDefault": body.IsDefault, "imageURL": ""})
+}
+
 func (a *API) CreatePayCode(w http.ResponseWriter, r *http.Request) {
 	account, ok := a.shopAdmin(w, r)
 	if !ok {
@@ -155,6 +185,17 @@ func (a *API) UpdatePayCode(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+func orderDateFilter(value string) (string, bool) {
+	if value == "" {
+		return "", true
+	}
+	parsed, err := time.ParseInLocation("2006-01-02", value, reportLocation)
+	if err != nil || parsed.After(time.Now().In(reportLocation)) {
+		return "", false
+	}
+	return parsed.Format("2006-01-02"), true
+}
+
 func (a *API) AdminOrders(w http.ResponseWriter, r *http.Request) {
 	account, ok := a.shopAdmin(w, r)
 	if !ok {
@@ -165,7 +206,12 @@ func (a *API) AdminOrders(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_pagination")
 		return
 	}
-	orders, more, err := a.DB.ListOrderPage(r.Context(), *account.ShopID, "", search, limit, (page-1)*limit)
+	date, validDate := orderDateFilter(r.URL.Query().Get("date"))
+	if !validDate {
+		writeErr(w, http.StatusBadRequest, "invalid_date")
+		return
+	}
+	orders, more, err := a.DB.ListOrderPage(r.Context(), *account.ShopID, "", date, search, limit, (page-1)*limit)
 	if err != nil {
 		logging.ErrorContext(r.Context(), "admin orders", zap.Error(err))
 		writeErr(w, http.StatusInternalServerError, "internal")

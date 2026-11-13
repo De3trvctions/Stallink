@@ -92,6 +92,7 @@ var schema = []string{
 		shop_id bigint NOT NULL REFERENCES shops (id),
 		name text NOT NULL CHECK (char_length(name) BETWEEN 1 AND 40),
 		image_path text NOT NULL,
+		kind text NOT NULL DEFAULT 'qr' CHECK (kind IN ('qr', 'cash')),
 		is_default boolean NOT NULL DEFAULT false,
 		is_enabled boolean NOT NULL DEFAULT true
 	)`,

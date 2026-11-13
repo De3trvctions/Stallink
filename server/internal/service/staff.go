@@ -526,7 +526,7 @@ func (a *API) StaffOrders(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_pagination")
 		return
 	}
-	orders, more, err := a.DB.ListOrderPage(r.Context(), *account.ShopID, r.URL.Query().Get("eventId"), search, limit, (page-1)*limit)
+	orders, more, err := a.DB.ListOrderPage(r.Context(), *account.ShopID, r.URL.Query().Get("eventId"), "", search, limit, (page-1)*limit)
 	if err != nil {
 		logging.ErrorContext(r.Context(), "orders", zap.Error(err))
 		writeErr(w, http.StatusInternalServerError, "internal")
@@ -741,7 +741,7 @@ func orderJSON(order data.Order) map[string]any {
 		"id": order.ID, "number": order.Number, "status": order.Status, "boothName": order.BoothName,
 		"currency": order.Currency, "priceLabel": priceLabel(order.Currency, order.TotalMinor),
 		"totalMinor": order.TotalMinor, "payCodeName": order.PayCodeName,
-		"stateVersion": order.StateVersion, "reservationExpiresAt": order.ReservationExpiresAt,
+		"stateVersion": order.StateVersion, "createdAt": order.CreatedAt, "reservationExpiresAt": order.ReservationExpiresAt,
 		"openedByLogin": order.OpenedByLogin, "openedByRole": order.OpenedByRole,
 		"paidByLogin": paidBy, "paidByRole": order.PaidByRole,
 		"eventId": order.EventID, "eventName": order.EventName, "lines": lines, "pricingGroups": order.PricingGroups,
@@ -769,9 +769,13 @@ func ordersJSON(orders []data.Order) []any {
 func payCodesJSON(codes []data.PayCode) []any {
 	out := make([]any, 0, len(codes))
 	for _, code := range codes {
+		imageURL := ""
+		if code.Kind == "qr" {
+			imageURL = "/api/files/pay-codes/" + code.ID.String()
+		}
 		out = append(out, map[string]any{
-			"id": code.ID, "name": code.Name, "isDefault": code.IsDefault, "isEnabled": code.IsEnabled,
-			"imageURL": "/api/files/pay-codes/" + code.ID.String(),
+			"id": code.ID, "name": code.Name, "kind": code.Kind, "isDefault": code.IsDefault, "isEnabled": code.IsEnabled,
+			"imageURL": imageURL,
 		})
 	}
 	return out

@@ -42,6 +42,7 @@ type Order struct {
 	EventName            string
 	TotalMinor           int64
 	StateVersion         int64
+	CreatedAt            time.Time
 	ReservationExpiresAt *time.Time
 	Lines                []OrderLine
 	PricingGroups        []catalog.PricingGroup
@@ -50,6 +51,7 @@ type Order struct {
 type PayCode struct {
 	ID        ID
 	Name      string
+	Kind      string
 	IsDefault bool
 	IsEnabled bool
 }
@@ -535,7 +537,7 @@ func getOrderTx(ctx context.Context, tx pgx.Tx, shopID, orderID ID) (Order, erro
 	err := tx.QueryRow(ctx, `
 		SELECT o.id::text, o.number, o.status, o.booth_name, o.currency, o.pay_code_name,
 			opener.login_name, o.opened_by_role, COALESCE(payer.login_name, ''), COALESCE(payer.role, ''),
-			o.event_id::text, e.name, o.total_minor, o.state_version, o.reservation_expires_at
+			o.event_id::text, e.name, o.total_minor, o.state_version, o.created_at, o.reservation_expires_at
 		FROM orders o
 		JOIN users opener ON opener.id = o.opened_by
 		LEFT JOIN users payer ON payer.id = o.paid_by
@@ -543,7 +545,7 @@ func getOrderTx(ctx context.Context, tx pgx.Tx, shopID, orderID ID) (Order, erro
 		WHERE o.id = $1 AND o.shop_id = $2`, orderID, shopID).
 		Scan(&order.ID, &order.Number, &order.Status, &order.BoothName, &order.Currency, &order.PayCodeName,
 			&order.OpenedByLogin, &order.OpenedByRole, &order.PaidByLogin, &order.PaidByRole,
-			&order.EventID, &order.EventName, &order.TotalMinor, &order.StateVersion, &order.ReservationExpiresAt)
+			&order.EventID, &order.EventName, &order.TotalMinor, &order.StateVersion, &order.CreatedAt, &order.ReservationExpiresAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Order{}, ErrNotFound
 	}
@@ -593,7 +595,7 @@ func (s *ShopStore) ListOrders(ctx context.Context, shopID ID, eventID string) (
 	rows, err := s.pool.Query(ctx, `
 		SELECT o.id::text, o.number, o.status, o.booth_name, o.currency, o.pay_code_name,
 			opener.login_name, o.opened_by_role, COALESCE(payer.login_name, ''), COALESCE(payer.role, ''),
-			o.event_id::text, e.name, o.total_minor, o.state_version, o.reservation_expires_at
+			o.event_id::text, e.name, o.total_minor, o.state_version, o.created_at, o.reservation_expires_at
 		FROM orders o
 		JOIN users opener ON opener.id = o.opened_by
 		LEFT JOIN users payer ON payer.id = o.paid_by
@@ -607,7 +609,7 @@ func (s *ShopStore) ListOrders(ctx context.Context, shopID ID, eventID string) (
 	var orders []Order
 	for rows.Next() {
 		var order Order
-		if err := rows.Scan(&order.ID, &order.Number, &order.Status, &order.BoothName, &order.Currency, &order.PayCodeName, &order.OpenedByLogin, &order.OpenedByRole, &order.PaidByLogin, &order.PaidByRole, &order.EventID, &order.EventName, &order.TotalMinor, &order.StateVersion, &order.ReservationExpiresAt); err != nil {
+		if err := rows.Scan(&order.ID, &order.Number, &order.Status, &order.BoothName, &order.Currency, &order.PayCodeName, &order.OpenedByLogin, &order.OpenedByRole, &order.PaidByLogin, &order.PaidByRole, &order.EventID, &order.EventName, &order.TotalMinor, &order.StateVersion, &order.CreatedAt, &order.ReservationExpiresAt); err != nil {
 			return nil, fmt.Errorf("scan order: %w", err)
 		}
 		orders = append(orders, order)
@@ -722,6 +724,52 @@ func (s *ShopStore) CreatePayCode(ctx context.Context, shopID ID, name, path str
 	return id, nil
 }
 
+// CreateCashPayCode inserts the shop's single cash method. A repeat call returns
+// the existing row. The shop row lock stops two requests from inserting together.
+func (s *ShopStore) CreateCashPayCode(ctx context.Context, shopID ID, name string, isDefault bool) (ID, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin cash pay code: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var locked ID
+	err = tx.QueryRow(ctx, `SELECT id::text FROM shops WHERE id = $1 FOR UPDATE`, shopID).Scan(&locked)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("lock shop for cash pay code: %w", err)
+	}
+	var existing ID
+	err = tx.QueryRow(ctx, `
+		SELECT id::text FROM pay_codes WHERE shop_id = $1 AND kind = 'cash' ORDER BY id LIMIT 1`, shopID).Scan(&existing)
+	if err == nil {
+		if err := tx.Commit(ctx); err != nil {
+			return 0, fmt.Errorf("commit cash pay code: %w", err)
+		}
+		return existing, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("read cash pay code: %w", err)
+	}
+	if isDefault {
+		if _, err := tx.Exec(ctx, `UPDATE pay_codes SET is_default = false WHERE shop_id = $1`, shopID); err != nil {
+			return 0, fmt.Errorf("clear default pay code: %w", err)
+		}
+	}
+	var id ID
+	err = tx.QueryRow(ctx, `
+		INSERT INTO pay_codes (shop_id, name, image_path, kind, is_default, is_enabled)
+		VALUES ($1,$2,'','cash',$3,true) RETURNING id::text`, shopID, name, isDefault).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("insert cash pay code: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit cash pay code: %w", err)
+	}
+	return id, nil
+}
+
 func (s *ShopStore) UpdatePayCode(ctx context.Context, shopID, id ID, name string, enabled, isDefault bool) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -750,7 +798,7 @@ func (s *ShopStore) UpdatePayCode(ctx context.Context, shopID, id ID, name strin
 
 func (s *ShopStore) ListPayCodes(ctx context.Context, shopID ID, enabledOnly bool) ([]PayCode, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id::text, name, is_default, is_enabled FROM pay_codes
+		SELECT id::text, name, kind, is_default, is_enabled FROM pay_codes
 		WHERE shop_id = $1 AND (NOT $2 OR is_enabled)
 		ORDER BY is_default DESC, name`, shopID, enabledOnly)
 	if err != nil {
@@ -760,7 +808,7 @@ func (s *ShopStore) ListPayCodes(ctx context.Context, shopID ID, enabledOnly boo
 	var out []PayCode
 	for rows.Next() {
 		var code PayCode
-		if err := rows.Scan(&code.ID, &code.Name, &code.IsDefault, &code.IsEnabled); err != nil {
+		if err := rows.Scan(&code.ID, &code.Name, &code.Kind, &code.IsDefault, &code.IsEnabled); err != nil {
 			return nil, fmt.Errorf("scan pay code: %w", err)
 		}
 		out = append(out, code)

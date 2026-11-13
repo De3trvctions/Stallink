@@ -38,7 +38,11 @@ export function usePagedList<T>(endpoint: string, enabled = true) {
 export function ListControls({ value, onChange, page, setPage, hasMore, loading, placeholder }: {
   value: string; onChange: (value: string) => void; page: number; setPage: (page: number) => void; hasMore: boolean; loading: boolean; placeholder: string;
 }) {
-  return <div className="paged-search"><label className="field"><span>搜索</span><input type="search" maxLength={100} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} /></label>
+  return <div className="paged-search">
+    <div className="paged-search__field">
+      <svg className="paged-search__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="11" cy="11" r="6.5" /><path d="M16 16l4.5 4.5" /></svg>
+      <input type="search" aria-label="搜索" maxLength={100} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+    </div>
     <nav className="paged-nav" aria-label="分页"><button type="button" onClick={() => setPage(page - 1)} disabled={page <= 1 || loading}>上一页</button><span aria-live="polite">第 {page} 页</span><button type="button" onClick={() => setPage(page + 1)} disabled={!hasMore || loading}>下一页</button></nav>
   </div>;
 }

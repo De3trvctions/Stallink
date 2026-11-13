@@ -16,15 +16,26 @@ type Order = {
   currency: string;
   priceLabel: string;
   payCodeName?: string;
+  createdAt?: string | null;
   reservationExpiresAt?: string | null;
   lines: { goodName: string; qty: number; unitPriceMinor: number; lineTotalMinor: number; discountMinor: number; priceLabel: string }[];
   pricingGroups: { kind: string; name: string; applications: number; totalMinor: number }[];
 };
 
 const statusLabel: Record<string, string> = { pending: "待付款", paid: "已收款", fulfilled: "已交付", cancelled: "已取消", expired: "预留已过期", refund_required: "待退款处理" };
+const myDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuala_Lumpur", year: "numeric", month: "2-digit", day: "2-digit" });
+const myTime = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kuala_Lumpur", hour: "2-digit", minute: "2-digit", hour12: false });
+function formatOrderDate(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${myDate.format(date)} ${myTime.format(date)}`;
+}
 
 export default function AdminOrdersPage() {
-  const list = usePagedList<Order>("/api/admin/orders");
+  const today = myDate.format(new Date());
+  const [date, setDate] = useState("");
+  const list = usePagedList<Order>(`/api/admin/orders${date ? `?date=${date}` : ""}`);
   const orders = list.items;
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [detailError, setDetailError] = useState("");
@@ -68,14 +79,19 @@ export default function AdminOrdersPage() {
     <main>
       <p className="eyebrow">现场流水</p>
       <h1>订单记录</h1>
-      <p>按订单号、活动、开单人或顾客称呼查找；点开一行看商品、优惠与收款明细。</p>
+      <p>按日期、订单号、活动、开单人或顾客称呼查找；点开一行看商品、优惠与收款明细。</p>
+      <div className="order-date-filter">
+        <label className="field"><span>按日期（吉隆坡）</span><input type="date" max={today} value={date} onChange={(event) => { setDate(event.target.value); list.setPage(1); }} /></label>
+        <button type="button" className="button button--outline" onClick={() => { setDate(today); list.setPage(1); }} disabled={date === today}>今天</button>
+        <button type="button" className="button button--outline" onClick={() => { setDate(""); list.setPage(1); }} disabled={!date}>查看全部</button>
+      </div>
       <ListControls value={list.input} onChange={list.setInput} page={list.page} setPage={list.setPage} hasMore={list.hasMore} loading={list.loading} placeholder="订单号、活动、开单人或顾客称呼" />
       {list.error ? <p className="form-message form-message--error" role="alert">{list.error} <button type="button" onClick={list.refresh}>重试</button></p> : null}
       {message ? <p className="form-message form-message--error" role="status">{message}</p> : null}
-      {list.loading ? <p className="order-empty" role="status">正在加载订单...</p> : list.error ? null : orders.length === 0 ? <p className="order-empty">{list.input ? "没有找到匹配的订单。" : "暂无订单。"}</p> : <ul className="order-list">
+      {list.loading ? <p className="order-empty" role="status">正在加载订单...</p> : list.error ? null : orders.length === 0 ? <p className="order-empty">{list.input ? "没有找到匹配的订单。" : date ? `${date} 没有订单。` : "暂无订单。"}</p> : <ul className="order-list">
         {orders.map((order) => <li key={order.id}>
           <button type="button" className="order-list__row" onClick={() => { setSelectedOrder(null); setDetailError(""); setSelectedId(order.id); }}>
-            <span><strong>{order.number}</strong><small>{order.eventName} · {order.openedByLogin}</small></span>
+            <span><strong>{order.number}</strong>{order.createdAt ? <small className="order-list__when">{formatOrderDate(order.createdAt)}</small> : null}<small>{order.eventName} · {order.openedByLogin}</small></span>
             <span className="order-list__meta"><strong>{order.priceLabel}</strong><small>{statusLabel[order.status] ?? order.status}　›</small></span>
           </button>
         </li>)}
@@ -84,6 +100,7 @@ export default function AdminOrdersPage() {
         {!selectedOrder ? <div className="order-dialog__content" role="status"><button type="button" onClick={() => setSelectedId(null)}>关闭</button><p>{detailError || "正在加载订单详情..."}</p></div> : <div className="order-dialog__content">
           <header className="order-dialog__header"><div><p className="eyebrow">订单详情</p><h2 id="order-dialog-title">{selectedOrder.number}</h2></div><button type="button" aria-label="关闭订单详情" onClick={() => setSelectedId(null)}>×</button></header>
           <p>{selectedOrder.eventName} · {statusLabel[selectedOrder.status] ?? selectedOrder.status}</p>
+          {selectedOrder.createdAt ? <p className="order-dialog__sub">下单时间：{formatOrderDate(selectedOrder.createdAt)}</p> : null}
           <p className="order-dialog__sub">开单人：{selectedOrder.openedByLogin}（{selectedOrder.openedByRole}）</p>
           {selectedOrder.reservationExpiresAt ? <p className="order-dialog__sub">库存预留至 {new Date(selectedOrder.reservationExpiresAt).toLocaleString("zh-CN")}</p> : null}
           {selectedOrder.payCodeName ? <p className="order-dialog__sub">收款方式：{selectedOrder.payCodeName}</p> : null}

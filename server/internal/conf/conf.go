@@ -45,6 +45,7 @@ type Bootstrap struct {
 	Catalog Catalog        `json:"catalog"`
 	Pricing Pricing        `json:"pricing"`
 	Redis   Redis          `json:"redis"`
+	Reports Reports        `json:"reports"`
 	Logging logging.Config `json:"logging"`
 }
 
@@ -61,6 +62,10 @@ type Catalog struct {
 }
 
 // Redis stores platform-level feature flags such as the auto approval switch.
+type Reports struct {
+	DailyAt string `json:"daily_at"`
+}
+
 type Redis struct {
 	Addr     string `json:"addr"`
 	Password string `json:"password"`

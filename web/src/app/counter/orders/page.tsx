@@ -6,6 +6,7 @@ import { WorkspaceShell } from "@/components/workspace-shell";
 import { pendingOrderCommand, sendOrderCommand } from "@/lib/order-command";
 import { formatMoney } from "@/lib/pricing";
 import { ListControls, usePagedList } from "@/components/paged-list";
+import SelectMenu from "@/components/select-menu";
 
 type EventRow = { id: string; name: string };
 type PayCode = { id: string; name: string; isDefault: boolean };
@@ -132,9 +133,7 @@ export default function EventOrdersPage() {
       <p>这一场开出的单子都在这里；点开一行核对商品、金额与收款方式。</p>
       <label className="field event-selector" htmlFor="event-order-filter">
         <span>活动场次</span>
-        <select id="event-order-filter" className="mt-2 w-full border border-stone-300 bg-white px-3 py-3" value={eventId} onChange={(e) => { setEventId(e.target.value); list.reset(); setSelectedId(null); }}>
-          {events.map((event) => <option key={event.id} value={event.id}>{event.name}</option>)}
-        </select>
+        <SelectMenu id="event-order-filter" value={eventId} placeholder="选择活动" options={events.map((event) => ({ value: event.id, label: event.name }))} onChange={(value) => { setEventId(value); list.reset(); setSelectedId(null); }} />
       </label>
       <ListControls value={list.input} onChange={list.setInput} page={list.page} setPage={list.setPage} hasMore={list.hasMore} loading={list.loading} placeholder="订单号、开单人或顾客称呼" />
       {message ? <p className="form-message form-message--error" role="status">{message}</p> : null}
@@ -155,9 +154,7 @@ export default function EventOrdersPage() {
             <div className="flex flex-wrap gap-2">
               {selectedOrder.status === "pending" && !selectedOrder.reservationExpiresAt ? <button className="h-10 border px-3" disabled={Boolean(actingOrder)} onClick={() => reserve(selectedOrder.id)}>{actingOrder === selectedOrder.id ? "处理中…" : "预留库存"}</button> : null}
               {selectedOrder.status === "pending" ? <>
-                <select aria-label={`订单 ${selectedOrder.number} 收款方式`} value={pendingOrderCommand<{ payCodeId: string }>(`counter-order:${selectedOrder.id}:pay`)?.body.payCodeId ?? selectedPayCodeId} disabled={Boolean(actingOrder) || Boolean(pendingOrderCommand(`counter-order:${selectedOrder.id}:pay`))} onChange={(change) => setSelectedPayCodeId(change.target.value)}>
-                  {payCodes.length === 0 ? <option value="">没有收款方式</option> : payCodes.map((code) => <option key={code.id} value={code.id}>{code.name}{code.isDefault ? " · 默认" : ""}</option>)}
-                </select>
+                <SelectMenu compact ariaLabel={`订单 ${selectedOrder.number} 收款方式`} value={pendingOrderCommand<{ payCodeId: string }>(`counter-order:${selectedOrder.id}:pay`)?.body.payCodeId ?? selectedPayCodeId} placeholder="没有收款方式" disabled={Boolean(actingOrder) || Boolean(pendingOrderCommand(`counter-order:${selectedOrder.id}:pay`))} options={payCodes.map((code) => ({ value: code.id, label: `${code.name}${code.isDefault ? " · 默认" : ""}` }))} onChange={setSelectedPayCodeId} />
                 <button className="h-10 border px-3" disabled={Boolean(actingOrder) || payCodes.length === 0} onClick={() => act(selectedOrder.id, "pay", pendingOrderCommand<{ payCodeId: string }>(`counter-order:${selectedOrder.id}:pay`)?.body.payCodeId ?? selectedPayCodeId)}>{actingOrder === selectedOrder.id ? "处理中…" : "确认收款"}</button>
               </> : null}
               {selectedOrder.status === "paid" ? <button className="h-10 border px-3" disabled={Boolean(actingOrder)} onClick={() => act(selectedOrder.id, "fulfill")}>{actingOrder === selectedOrder.id ? "处理中…" : "交付"}</button> : null}

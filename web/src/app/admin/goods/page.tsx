@@ -5,6 +5,7 @@ import Image from "next/image";
 import { browserJSON } from "@/lib/api";
 import { formatMoney, type PriceTier } from "@/lib/pricing";
 import ModalDialog from "@/components/modal-dialog";
+import SelectMenu from "@/components/select-menu";
 
 type EventRow = {
   id: string; name: string; currency: string; startsOn?: string; endsOn?: string;
@@ -709,11 +710,11 @@ export default function GoodsPage() {
         closeDisabled={pending}
       >
           <form className="goods-form goods-form--modal" onSubmit={submit}>
-        <label className="field"><span>{editingBundle ? "编辑类型" : "添加类型"}</span><select disabled={Boolean(editingBundle)} value={itemKind} onChange={(event) => {
-          const kind = event.target.value as "good" | "bundle";
+        <label className="field"><span>{editingBundle ? "编辑类型" : "添加类型"}</span><SelectMenu disabled={Boolean(editingBundle)} value={itemKind} options={[{ value: "good", label: "单个商品" }, { value: "bundle", label: "固定套餐（包含多个商品）" }]} onChange={(value) => {
+          const kind = value as "good" | "bundle";
           setItemKind(kind);
           if (kind === "bundle") setCreateEvent(false);
-        }}><option value="good">单个商品</option><option value="bundle">固定套餐（包含多个商品）</option></select></label>
+        }} /></label>
         {itemKind === "good" ? <label className="check-field"><input type="checkbox" checked={createEvent} onChange={(event) => setCreateEvent(event.target.checked)} /><span>同时新建一场活动</span></label> : (
           <p className="form-hint">套餐先选择同一活动中已创建的商品。每件商品仍可单独出售，收银时服务端会自动找出最低组合价。</p>
         )}
@@ -731,16 +732,13 @@ export default function GoodsPage() {
             </div>
             <div className="goods-form__dates">
               <label className="field" htmlFor="goods-event-booth"><span>摊位号</span><input id="goods-event-booth" value={fresh.boothNumber} onChange={(event) => setFresh({ ...fresh, boothNumber: event.target.value })} placeholder="例如：A-12" /></label>
-              <label className="field" htmlFor="goods-event-currency"><span>币种</span><select id="goods-event-currency" value={fresh.currency} onChange={(event) => setFresh({ ...fresh, currency: event.target.value })}><option>MYR</option><option>SGD</option><option>CNY</option></select></label>
+              <label className="field" htmlFor="goods-event-currency"><span>币种</span><SelectMenu id="goods-event-currency" value={fresh.currency} options={[{ value: "MYR", label: "MYR" }, { value: "SGD", label: "SGD" }, { value: "CNY", label: "CNY" }]} onChange={(currency) => setFresh({ ...fresh, currency })} /></label>
             </div>
           </section>
         ) : (
           <div className="goods-event-picker">
             <label className="field" htmlFor="goods-event-select"><span>所属活动</span>
-              <select id="goods-event-select" value={eventId} required disabled={Boolean(editingBundle)} onChange={(change) => { setEventId(change.target.value); if (!editingBundle) setComponentQuantities({}); }}>
-                <option value="">选择活动</option>
-                {events.map((event) => <option key={event.id} value={event.id}>{event.name} · {eventStatusLabel(event.status)}</option>)}
-              </select>
+              <SelectMenu id="goods-event-select" value={eventId} required disabled={Boolean(editingBundle)} placeholder="选择活动" options={events.map((event) => ({ value: event.id, label: `${event.name} · ${eventStatusLabel(event.status)}` }))} onChange={(value) => { setEventId(value); if (!editingBundle) setComponentQuantities({}); }} />
             </label>
             {eventsLoading && events.length === 0 ? <p role="status">正在读取活动…</p> : null}
             {eventsError ? <p role="alert">活动列表暂时无法读取。<button type="button" onClick={() => void loadAllEvents()}>重试</button></p> : null}
@@ -1072,7 +1070,7 @@ export default function GoodsPage() {
                         </section>
 
                         <section className="listing-admin-section listing-admin-section--alloc"><h4>复制到其他活动</h4>
-                          <label className="field"><span>目标活动</span><select value={copyEvent} onChange={(change) => setCopyEvent(change.target.value)}><option value="">选择活动</option>{events.filter((event) => event.id !== editingItem.eventId).map((event) => <option value={event.id} key={event.id}>{event.name}</option>)}</select></label>
+                          <label className="field"><span>目标活动</span><SelectMenu value={copyEvent} placeholder="选择活动" options={events.filter((event) => event.id !== editingItem.eventId).map((event) => ({ value: event.id, label: event.name }))} onChange={setCopyEvent} /></label>
                           <label className="field"><span className="field-label">目标活动分配数量<em className={`field-limit${editingCopyOver ? " is-over" : ""}`}>{editingCopyOver ? "超出" : "上限"} {editingCopyOver ? Math.round(Number(copyQty)) - editingStock.remain : editingStock.remain}</em></span><input type="number" min="0" step="1" max={editingStock.remain} value={copyQty} onChange={(change) => {
                             const raw = change.target.value;
                             setCopyQty(raw === "" ? "" : String(Math.min(Number(raw), editingStock.remain)));

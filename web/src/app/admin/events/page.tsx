@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { browserJSON } from "@/lib/api";
+import SelectMenu from "@/components/select-menu";
 
 const empty = { name: "", startsOn: "", endsOn: "", city: "", venue: "", boothNumber: "", currency: "MYR", status: "scheduled" };
 const statusLabel: Record<string, string> = { scheduled: "即将开始", live: "进行中", ended: "已结束" };
@@ -128,12 +129,10 @@ export default function EventsPage() {
         </div>
         <div className="goods-form__dates">
           <label className="field" htmlFor="event-booth"><span>摊位号</span><input id="event-booth" value={form.boothNumber} onChange={(event) => setForm({ ...form, boothNumber: event.target.value })} placeholder="例如：A-12" /></label>
-          <label className="field" htmlFor="event-currency"><span>结算币种</span><select id="event-currency" value={form.currency} onChange={(event) => setForm({ ...form, currency: event.target.value })}><option>MYR</option><option>SGD</option><option>CNY</option></select></label>
+          <label className="field" htmlFor="event-currency"><span>结算币种</span><SelectMenu id="event-currency" value={form.currency} options={[{ value: "MYR", label: "MYR" }, { value: "SGD", label: "SGD" }, { value: "CNY", label: "CNY" }]} onChange={(currency) => setForm({ ...form, currency })} /></label>
         </div>
         <label className="field" htmlFor="event-status"><span>活动状态</span>
-          <select id="event-status" value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>
-            <option value="scheduled">即将开始</option><option value="live">进行中</option><option value="ended">已结束</option>
-          </select>
+          <SelectMenu id="event-status" value={form.status} options={[{ value: "scheduled", label: "即将开始" }, { value: "live", label: "进行中" }, { value: "ended", label: "已结束" }]} onChange={(status) => setForm({ ...form, status })} />
         </label>
         {message ? <p className={`form-message${message.includes("没有") || message.includes("无法") || message.includes("检查") ? " form-message--error" : " form-message--success"}`} role="status">{message}</p> : null}
         <div className="event-form-actions">

@@ -250,6 +250,19 @@ func run(configPath string) error {
 		defer workers.Done()
 		runBlobSweeper(sweepCtx, store, bc.Storage.Dir)
 	}()
+	dailyAt := bc.Reports.DailyAt
+	if dailyAt == "" {
+		dailyAt = "00:10"
+	}
+	if _, err := time.Parse("15:04", dailyAt); err != nil {
+		return fmt.Errorf("reports.daily_at must be HH:MM")
+	}
+	reportLocation := time.FixedZone("MYT", 8*60*60)
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		runDailyReportScheduler(sweepCtx, store, dailyAt, reportLocation)
+	}()
 	reviewSwitch := reviewswitch.New(bc.Redis.Addr, bc.Redis.Password, bc.Redis.DB, bc.Redis.Key)
 	defer func() {
 		if err := reviewSwitch.Close(); err != nil {
@@ -365,4 +378,36 @@ func sweepUnreferencedBlobs(ctx context.Context, store *data.ShopStore, dataDir 
 		removed++
 	}
 	return removed, nil
+}
+
+func runDailyReportScheduler(ctx context.Context, store *data.ShopStore, dailyAt string, location *time.Location) {
+	clock, err := time.Parse("15:04", dailyAt)
+	if err != nil {
+		logging.ErrorContext(ctx, "invalid daily report time", zap.Error(err))
+		return
+	}
+	logging.InfoContext(ctx, "daily report scheduler started", zap.String("at", dailyAt), zap.String("timezone", location.String()))
+	// Startup catch-up and the daily tick both call GenerateScheduledReports.
+	// A manual report generated after that business day ended is kept.
+	generate := func(date string) {
+		reportCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+		defer cancel()
+		service.GenerateScheduledReports(reportCtx, store, date)
+	}
+	generate(time.Now().In(location).AddDate(0, 0, -1).Format("2006-01-02"))
+	for {
+		now := time.Now().In(location)
+		next := time.Date(now.Year(), now.Month(), now.Day(), clock.Hour(), clock.Minute(), 0, 0, location)
+		if !next.After(now) {
+			next = next.Add(24 * time.Hour)
+		}
+		timer := time.NewTimer(time.Until(next))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+			generate(time.Now().In(location).AddDate(0, 0, -1).Format("2006-01-02"))
+		}
+	}
 }
