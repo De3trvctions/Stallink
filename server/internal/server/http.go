@@ -57,6 +57,7 @@ func NewHTTP(addr, serviceName string, api *service.API) *khttp.Server {
 	route(r, http.MethodPost, "/api/staff/orders/{orderID}/unpaid", api.Unpaid, "orderID")
 	route(r, http.MethodPost, "/api/staff/orders/{orderID}/fulfill", api.Fulfill, "orderID")
 	route(r, http.MethodPost, "/api/staff/orders/{orderID}/cancel", api.Cancel, "orderID")
+	route(r, http.MethodPost, "/api/staff/orders/{orderID}/refund-confirm", api.RefundConfirm, "orderID")
 
 	route(r, http.MethodPatch, "/api/admin/shop", api.UpdateShopSettings)
 	route(r, http.MethodPatch, "/api/admin/shop/featured-event", api.SetFeaturedEvent)
@@ -68,6 +69,7 @@ func NewHTTP(addr, serviceName string, api *service.API) *khttp.Server {
 	route(r, http.MethodGet, "/api/admin/audit", api.AdminAudit)
 	route(r, http.MethodGet, "/api/admin/daily-reports", api.GetDailyReport)
 	route(r, http.MethodPost, "/api/admin/daily-reports", api.GenerateDailyReport)
+	route(r, http.MethodGet, "/api/admin/daily-reports/export", api.ExportDailyReport)
 	route(r, http.MethodGet, "/api/admin/sales", api.ListSales)
 	route(r, http.MethodPost, "/api/admin/sales", api.CreateSales)
 	route(r, http.MethodPost, "/api/admin/sales/{userID}/disable", api.DisableSales, "userID")

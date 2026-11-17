@@ -55,6 +55,16 @@ type Orders struct {
 	QuoteTTL            string `json:"quote_ttl"`
 	ReservationTTL      string `json:"reservation_ttl"`
 	SweepInterval       string `json:"sweep_interval"`
+	// AllowScheduledOrders gates checkout against events still in "scheduled".
+	// A nil pointer means the operator did not set it: the default keeps the
+	// existing pre-sale behavior (scheduled events are orderable).
+	AllowScheduledOrders *bool `json:"allow_scheduled_orders"`
+}
+
+// ScheduledAllowed reports whether orders may be placed against a scheduled
+// (not yet live) event. Unset defaults to true.
+func (o Orders) ScheduledAllowed() bool {
+	return o.AllowScheduledOrders == nil || *o.AllowScheduledOrders
 }
 
 type Catalog struct {
@@ -64,7 +74,13 @@ type Catalog struct {
 // Redis stores platform-level feature flags such as the auto approval switch.
 type Reports struct {
 	DailyAt string `json:"daily_at"`
+	// Timezone is the IANA zone (e.g. "Asia/Kuala_Lumpur") used to slice
+	// daily reports and order dates. Empty falls back to the KL default.
+	Timezone string `json:"timezone"`
 }
+
+// DefaultReportTimezone is the report zone when no configured timezone is set.
+const DefaultReportTimezone = "Asia/Kuala_Lumpur"
 
 type Redis struct {
 	Addr     string `json:"addr"`

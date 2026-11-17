@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/De3trvctions/Stallink/internal/auth"
@@ -20,16 +21,18 @@ import (
 )
 
 type API struct {
-	DB                  *data.ShopStore
-	SecureCookies       bool
-	DataDir             string
-	RequireIdempotency  bool
-	BundlesEnabled      bool
-	QuoteTTL            time.Duration
-	MaxPricingStates    int
-	ReservationsEnabled bool
-	ReservationTTL      time.Duration
-	ReviewSwitch        *reviewswitch.Switch
+	DB                   *data.ShopStore
+	SecureCookies        bool
+	DataDir              string
+	RequireIdempotency   bool
+	BundlesEnabled       bool
+	QuoteTTL             time.Duration
+	MaxPricingStates     int
+	ReservationsEnabled  bool
+	ReservationTTL       time.Duration
+	ReviewSwitch         *reviewswitch.Switch
+	AllowScheduledOrders bool
+	ReportTimezone       string
 }
 
 func (a *API) current(w http.ResponseWriter, r *http.Request) (data.Account, bool) {
@@ -121,6 +124,14 @@ func (a *API) clearSession(w http.ResponseWriter) {
 	})
 }
 
+// dummyPasswordHash is a throwaway bcrypt hash used to equalize login timing
+// when the account does not exist, so "unknown login" and "wrong password"
+// take comparable time instead of leaking account existence through latency.
+var dummyPasswordHash = sync.OnceValue(func() string {
+	hash, _ := auth.HashPassword("stallink-timing-equalizer-dummy-0001")
+	return hash
+})
+
 func (a *API) Login(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		LoginName string `json:"loginName"`
@@ -131,13 +142,20 @@ func (a *API) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	account, err := a.DB.AccountByLogin(r.Context(), strings.TrimSpace(body.LoginName))
-	if errors.Is(err, data.ErrNotFound) || (err == nil && (!account.Enabled || !auth.CheckPassword(account.PasswordHash, body.Password))) {
+	if errors.Is(err, data.ErrNotFound) {
+		// Run a bcrypt comparison against the dummy hash so the unknown-login
+		// branch costs about the same as a real password check.
+		auth.CheckPassword(dummyPasswordHash(), body.Password)
 		writeErr(w, http.StatusUnauthorized, "login_failed")
 		return
 	}
 	if err != nil {
 		logging.ErrorContext(r.Context(), "login failed", zap.Error(err))
 		writeErr(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	if !account.Enabled || !auth.CheckPassword(account.PasswordHash, body.Password) {
+		writeErr(w, http.StatusUnauthorized, "login_failed")
 		return
 	}
 	a.startSession(w, r, account)
@@ -155,7 +173,7 @@ func (a *API) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	login := strings.TrimSpace(body.LoginName)
-	if len([]rune(login)) < 3 || len([]rune(login)) > 32 || strings.ContainsAny(login, " \t\n") {
+	if !validLoginName(login) || !validProfileName(body.DisplayName, body.Contact) {
 		writeErr(w, http.StatusBadRequest, "invalid_profile")
 		return
 	}
@@ -231,7 +249,7 @@ func (a *API) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_json")
 		return
 	}
-	if len([]rune(body.DisplayName)) > 80 || len([]rune(body.Contact)) > 120 {
+	if !validProfileName(body.DisplayName, body.Contact) {
 		writeErr(w, http.StatusBadRequest, "invalid_profile")
 		return
 	}
@@ -630,7 +648,7 @@ func goodJSON(good data.GoodCard) map[string]any {
 		"listingId": good.ListingID, "goodId": good.GoodID, "eventId": good.EventID, "eventName": good.EventName,
 		"name": good.Name, "description": good.Description, "currency": good.Currency,
 		"unitPriceMinor": good.UnitPriceMinor, "priceLabel": priceLabel(good.Currency, good.UnitPriceMinor),
-		"priceTiers": good.PriceTiers, "remaining": good.Remaining, "reservedQty": good.ReservedQty,
+		"priceTiers": good.PriceTiers, "remaining": good.Remaining, "soldOut": good.SoldOut,
 		"isListed": good.IsListed, "imageURL": image, "images": images,
 	}
 }
@@ -694,6 +712,12 @@ func writeDataErr(w http.ResponseWriter, r *http.Request, err error) {
 		writeErr(w, http.StatusConflict, "invalid_status")
 	case errors.Is(err, data.ErrPayCode):
 		writeErr(w, http.StatusConflict, "pay_code_required")
+	case errors.Is(err, data.ErrPayCodeCurrencyMismatch):
+		writeErr(w, http.StatusBadRequest, "pay_code_currency_mismatch")
+	case errors.Is(err, data.ErrInvalidCashReceived):
+		writeErr(w, http.StatusBadRequest, "invalid_cash_received")
+	case errors.Is(err, data.ErrEventNotOpen):
+		writeErr(w, http.StatusBadRequest, "event_not_open")
 	case errors.Is(err, data.ErrNotListed):
 		writeErr(w, http.StatusBadRequest, "not_listed")
 	case errors.Is(err, data.ErrInvalidBundle):

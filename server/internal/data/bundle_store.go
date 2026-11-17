@@ -422,6 +422,7 @@ func listBundlesFrom(ctx context.Context, queryer rowQuerier, shopID, eventID ID
 		) availability ON true
 		WHERE ($1 = 0 OR s.id = $1) AND ($2 = 0 OR e.id = $2)
 			AND (NOT $3 OR (s.is_enabled AND eb.is_listed AND b.review_status = 'approved'
+				AND e.status IN ('live', 'scheduled') AND e.ends_on >= CURRENT_DATE
 				AND availability.components >= 2 AND availability.components = availability.eligible AND availability.remaining > 0))
 		ORDER BY s.created_at, e.starts_on, b.created_at, bc.sort_order`, shopID, eventID, publicOnly)
 	if err != nil {

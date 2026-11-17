@@ -38,6 +38,7 @@ type GoodCard struct {
 	SoldQty        int
 	ReservedQty    int
 	Remaining      int
+	SoldOut        bool
 	IsListed       bool
 	ReviewStatus   string
 	ReviewNote     string
@@ -153,15 +154,28 @@ func (s *ShopStore) UpdateShop(ctx context.Context, shopID ID, name, notice, slu
 	return nil
 }
 
+// SetShopEnabled flips the shop flag. Disabling a shop revokes every existing
+// session of its users in the same transaction; enabling leaves sessions alone.
+// A missing shop still reports ErrNotFound via RowsAffected.
 func (s *ShopStore) SetShopEnabled(ctx context.Context, shopID ID, enabled bool) error {
-	tag, err := s.pool.Exec(ctx, `UPDATE shops SET is_enabled = $2, updated_at = now() WHERE id = $1`, shopID, enabled)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin shop enable: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	tag, err := tx.Exec(ctx, `UPDATE shops SET is_enabled = $2, updated_at = now() WHERE id = $1`, shopID, enabled)
 	if err != nil {
 		return fmt.Errorf("set shop enabled: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return nil
+	if !enabled {
+		if _, err := tx.Exec(ctx, `DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE shop_id = $1)`, shopID); err != nil {
+			return fmt.Errorf("revoke shop sessions: %w", err)
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *ShopStore) OpenShop(ctx context.Context, name, slug, notice, adminLogin, adminHash string) (ID, error) {
@@ -228,6 +242,26 @@ func (s *ShopStore) UpdateEvent(ctx context.Context, shopID, eventID ID, in Even
 	defer func() { _ = tx.Rollback(ctx) }()
 	if err := lockShopForCatalogWrite(ctx, tx, shopID); err != nil {
 		return err
+	}
+	var oldCurrency string
+	err = tx.QueryRow(ctx, `SELECT currency FROM events WHERE id=$1 AND shop_id=$2`, eventID, shopID).Scan(&oldCurrency)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("read event: %w", err)
+	}
+	// Changing currency after money was collected would split the cash drawer
+	// across currencies; block it once a paid/fulfilled/refund_required order
+	// exists. Still-open pending/cancelled orders do not lock the currency.
+	if in.Currency != oldCurrency {
+		var paidCount int
+		if err := tx.QueryRow(ctx, `SELECT count(*) FROM orders WHERE event_id=$1 AND shop_id=$2 AND status IN ('paid','fulfilled','refund_required')`, eventID, shopID).Scan(&paidCount); err != nil {
+			return fmt.Errorf("count paid event orders: %w", err)
+		}
+		if paidCount > 0 {
+			return ErrConflict
+		}
 	}
 	tag, err := tx.Exec(ctx, `
 		UPDATE events SET name=$3, starts_on=$4, ends_on=$5, city=$6, venue=$7, booth_number=$8, currency=$9, status=$10
@@ -309,7 +343,7 @@ func (s *ShopStore) publicGoods(ctx context.Context, shopID, eventID ID) ([]Good
 		FROM event_listings l
 		JOIN goods g ON g.id = l.good_id
 		JOIN events e ON e.id = l.event_id
-		WHERE e.shop_id = $1 AND ($2 = 0 OR e.id = $2) AND l.is_listed AND l.listed_qty > l.sold_qty + l.reserved_qty
+		WHERE e.shop_id = $1 AND ($2 = 0 OR e.id = $2) AND l.is_listed
 			AND g.review_status = 'approved'
 			AND e.status IN ('live', 'scheduled') AND e.ends_on >= CURRENT_DATE
 		ORDER BY e.starts_on, g.name`, shopID, eventID)
@@ -422,7 +456,7 @@ func (s *ShopStore) CreateListedGood(ctx context.Context, shopID, actorID ID, in
 	return goodID, listingID, eventID, nil
 }
 
-func (s *ShopStore) AddGoodImages(ctx context.Context, shopID, actorID, goodID ID, paths []string) ([]string, error) {
+func (s *ShopStore) AddGoodImages(ctx context.Context, shopID, actorID, goodID ID, paths []string, autoApprove bool) ([]string, error) {
 	if len(paths) == 0 {
 		return []string{}, nil
 	}
@@ -459,9 +493,8 @@ func (s *ShopStore) AddGoodImages(ctx context.Context, shopID, actorID, goodID I
 		}
 		ids = append(ids, id)
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE goods SET review_status = 'pending', review_note = '', reviewed_at = NULL WHERE id = $1`, goodID); err != nil {
-		return nil, fmt.Errorf("reset good image review: %w", err)
+	if err := resetGoodReview(ctx, tx, goodID, autoApprove); err != nil {
+		return nil, err
 	}
 	if err := insertAudit(ctx, tx, shopID, actorID, "good.image.add", "good", goodID); err != nil {
 		return nil, err
@@ -478,7 +511,7 @@ func (s *ShopStore) AddGoodImages(ctx context.Context, shopID, actorID, goodID I
 	return ids, nil
 }
 
-func (s *ShopStore) DeleteGoodImage(ctx context.Context, shopID, actorID, goodID, imageID ID) (string, error) {
+func (s *ShopStore) DeleteGoodImage(ctx context.Context, shopID, actorID, goodID, imageID ID, autoApprove bool) (string, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return "", fmt.Errorf("begin good image delete: %w", err)
@@ -514,9 +547,8 @@ func (s *ShopStore) DeleteGoodImage(ctx context.Context, shopID, actorID, goodID
 	if _, err := tx.Exec(ctx, `UPDATE good_images SET sort_order = sort_order - 101 WHERE good_id = $1 AND sort_order > $2`, goodID, sortOrder+100); err != nil {
 		return "", fmt.Errorf("compact good image order: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE goods SET review_status = 'pending', review_note = '', reviewed_at = NULL WHERE id = $1`, goodID); err != nil {
-		return "", fmt.Errorf("reset good image review: %w", err)
+	if err := resetGoodReview(ctx, tx, goodID, autoApprove); err != nil {
+		return "", err
 	}
 	if err := insertAudit(ctx, tx, shopID, actorID, "good.image.delete", "good", goodID); err != nil {
 		return "", err
@@ -533,7 +565,7 @@ func (s *ShopStore) DeleteGoodImage(ctx context.Context, shopID, actorID, goodID
 	return path, nil
 }
 
-func (s *ShopStore) ReorderGoodImages(ctx context.Context, shopID, actorID, goodID ID, imageIDs []ID) error {
+func (s *ShopStore) ReorderGoodImages(ctx context.Context, shopID, actorID, goodID ID, imageIDs []ID, autoApprove bool) error {
 	if len(imageIDs) > 8 {
 		return ErrImageLimit
 	}
@@ -603,9 +635,8 @@ func (s *ShopStore) ReorderGoodImages(ctx context.Context, shopID, actorID, good
 			return fmt.Errorf("update good image order: %w", err)
 		}
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE goods SET review_status = 'pending', review_note = '', reviewed_at = NULL WHERE id = $1`, goodID); err != nil {
-		return fmt.Errorf("reset good image review: %w", err)
+	if err := resetGoodReview(ctx, tx, goodID, autoApprove); err != nil {
+		return err
 	}
 	if err := invalidateBundlesForGood(ctx, tx, shopID, goodID); err != nil {
 		return err
@@ -619,7 +650,7 @@ func (s *ShopStore) ReorderGoodImages(ctx context.Context, shopID, actorID, good
 	return tx.Commit(ctx)
 }
 
-func (s *ShopStore) AddListing(ctx context.Context, shopID, actorID, goodID ID, in ListedGood) (ID, error) {
+func (s *ShopStore) AddListing(ctx context.Context, shopID, actorID, goodID ID, in ListedGood, autoApprove bool) (ID, error) {
 	if err := catalog.ValidatePriceTiers(in.UnitPriceMinor, in.PriceTiers); err != nil {
 		return 0, err
 	}
@@ -662,8 +693,8 @@ func (s *ShopStore) AddListing(ctx context.Context, shopID, actorID, goodID ID, 
 	if err != nil {
 		return 0, fmt.Errorf("insert listing: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE goods SET review_status = 'pending', review_note = '', reviewed_at = NULL WHERE id = $1`, goodID); err != nil {
-		return 0, fmt.Errorf("reset good review: %w", err)
+	if err := resetGoodReview(ctx, tx, goodID, autoApprove); err != nil {
+		return 0, err
 	}
 	if err := invalidateBundlesForGood(ctx, tx, shopID, goodID); err != nil {
 		return 0, err
@@ -699,24 +730,49 @@ func (s *ShopStore) UpdateListing(ctx context.Context, shopID, actorID, listingI
 	if err := lockShopForCatalogWrite(ctx, tx, shopID); err != nil {
 		return err
 	}
-	var goodID ID
+	// Inventory writers lock goods before listings; read the relation first, then verify it under lock.
+	var expectedGoodID ID
+	err = tx.QueryRow(ctx, `
+		SELECT l.good_id::text FROM event_listings l
+		JOIN events e ON e.id = l.event_id
+		WHERE l.id = $1 AND e.shop_id = $2`, listingID, shopID).Scan(&expectedGoodID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("find listing good: %w", err)
+	}
+	var lockedGood ID
+	if err := tx.QueryRow(ctx, `SELECT id::text FROM goods WHERE id = $1 AND shop_id = $2 FOR UPDATE`, expectedGoodID, shopID).Scan(&lockedGood); errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	} else if err != nil {
+		return fmt.Errorf("lock listing good: %w", err)
+	}
+	if lockedGood != expectedGoodID {
+		return ErrConflict
+	}
 	var sold int
 	var reserved int
 	var oldListed bool
 	var oldPrice int64
 	var oldTiers []byte
+	var lockedListingGoodID ID
 	err = tx.QueryRow(ctx, `
 		SELECT l.good_id::text, l.sold_qty, l.reserved_qty, l.is_listed, l.unit_price_minor, l.price_tiers
 		FROM event_listings l
 		JOIN events e ON e.id = l.event_id
 		WHERE l.id = $1 AND e.shop_id = $2
-		FOR UPDATE OF l`, listingID, shopID).Scan(&goodID, &sold, &reserved, &oldListed, &oldPrice, &oldTiers)
+		FOR UPDATE OF l`, listingID, shopID).Scan(&lockedListingGoodID, &sold, &reserved, &oldListed, &oldPrice, &oldTiers)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return fmt.Errorf("lock listing: %w", err)
 	}
+	if expectedGoodID != lockedListingGoodID {
+		return ErrConflict
+	}
+	goodID := expectedGoodID
 	if listedQty < sold+reserved {
 		return catalog.ErrStockExceeded
 	}
@@ -728,11 +784,10 @@ func (s *ShopStore) UpdateListing(ctx context.Context, shopID, actorID, listingI
 	if err != nil {
 		return fmt.Errorf("update listing: %w", err)
 	}
-	if priceChanged {
-		if _, err := tx.Exec(ctx, `UPDATE goods SET review_status = 'pending', review_note = '', reviewed_at = NULL WHERE id = $1`, goodID); err != nil {
-			return fmt.Errorf("reset good review: %w", err)
-		}
-	}
+	// Price, tier, listed quantity and listing-visibility edits are shelf
+	// operations: they do not send the good back to review and must not pull it
+	// off the counter mid-event. Only description/image edits (UpdateGoodStock,
+	// the image endpoints) reset review status.
 	if priceChanged || eligibilityChanged {
 		if err := invalidateBundlesForGood(ctx, tx, shopID, goodID); err != nil {
 			return err
@@ -750,7 +805,7 @@ func (s *ShopStore) UpdateListing(ctx context.Context, shopID, actorID, listingI
 	return tx.Commit(ctx)
 }
 
-func (s *ShopStore) UpdateGoodStock(ctx context.Context, shopID, actorID, goodID ID, name, description string, total int) error {
+func (s *ShopStore) UpdateGoodStock(ctx context.Context, shopID, actorID, goodID ID, name, description string, total int, autoApprove bool) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin stock: %w", err)
@@ -767,17 +822,20 @@ func (s *ShopStore) UpdateGoodStock(ctx context.Context, shopID, actorID, goodID
 	if err != nil {
 		return fmt.Errorf("lock good: %w", err)
 	}
+	// Only a description change sends the good back through review; renaming,
+	// stock adjustments and listing edits keep the current review status.
+	reviewStatus := reviewResetStatus(autoApprove)
 	metadataChanged := oldName != name || oldDescription != description
 	tag, err := tx.Exec(ctx, `
 		UPDATE goods SET
 			name = $3,
 			description = $4,
 			total_stock = $5,
-			review_status = CASE WHEN name IS DISTINCT FROM $3 OR description IS DISTINCT FROM $4 THEN 'pending' ELSE review_status END,
-			review_note = CASE WHEN name IS DISTINCT FROM $3 OR description IS DISTINCT FROM $4 THEN '' ELSE review_note END,
-			reviewed_at = CASE WHEN name IS DISTINCT FROM $3 OR description IS DISTINCT FROM $4 THEN NULL ELSE reviewed_at END
+			review_status = CASE WHEN description IS DISTINCT FROM $4 THEN $6 ELSE review_status END,
+			review_note = CASE WHEN description IS DISTINCT FROM $4 THEN '' ELSE review_note END,
+			reviewed_at = CASE WHEN description IS DISTINCT FROM $4 THEN CASE WHEN $6 = 'approved' THEN now() ELSE NULL END ELSE reviewed_at END
 		WHERE id = $1 AND shop_id = $2`,
-		goodID, shopID, name, description, total)
+		goodID, shopID, name, description, total, reviewStatus)
 	if err != nil {
 		return fmt.Errorf("update good: %w", err)
 	}
@@ -988,7 +1046,7 @@ func collectGoods(rows pgx.Rows) ([]GoodCard, error) {
 		if err := rows.Scan(&good.ListingID, &good.GoodID, &good.EventID, &good.EventName, &good.Name, &good.Description, &good.Currency, &good.UnitPriceMinor, &tiers, &good.ListedQty, &good.SoldQty, &good.ReservedQty, &good.IsListed, &good.ReviewStatus, &good.ReviewNote, &good.TotalStock, &good.ImageIDs); err != nil {
 			return nil, fmt.Errorf("scan good: %w", err)
 		}
-		good.Remaining = good.ListedQty - good.SoldQty - good.ReservedQty
+		good.Remaining, good.SoldOut = remainingSoldOut(good.ListedQty, good.SoldQty, good.ReservedQty)
 		if err := json.Unmarshal(tiers, &good.PriceTiers); err != nil {
 			return nil, fmt.Errorf("decode price tiers: %w", err)
 		}
@@ -1009,6 +1067,27 @@ func marshalPriceTiers(tiers []catalog.PriceTier) ([]byte, error) {
 		return nil, fmt.Errorf("encode price tiers: %w", err)
 	}
 	return encoded, nil
+}
+
+// resetGoodReview moves a good through the review flow after a content edit.
+// When auto approval is on the edit lands straight back on approved; otherwise
+// it returns to pending. The platform manual review path (ReviewGood) writes its
+// own status and bypasses this helper, so a rejection still sticks.
+func reviewResetStatus(autoApprove bool) string {
+	if autoApprove {
+		return "approved"
+	}
+	return "pending"
+}
+
+func resetGoodReview(ctx context.Context, tx pgx.Tx, goodID ID, autoApprove bool) error {
+	status := reviewResetStatus(autoApprove)
+	if _, err := tx.Exec(ctx, `
+		UPDATE goods SET review_status = $2, review_note = '', reviewed_at = CASE WHEN $2 = 'approved' THEN now() ELSE NULL END
+		WHERE id = $1`, goodID, status); err != nil {
+		return fmt.Errorf("reset good review: %w", err)
+	}
+	return nil
 }
 
 func insertAudit(ctx context.Context, tx pgx.Tx, shopID, actorID ID, action, subjectType string, subjectID ID) error {

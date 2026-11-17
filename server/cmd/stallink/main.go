@@ -257,11 +257,13 @@ func run(configPath string) error {
 	if _, err := time.Parse("15:04", dailyAt); err != nil {
 		return fmt.Errorf("reports.daily_at must be HH:MM")
 	}
-	reportLocation := time.FixedZone("MYT", 8*60*60)
+	reportTZ := bc.Reports.Timezone
+	reportLocation := data.ReportLocation(reportTZ)
+	service.ConfigureReportLocation(reportTZ)
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		runDailyReportScheduler(sweepCtx, store, dailyAt, reportLocation)
+		runDailyReportScheduler(sweepCtx, store, dailyAt, reportLocation, reportTZ)
 	}()
 	reviewSwitch := reviewswitch.New(bc.Redis.Addr, bc.Redis.Password, bc.Redis.DB, bc.Redis.Key)
 	defer func() {
@@ -274,7 +276,8 @@ func run(configPath string) error {
 		RequireIdempotency: bc.Orders.RequireIdempotency, BundlesEnabled: bc.Catalog.BundlesEnabled,
 		QuoteTTL: quoteTTL, MaxPricingStates: maxPricingStates,
 		ReservationsEnabled: bc.Orders.ReservationsEnabled, ReservationTTL: reservationTTL,
-		ReviewSwitch: reviewSwitch,
+		ReviewSwitch: reviewSwitch, AllowScheduledOrders: bc.Orders.ScheduledAllowed(),
+		ReportTimezone: reportTZ,
 	})
 	app := kratos.New(
 		kratos.Name(bc.Server.Name),
@@ -380,7 +383,7 @@ func sweepUnreferencedBlobs(ctx context.Context, store *data.ShopStore, dataDir 
 	return removed, nil
 }
 
-func runDailyReportScheduler(ctx context.Context, store *data.ShopStore, dailyAt string, location *time.Location) {
+func runDailyReportScheduler(ctx context.Context, store *data.ShopStore, dailyAt string, location *time.Location, reportTZ string) {
 	clock, err := time.Parse("15:04", dailyAt)
 	if err != nil {
 		logging.ErrorContext(ctx, "invalid daily report time", zap.Error(err))
@@ -392,7 +395,7 @@ func runDailyReportScheduler(ctx context.Context, store *data.ShopStore, dailyAt
 	generate := func(date string) {
 		reportCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer cancel()
-		service.GenerateScheduledReports(reportCtx, store, date)
+		service.GenerateScheduledReports(reportCtx, store, date, reportTZ)
 	}
 	generate(time.Now().In(location).AddDate(0, 0, -1).Format("2006-01-02"))
 	for {

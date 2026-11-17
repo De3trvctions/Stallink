@@ -155,6 +155,15 @@ func TestMigrationBackfillsLegacyLinesBySnapshotVersion(t *testing.T) {
 			t.Fatalf("create legacy base schema: %v", err)
 		}
 	}
+	// This fixture models the pre-001 schema. Run migration 001 alone: migration
+	// 002 intentionally rejects populated databases and is covered separately.
+	if _, err := testPool.Exec(ctx, `CREATE TABLE schema_migrations (version bigint PRIMARY KEY, name text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())`); err != nil {
+		t.Fatal(err)
+	}
+	migrations, err := loadMigrations()
+	if err != nil || len(migrations) == 0 || migrations[0].version != 1 {
+		t.Fatalf("load migration 001: %v", err)
+	}
 	var shopID, userID, eventID, goodID, listingID, orderID string
 	if err := testPool.QueryRow(ctx, `INSERT INTO shops(name, slug) VALUES ('Legacy Shop', 'legacy-shop') RETURNING id::text`).Scan(&shopID); err != nil {
 		t.Fatal(err)
@@ -177,7 +186,7 @@ func TestMigrationBackfillsLegacyLinesBySnapshotVersion(t *testing.T) {
 	if _, err := testPool.Exec(ctx, `INSERT INTO order_lines(order_id, good_id, listing_id, good_name, unit_price_minor, qty, line_total_minor) VALUES ($1, $2, $3, 'Legacy Good', 20, 2, 0)`, orderID, goodID, listingID); err != nil {
 		t.Fatal(err)
 	}
-	if err := Migrate(ctx, testPool); err != nil {
+	if err := applyMigration(ctx, testPool, migrations[0]); err != nil {
 		t.Fatal(err)
 	}
 	var migratedTotal int64
@@ -190,7 +199,7 @@ func TestMigrationBackfillsLegacyLinesBySnapshotVersion(t *testing.T) {
 	if _, err := testPool.Exec(ctx, `INSERT INTO order_lines(order_id, good_id, listing_id, shop_id, event_id, good_name, unit_price_minor, qty, line_total_minor, snapshot_version) VALUES ($1, $2, $3, $4, $5, 'Free promotion', 20, 1, 0, 1)`, orderID, goodID, listingID, shopID, eventID); err != nil {
 		t.Fatal(err)
 	}
-	if err := Migrate(ctx, testPool); err != nil {
+	if err := applyMigration(ctx, testPool, migrations[0]); err != nil {
 		t.Fatal(err)
 	}
 	var legalZero int64

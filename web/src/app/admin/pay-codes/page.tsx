@@ -1,161 +1,234 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
-import { browserJSON } from "@/lib/api";
+import { SafeImage } from "@/components/safe-image";
+import { browserFormData, browserJSON } from "@/lib/api";
+import { describeRequest } from "@/lib/errors";
+import { messageClass, useMessage } from "@/lib/message";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
-type PayCode = { id: string; name: string; kind: "qr" | "cash"; isDefault: boolean; isEnabled: boolean; imageURL?: string | null };
+type PayCode = {
+  id: string;
+  name: string;
+  kind: "qr" | "cash";
+  currency: string | null;
+  isDefault: boolean;
+  isEnabled: boolean;
+  imageURL: string;
+};
 
-export default function PayCodesPage() {
-  const router = useRouter();
-  const [name, setName] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [isDefault, setIsDefault] = useState(true);
+const CURRENCY_OPTIONS = ["MYR", "SGD", "CNY"];
+
+export default function AdminPayCodesPage() {
   const [codes, setCodes] = useState<PayCode[]>([]);
-  const [message, setMessage] = useState("");
-  const [pending, setPending] = useState(false);
-  const [cashPending, setCashPending] = useState(false);
-  const [previewCode, setPreviewCode] = useState<PayCode | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ name: "", kind: "qr" as "qr" | "cash", currency: "", isDefault: false });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState("");
+  const [imageError, setImageError] = useState("");
+  const [pendingId, setPendingId] = useState("");
+  const [confirmTarget, setConfirmTarget] = useState<PayCode | null>(null);
+  const { message, setError, setSuccess } = useMessage();
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const cashCode = codes.find((code) => code.kind === "cash");
-  const qrCodes = codes.filter((code) => code.kind !== "cash");
-  const cashEnabled = Boolean(cashCode?.isEnabled);
-
-  function load() {
-    browserJSON("/api/admin/pay-codes").then((res) => {
-      if (res.status === 401) {
-        router.replace("/login");
-        return;
-      }
-      if (res.status === 403) {
-        router.replace("/counter");
-        return;
-      }
-      setCodes(Array.isArray(res.data) ? res.data as PayCode[] : []);
-    });
-  }
-  useEffect(load, [router]);
-
-  async function toggleCash() {
-    setMessage("");
-    setCashPending(true);
+  async function load() {
     try {
-      const res = cashCode
-        ? await browserJSON(`/api/admin/pay-codes/${cashCode.id}`, "PATCH", { name: cashCode.name, isEnabled: !cashCode.isEnabled, isDefault: cashCode.isDefault })
-        : await browserJSON("/api/admin/pay-codes/cash", "POST", { name: "现金", isDefault: false });
-      if (!res.ok) {
-        setMessage("现金收款方式没有更新成功，请重试。");
-        return;
-      }
-      load();
+      const res = await browserJSON("/api/admin/pay-codes");
+      if (!res.ok) { setLoadError(describeRequest(res)); return; }
+      setCodes(Array.isArray(res.data) ? res.data as PayCode[] : []);
     } catch {
-      setMessage("无法连接服务，请检查网络后重试。");
+      setLoadError("无法连接服务，请检查网络后重试。");
     } finally {
-      setCashPending(false);
+      setLoading(false);
     }
+  }
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  function selectImage(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    setImageError("");
+    if (!file) { setPreview(""); return; }
+    if (file.size > 6 * 1024 * 1024) {
+      setImageError("收款码图片不能超过 6 MiB。");
+      return;
+    }
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setImageError("请选择 JPG、PNG 或 WebP 格式的收款码图片。");
+      return;
+    }
+    if (preview) URL.revokeObjectURL(preview);
+    setImageFile(file);
+    setPreview(URL.createObjectURL(file));
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage("");
-    if (!file) {
-      setMessage("请先选择收款码图片。");
-      return;
-    }
-    const body = new FormData();
-    body.set("name", name);
-    body.set("isDefault", String(isDefault));
-    body.set("image", file);
-    setPending(true);
+    setError(null);
+    if (!form.name.trim()) { setError("请填写收款方式名称。"); return; }
+    if (form.kind === "qr" && !imageFile) { setError("请上传收款码图片。"); return; }
+    setPendingId("");
+    setAdding(true);
     try {
-      const res = await fetch("/api/admin/pay-codes", { method: "POST", body, credentials: "include" });
-      if (!res.ok) {
-        setMessage("收款码没有上传，请检查图片格式后重试。");
-        return;
+      let res;
+      if (form.kind === "cash") {
+        res = await browserJSON("/api/admin/pay-codes/cash", "POST", { name: form.name.trim(), isDefault: form.isDefault, ...(form.currency ? { currency: form.currency } : {}) });
+      } else {
+        const body = new FormData();
+        body.set("name", form.name.trim());
+        body.set("isDefault", String(form.isDefault));
+        body.set("currency", form.currency);
+        if (imageFile) body.append("image", imageFile);
+        res = await browserFormData("/api/admin/pay-codes", "POST", body);
       }
-      setName("");
-      setFile(null);
-      setMessage("收款码已添加。");
-      load();
+      if (!res.ok) { setError(describeRequest(res)); return; }
+      setSuccess("收款方式已保存。");
+      setForm({ name: "", kind: "qr", currency: "", isDefault: false });
+      setImageFile(null);
+      setImageError("");
+      if (fileRef.current) fileRef.current.value = "";
+      await load();
     } catch {
-      setMessage("无法连接服务，请检查网络后重试。");
+      setError("无法连接服务，请检查网络后重试。");
     } finally {
-      setPending(false);
+      setAdding(false);
+    }
+  }
+
+  async function toggleEnabled(code: PayCode, nextEnabled: boolean) {
+    setPendingId(code.id);
+    setError(null);
+    try {
+      const res = await browserJSON(`/api/admin/pay-codes/${code.id}`, "PATCH", {
+        name: code.name,
+        isEnabled: nextEnabled,
+        isDefault: code.isDefault,
+        currency: code.currency,
+      });
+      if (!res.ok) { setError(describeRequest(res)); return; }
+      setSuccess(nextEnabled ? "收款方式已启用。" : "收款方式已停用。");
+      await load();
+    } catch {
+      setError("无法连接服务，请检查网络后重试。");
+    } finally {
+      setPendingId("");
+      setConfirmTarget(null);
+    }
+  }
+
+  async function makeDefault(code: PayCode) {
+    setPendingId(code.id);
+    setError(null);
+    try {
+      const res = await browserJSON(`/api/admin/pay-codes/${code.id}`, "PATCH", {
+        name: code.name,
+        isEnabled: code.isEnabled,
+        isDefault: true,
+        currency: code.currency,
+      });
+      if (!res.ok) { setError(describeRequest(res)); return; }
+      setSuccess(`已把「${code.name}」设为默认收款方式。`);
+      await load();
+    } catch {
+      setError("无法连接服务，请检查网络后重试。");
+    } finally {
+      setPendingId("");
     }
   }
 
   return (
-    <main>
-      <p className="eyebrow">现场付款</p>
-      <h1>收款方式</h1>
-      <p>二维码用于扫码付款；现金是独立收款选项，不需要收款码，开启后收银台会直接提示收取现金。</p>
+    <main className="workspace-page">
+      <header className="workspace-page__heading">
+        <p className="eyebrow">付款配置</p>
+        <h1>收款方式</h1>
+        <p>上传收款码或新增现金收款。币种留空表示跟随活动币种；与订单币种不一致的收款码无法使用。</p>
+      </header>
 
-      <div className="pay-cash-toggle">
-        <div>
-          <strong>现金收款</strong>
-          <span>作为一个收款选项出现在收银台，不显示二维码。</span>
-        </div>
-        <button type="button" role="switch" aria-checked={cashEnabled} data-active={cashEnabled} disabled={cashPending} onClick={toggleCash}>
-          {cashPending ? "正在更新…" : cashEnabled ? "已启用" : "启用现金"}
-        </button>
-      </div>
+      {message ? <p className={messageClass(message)} role="status">{message.text}</p> : null}
 
-      <div className="workspace-list-heading"><h2>二维码收款</h2><span>{qrCodes.length} 种</span></div>
-      {qrCodes.length === 0 ? (
-        <div className="empty-state empty-state--compact"><span className="empty-state__mark" aria-hidden="true">✳</span><p>还没有二维码收款方式。添加后，销售即可在收银时选择。</p></div>
+      {loading ? <p className="empty-state">正在读取收款方式…</p> : loadError ? (
+        <p className="empty-state" role="alert">
+          <span className="empty-state__mark" aria-hidden="true">!</span>
+          <span>{loadError}</span>
+          <button type="button" className="button button--outline" onClick={() => void load()}>重试</button>
+        </p>
+      ) : codes.length === 0 ? (
+        <p className="empty-state"><span className="empty-state__mark" aria-hidden="true">○</span><span>还没有收款方式，先在下方添加。</span></p>
       ) : (
         <ul className="pay-code-list">
-          {qrCodes.map((code) => (
-            <li key={code.id} className="pay-code-row">
+          {codes.map((code) => (
+            <li className="pay-code-row" key={code.id}>
               <div>
-                {code.imageURL ? (
-                  <button type="button" className="pay-code-row__thumb" aria-label={`预览 ${code.name} 收款码`} onClick={() => setPreviewCode(code)}>
-                    <Image src={code.imageURL} alt="" width={56} height={56} unoptimized />
-                  </button>
-                ) : null}
-                <strong>{code.name}</strong><span className={code.isEnabled ? "account-status" : "account-status account-status--disabled"}><i aria-hidden="true" />{code.isDefault ? "默认" : code.isEnabled ? "已启用" : "已停用"}</span>
+                {code.imageURL ? <SafeImage className="pay-code-row__thumb" src={code.imageURL} alt={`${code.name} 收款码`} width={56} height={56} unoptimized fallback={<span className="pay-code-row__thumb pay-code-row__thumb--empty" aria-hidden="true">现金</span>} /> : <span className="pay-code-row__thumb pay-code-row__thumb--empty" aria-hidden="true">现金</span>}
+                <div>
+                  <strong>{code.name}</strong>
+                  <span className="pay-code-row__meta">
+                    {code.kind === "cash" ? "现金" : "扫码"}
+                    {code.currency ? ` · ${code.currency}` : " · 跟随活动币种"}
+                    {code.isDefault ? " · 默认" : ""}
+                  </span>
+                  <span className={`account-status${code.isEnabled ? "" : " account-status--disabled"}`}><i aria-hidden="true" />{code.isEnabled ? "启用中" : "已停用"}</span>
+                </div>
               </div>
-              <button type="button" className="button button--outline" onClick={async () => {
-                const res = await browserJSON(`/api/admin/pay-codes/${code.id}`, "PATCH", { name: code.name, isEnabled: !code.isEnabled, isDefault: code.isDefault && code.isEnabled });
-                if (res.ok) load();
-                else setMessage("更新失败，请重试。");
-              }}>{code.isEnabled ? "停用" : "启用"}</button>
+              <div className="pay-code-row__actions">
+                {!code.isDefault ? <button type="button" className="button button--outline" disabled={pendingId === code.id} onClick={() => void makeDefault(code)}>设为默认</button> : null}
+                {code.isEnabled
+                  ? <button type="button" className="button button--danger" disabled={pendingId === code.id} onClick={() => setConfirmTarget(code)}>停用</button>
+                  : <button type="button" className="button button--outline" disabled={pendingId === code.id} onClick={() => void toggleEnabled(code, true)}>启用</button>}
+              </div>
             </li>
           ))}
         </ul>
       )}
 
-      <div className="workspace-list-heading"><h2>添加二维码</h2><span>PNG、JPG 或 WebP</span></div>
       <form className="pay-code-form" onSubmit={submit}>
-        <label className="field" htmlFor="pay-code-name">
-          <span>显示名称</span>
-          <input id="pay-code-name" required value={name} onChange={(event) => setName(event.target.value)} placeholder="例如：DuitNow 或 Touch ’n Go" />
+        <h2>新增收款方式</h2>
+        <div className="pay-code-form__row">
+          <label className="field"><span>名称</span><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：微信收款 / 支付宝 / 现金" /></label>
+          <label className="field"><span>类型</span>
+            <select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as "qr" | "cash" })}>
+              <option value="qr">扫码收款码</option>
+              <option value="cash">现金收款</option>
+            </select>
+          </label>
+          <label className="field"><span>币种 <small>留空跟随活动</small></span>
+            <select value={form.currency} onChange={(event) => setForm({ ...form, currency: event.target.value })}>
+              <option value="">跟随活动币种</option>
+              {CURRENCY_OPTIONS.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+            </select>
+          </label>
+        </div>
+        {form.kind === "qr" ? (
+          <label className="field"><span>收款码图片</span>
+            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={selectImage} />
+            {preview ? <Image className="pay-code-form__preview" src={preview} alt="收款码预览" width={120} height={120} unoptimized /> : null}
+            {imageError ? <span className="field__error" role="alert">{imageError}</span> : null}
+          </label>
+        ) : null}
+        <label className="field field--checkbox">
+          <input type="checkbox" checked={form.isDefault} onChange={(event) => setForm({ ...form, isDefault: event.target.checked })} />
+          <span>设为默认收款方式</span>
         </label>
-        <label className="field" htmlFor="pay-code-image">
-          <span>收款码图片</span>
-          <input id="pay-code-image" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-        </label>
-        {file ? <p className="file-selection">已选择：{file.name}</p> : null}
-        <label className="check-field"><input type="checkbox" checked={isDefault} onChange={(event) => setIsDefault(event.target.checked)} /><span>设为默认收款方式</span></label>
-        {message ? <p className={`form-message${message.includes("没有") || message.includes("无法") || message.includes("请先") ? " form-message--error" : " form-message--success"}`} role="status">{message}</p> : null}
-        <button className="button button--dark" type="submit" disabled={pending}>{pending ? "正在添加…" : "添加收款码"}</button>
+        <button className="button button--dark" type="submit" disabled={adding}>{adding ? "正在保存…" : "保存收款方式"}</button>
       </form>
 
-      {previewCode ? (
-        <div className="pay-dialog" role="dialog" aria-modal="true" aria-labelledby="pay-preview-title" onClick={() => setPreviewCode(null)}>
-          <div className="pay-dialog__panel" onClick={(event) => event.stopPropagation()}>
-            <header className="pay-dialog__head">
-              <div><p className="eyebrow">收款码预览</p><h2 id="pay-preview-title">{previewCode.name}</h2></div>
-              <button type="button" className="pay-dialog__close" aria-label="关闭预览" onClick={() => setPreviewCode(null)}>×</button>
-            </header>
-            <div className="pay-dialog__qr">
-              {previewCode.imageURL ? <Image src={previewCode.imageURL} alt={`${previewCode.name} 收款码`} width={560} height={560} unoptimized /> : null}
-              <span>{previewCode.isDefault ? "默认收款方式" : previewCode.isEnabled ? "已启用" : "已停用"}</span>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <ConfirmDialog
+        open={confirmTarget !== null}
+        title="停用收款方式"
+        description={`停用后「${confirmTarget?.name ?? ""}」不再出现在收银台，可随时重新启用；这不是删除。`}
+        confirmLabel="停用"
+        danger
+        pending={pendingId !== ""}
+        onConfirm={() => confirmTarget && void toggleEnabled(confirmTarget, false)}
+        onCancel={() => setConfirmTarget(null)}
+      />
     </main>
   );
 }

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AuthLayout } from "@/components/auth-layout";
 import { browserJSON } from "@/lib/api";
+import { describeRequest } from "@/lib/errors";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -24,12 +25,9 @@ export default function RegisterPage() {
     try {
       const res = await browserJSON("/api/auth/register", "POST", form);
       if (!res.ok) {
-        setError(res.data.error === "login_taken"
+        setError(res.errorCode === "login_taken"
           ? "这个账号已经被使用，请换一个账号。"
-          : res.status >= 500
-            ? "暂时无法创建账号，请稍后重试。"
-            : "请检查账号长度和密码要求后重试。"
-        );
+          : describeRequest(res));
         return;
       }
       router.replace("/me");

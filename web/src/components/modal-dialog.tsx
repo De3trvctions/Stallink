@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, type ReactNode } from "react";
+import { forwardRef, useEffect, useRef, type ReactNode } from "react";
 
 type ModalDialogProps = {
   kicker: string;
@@ -17,9 +17,21 @@ const ModalDialog = forwardRef<HTMLDialogElement, ModalDialogProps>(function Mod
   { kicker, title, description, labelledById, onClose, closeDisabled = false, className = "", children },
   ref,
 ) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const panel = closeRef.current?.closest(".goods-modal__panel") ?? null;
+    const focusable = panel?.querySelector<HTMLElement>("button:not([disabled]), input, select, textarea, a[href]");
+    (focusable ?? closeRef.current)?.focus();
+    return () => { previousFocus?.focus?.(); };
+  }, []);
+
   return (
     <dialog
       ref={ref}
+      role="dialog"
+      aria-modal="true"
       className={`goods-modal ${className}`.trim()}
       aria-labelledby={labelledById}
       onClose={onClose}
@@ -33,7 +45,7 @@ const ModalDialog = forwardRef<HTMLDialogElement, ModalDialogProps>(function Mod
             <h2 id={labelledById}>{title}</h2>
             {description ? <p>{description}</p> : null}
           </div>
-          <button className="goods-modal__close" type="button" aria-label="关闭弹窗" disabled={closeDisabled} onClick={onClose}>×</button>
+          <button ref={closeRef} className="goods-modal__close" type="button" aria-label="关闭弹窗" disabled={closeDisabled} onClick={onClose}>×</button>
         </header>
         {children}
       </div>

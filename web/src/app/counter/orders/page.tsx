@@ -1,167 +1,188 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { browserJSON } from "@/lib/api";
-import { WorkspaceShell } from "@/components/workspace-shell";
-import { pendingOrderCommand, sendOrderCommand } from "@/lib/order-command";
+import { useState } from "react";
+import Link from "next/link";
+import type { StaffOrder } from "@/lib/api";
+import { describeRequest } from "@/lib/errors";
 import { formatMoney } from "@/lib/pricing";
+import { orderStatusLabel } from "@/lib/orders";
+import { messageClass, useMessage } from "@/lib/message";
+import { clearPendingOrderCommand, sendOrderCommand } from "@/lib/order-command";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ListControls, usePagedList } from "@/components/paged-list";
-import SelectMenu from "@/components/select-menu";
+import { WorkspaceShell } from "@/components/workspace-shell";
 
-type EventRow = { id: string; name: string };
-type PayCode = { id: string; name: string; isDefault: boolean };
-type Order = {
-  id: string;
-  number: string;
-  status: string;
-  boothName: string;
-  currency: string;
-  priceLabel: string;
-  openedByLogin: string;
-  openedByRole: string;
-  reservationExpiresAt?: string | null;
-  lines: { goodName: string; qty: number; lineTotalMinor: number; priceLabel: string; discountMinor: number }[];
-  pricingGroups: { kind: string; name: string; applications: number; totalMinor: number }[];
-};
+type StatusFilter = "all" | StaffOrder["status"];
 
-const statusLabel: Record<string, string> = {
-  pending: "待付款",
-  paid: "已收款",
-  fulfilled: "已交付",
-  cancelled: "已取消",
-  expired: "预留已过期",
-  refund_required: "待退款处理",
-};
+type ConfirmTarget = { order: StaffOrder; action: "cancel" | "refund" | "fulfill" };
 
-export default function EventOrdersPage() {
-  const [events, setEvents] = useState<EventRow[]>([]);
-  const [eventId, setEventId] = useState("");
-  const list = usePagedList<Order>(`/api/staff/orders?eventId=${encodeURIComponent(eventId)}`, Boolean(eventId));
-  const orders = list.items;
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [detailError, setDetailError] = useState("");
-  const [payCodes, setPayCodes] = useState<PayCode[]>([]);
-  const [selectedPayCodeId, setSelectedPayCodeId] = useState("");
-  const [actingOrder, setActingOrder] = useState("");
-  const [message, setMessage] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (selectedId && !dialog.open) dialog.showModal();
-    if (!selectedId && dialog.open) dialog.close();
-  }, [selectedId]);
+const filterOptions: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "全部" },
+  { value: "pending", label: "待付款" },
+  { value: "paid", label: "已收款" },
+  { value: "fulfilled", label: "已交付" },
+  { value: "refund_required", label: "待退款" },
+  { value: "cancelled", label: "已取消" },
+  { value: "expired", label: "预留已过期" },
+];
 
-  useEffect(() => {
-    if (!selectedId) return;
-    let active = true;
-    browserJSON(`/api/staff/orders/${selectedId}`).then((res) => {
-      if (!active) return;
-      if (!res.ok) throw new Error("request failed");
-      setSelectedOrder(res.data as Order); setDetailError("");
-    }).catch(() => { if (active) setDetailError("订单详情加载失败，请关闭后重试。"); });
-    return () => { active = false; };
-  }, [selectedId, orders]);
+export default function CounterOrdersPage() {
+  const [filter, setFilter] = useState<StatusFilter>("all");
+  const { message, setError, setSuccess } = useMessage();
+  const [pendingId, setPendingId] = useState("");
+  const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null);
 
-  useEffect(() => {
-    Promise.all([browserJSON("/api/staff/events"), browserJSON("/api/staff/pay-codes")]).then(([res, codesRes]) => {
-      const rows = Array.isArray(res.data) ? res.data as EventRow[] : [];
-      const codes = Array.isArray(codesRes.data) ? codesRes.data as PayCode[] : [];
-      setEvents(rows);
-      setPayCodes(codes);
-      setSelectedPayCodeId(codes.find((code) => code.isDefault)?.id ?? codes[0]?.id ?? "");
-      if (rows[0]) {
-        setEventId(rows[0].id);
+  const list = usePagedList<StaffOrder>(`/api/staff/orders?status=${filter === "all" ? "" : encodeURIComponent(filter)}`);
+  const visible = list.items;
 
-      }
-    });
-  }, []);
-
-  async function act(id: string, action: "pay" | "fulfill" | "cancel", payCodeId?: string) {
-    const scope = `counter-order:${id}:${action}`;
-    setActingOrder(id);
-    setMessage("");
+  async function runAction(target: ConfirmTarget) {
+    const { order, action } = target;
+    setPendingId(order.id);
+    setError(null);
     try {
-      let body: { payCodeId: string } | Record<string, never> = {};
-      if (action === "pay") {
-        const pending = pendingOrderCommand<{ payCodeId: string }>(scope);
-        if (pending) body = pending.body;
-        else if (payCodeId) body = { payCodeId };
-        else {
-          setMessage("没有可用的收款方式，请先在后台配置收款码。");
-          return;
-        }
-      }
-      const result = await sendOrderCommand(scope, `/api/staff/orders/${id}/${action}`, body);
-      if (!result.ok) {
-        setMessage(result.data.error === "command_payload_unresolved"
-          ? "上次操作仍未确认，页面会保留原请求；请重试该操作后再继续。"
-          : result.data.error === "reservation_expired" ? "库存预留已过期，请重新下单。"
-            : "订单操作没有确认成功，请重试或刷新订单状态。");
-        list.refresh();
-        return;
-      }
+      const scope = `${action}:staff:${order.id}`;
+      const res = action === "refund"
+        ? await sendOrderCommand(scope, `/api/staff/orders/${order.id}/refund-confirm`, {})
+        : action === "fulfill"
+          ? await sendOrderCommand(scope, `/api/staff/orders/${order.id}/fulfill`, {})
+          : await sendOrderCommand(scope, `/api/staff/orders/${order.id}/cancel`, { reason: "现场取消订单" });
+      if (!res.ok) { setError(describeRequest(res)); return; }
+      clearPendingOrderCommand(scope);
+      setSuccess(action === "refund" ? "退款已确认，订单已取消并回补库存。" : action === "fulfill" ? "订单已标记为当场交付。" : "订单已取消。");
+      setConfirmTarget(null);
       list.refresh();
     } catch {
-      setMessage("无法连接服务。操作请求已保留，重试时会使用同一个幂等请求。");
+      setError("无法连接服务，请重试同一笔操作以安全恢复结果。");
     } finally {
-      setActingOrder("");
+      setPendingId("");
     }
   }
 
-  async function reserve(id: string) {
-    const scope = `counter-order:${id}:reserve`;
-    setActingOrder(id);
-    setMessage("");
-    try {
-      const result = await sendOrderCommand(scope, `/api/staff/orders/${id}/reserve`, {});
-      if (!result.ok) setMessage("库存预留没有成功，请刷新订单后重试。");
-      list.refresh();
-    } catch {
-      setMessage("无法连接服务。操作请求已保留，重试时会使用同一个幂等请求。");
-    } finally {
-      setActingOrder("");
-    }
-  }
+  const pendingCancel = confirmTarget?.order.id === pendingId;
 
   return (
     <WorkspaceShell kind="sales">
-    <main>
-      <p className="eyebrow">现场工作台</p>
-      <h1>本场订单</h1>
-      <p>这一场开出的单子都在这里；点开一行核对商品、金额与收款方式。</p>
-      <label className="field event-selector" htmlFor="event-order-filter">
-        <span>活动场次</span>
-        <SelectMenu id="event-order-filter" value={eventId} placeholder="选择活动" options={events.map((event) => ({ value: event.id, label: event.name }))} onChange={(value) => { setEventId(value); list.reset(); setSelectedId(null); }} />
-      </label>
-      <ListControls value={list.input} onChange={list.setInput} page={list.page} setPage={list.setPage} hasMore={list.hasMore} loading={list.loading} placeholder="订单号、开单人或顾客称呼" />
-      {message ? <p className="form-message form-message--error" role="status">{message}</p> : null}
-      {list.error ? <p className="form-message form-message--error" role="alert">{list.error} <button type="button" onClick={list.refresh}>重试</button></p> : null}
-      {list.loading ? <p className="order-empty" role="status">正在加载订单...</p> : list.error ? null : orders.length === 0 ? <p className="order-empty">{list.input ? "没有找到匹配的订单。" : "暂无订单。"}</p> : <ul className="order-list">{orders.map((order) => <li key={order.id}>
-        <button type="button" className="order-list__row" onClick={() => { setSelectedOrder(null); setDetailError(""); setSelectedId(order.id); }}><span><strong>{order.number}</strong><small>{order.boothName || "未留称呼"} · {order.openedByLogin}</small></span><span className="order-list__meta"><strong>{order.priceLabel}</strong><small>{statusLabel[order.status] ?? order.status}　›</small></span></button>
-      </li>)}</ul>}
-      <dialog ref={dialogRef} className="order-dialog" style={{ position: "fixed", inset: 0, margin: "auto" }} aria-labelledby="counter-order-title" onClose={() => setSelectedId(null)} onClick={(event) => { if (event.target === event.currentTarget) setSelectedId(null); }}>
-        {!selectedOrder ? <div className="order-dialog__content" role="status"><button type="button" onClick={() => setSelectedId(null)}>关闭</button><p>{detailError || "正在加载订单详情..."}</p></div> : <div className="order-dialog__content">
-          <header className="order-dialog__header"><div><p className="eyebrow">订单详情</p><h2 id="counter-order-title">{selectedOrder.number}</h2></div><button type="button" aria-label="关闭订单详情" onClick={() => setSelectedId(null)}>×</button></header>
-          <p>{statusLabel[selectedOrder.status] ?? selectedOrder.status} · {selectedOrder.boothName || "未留称呼"}</p>
-          <p className="order-dialog__sub">开单人：{selectedOrder.openedByLogin}（{selectedOrder.openedByRole}）</p>
-          {selectedOrder.reservationExpiresAt ? <p className="order-dialog__sub">库存预留至 {new Date(selectedOrder.reservationExpiresAt).toLocaleString("zh-CN")}</p> : null}
-          <h3>商品明细</h3><ul className="order-dialog__items">{selectedOrder.lines?.map((line, index) => <li key={`${line.goodName}-${index}`}><span>{line.goodName} × {line.qty}</span><strong>{line.priceLabel}</strong></li>)}</ul>
-          {selectedOrder.pricingGroups?.length ? <><h3>优惠明细</h3><ul className="order-dialog__items">{selectedOrder.pricingGroups.map((group, index) => <li key={`${group.kind}-${index}`}><span>{group.name}{group.applications > 1 ? ` × ${group.applications}` : ""}</span><strong>{formatMoney(selectedOrder.currency, group.totalMinor)}</strong></li>)}</ul></> : null}
-          <div className="order-dialog__total"><span>订单总额</span><strong>{selectedOrder.priceLabel}</strong></div>
-          {message ? <p className="form-message form-message--error" role="alert">{message}</p> : null}
-            <div className="flex flex-wrap gap-2">
-              {selectedOrder.status === "pending" && !selectedOrder.reservationExpiresAt ? <button className="h-10 border px-3" disabled={Boolean(actingOrder)} onClick={() => reserve(selectedOrder.id)}>{actingOrder === selectedOrder.id ? "处理中…" : "预留库存"}</button> : null}
-              {selectedOrder.status === "pending" ? <>
-                <SelectMenu compact ariaLabel={`订单 ${selectedOrder.number} 收款方式`} value={pendingOrderCommand<{ payCodeId: string }>(`counter-order:${selectedOrder.id}:pay`)?.body.payCodeId ?? selectedPayCodeId} placeholder="没有收款方式" disabled={Boolean(actingOrder) || Boolean(pendingOrderCommand(`counter-order:${selectedOrder.id}:pay`))} options={payCodes.map((code) => ({ value: code.id, label: `${code.name}${code.isDefault ? " · 默认" : ""}` }))} onChange={setSelectedPayCodeId} />
-                <button className="h-10 border px-3" disabled={Boolean(actingOrder) || payCodes.length === 0} onClick={() => act(selectedOrder.id, "pay", pendingOrderCommand<{ payCodeId: string }>(`counter-order:${selectedOrder.id}:pay`)?.body.payCodeId ?? selectedPayCodeId)}>{actingOrder === selectedOrder.id ? "处理中…" : "确认收款"}</button>
-              </> : null}
-              {selectedOrder.status === "paid" ? <button className="h-10 border px-3" disabled={Boolean(actingOrder)} onClick={() => act(selectedOrder.id, "fulfill")}>{actingOrder === selectedOrder.id ? "处理中…" : "交付"}</button> : null}
-              {!['cancelled', 'expired', 'refund_required'].includes(selectedOrder.status) ? <button className="h-10 border px-3" disabled={Boolean(actingOrder)} onClick={() => act(selectedOrder.id, "cancel")}>{selectedOrder.status === "pending" ? "取消订单" : "标记待退款"}</button> : null}
-            </div>
-        </div>}
-      </dialog>
+    <main className="workspace-page">
+      <header className="workspace-page__heading">
+        <p className="eyebrow">订单记录</p>
+        <h1>现场订单</h1>
+        <p>核对商品明细、收款状态和经手人。</p>
+      </header>
+
+      <div className="workspace-toolbar" role="group" aria-label="按状态筛选订单">
+        {filterOptions.map((option) => (
+          <button key={option.value} type="button" data-active={filter === option.value} aria-pressed={filter === option.value} onClick={() => { setFilter(option.value); list.reset(); }}>
+            {option.label}
+          </button>
+        ))}
+        <button type="button" className="button button--outline" onClick={list.refresh}>刷新</button>
+      </div>
+
+      <ListControls value={list.input} onChange={list.setInput} page={list.page} setPage={list.setPage} hasMore={list.hasMore} loading={list.loading} placeholder="订单号、活动、开单人或顾客称呼" />
+
+      {message ? <p className={messageClass(message)} role="status">{message.text}</p> : null}
+
+      {list.loading ? <p className="empty-state">正在读取订单…</p> : list.error ? (
+        <p className="empty-state" role="alert">
+          <span className="empty-state__mark" aria-hidden="true">!</span>
+          <span>{list.error}</span>
+          <button type="button" className="button button--outline" onClick={list.refresh}>重试</button>
+        </p>
+      ) : visible.length === 0 ? (
+        <p className="empty-state">
+          <span className="empty-state__mark" aria-hidden="true">○</span>
+          <span>{filter === "all" ? "目前还没有订单。" : "这个状态下暂时没有订单。"}</span>
+        </p>
+      ) : (
+        <ul className="order-list">
+          {visible.map((order) => (
+            <li className="order-row" key={order.id}>
+              <div className="order-row__head">
+                <div>
+                  <strong>订单 {order.number}</strong>
+                  <span className={`order-status order-status--${order.status}`}>{orderStatusLabel(order.status)}</span>
+                  {order.status === "cancelled" && order.refundedAt ? <span className="order-status order-status--refunded">已退款</span> : null}
+                </div>
+                <div className="order-row__meta">
+                  <span>{order.eventName || "活动商品"}</span>
+                  <span>{new Date(order.createdAt).toLocaleString("zh-CN")}</span>
+                </div>
+              </div>
+              {order.boothName ? <p className="order-row__booth">顾客称呼：{order.boothName}</p> : null}
+              <ul className="order-lines">
+                {order.lines.map((line, index) => (
+                  <li key={`${order.id}-${index}-${line.goodName}`}>
+                    <span>{line.goodName} × {line.qty}</span>
+                    <span>{formatMoney(order.currency, line.lineTotalMinor)}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="order-row__footer">
+                <div className="order-row__totals">
+                  <span>合计 <strong>{formatMoney(order.currency, order.totalMinor)}</strong></span>
+                  {order.payCodeName ? <span>收款方式：{order.payCodeName}</span> : null}
+                  {order.cashReceivedMinor !== null ? <span>实收：{formatMoney(order.currency, order.cashReceivedMinor)}</span> : null}
+                  {order.cashChangeMinor !== null ? <span>找零：{formatMoney(order.currency, order.cashChangeMinor)}</span> : null}
+                  {order.openedByLogin ? <span>开单：{order.openedByLogin}</span> : null}
+                  {order.paidByLogin ? <span>收款：{order.paidByLogin}</span> : null}
+                </div>
+                <div className="order-row__actions">
+                  {order.status === "pending" ? <Link className="button button--outline" href={`/counter?resume=${encodeURIComponent(order.id)}`}>继续收款</Link> : null}
+                  {order.status === "refund_required" ? (
+                    <button type="button" className="button button--danger" disabled={pendingId === order.id} onClick={() => setConfirmTarget({ order, action: "refund" })}>确认退款</button>
+                  ) : null}
+                  {(order.status === "paid" || order.status === "fulfilled" || order.status === "pending") ? (
+                    <button type="button" className="button button--danger" disabled={pendingId === order.id} onClick={() => setConfirmTarget({ order, action: "cancel" })}>取消订单</button>
+                  ) : null}
+                  {order.status === "paid" ? (
+                    <button type="button" className="button button--outline" disabled={pendingId === order.id} onClick={() => setConfirmTarget({ order, action: "fulfill" })}>标记交付</button>
+                  ) : null}
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <ConfirmDialog
+        open={confirmTarget?.action === "refund"}
+        title="确认退款"
+        description="确认后：订单转为已取消、库存回补、金额记为已退，不可撤销。"
+        confirmLabel="确认退款"
+        danger
+        pending={pendingCancel}
+        onConfirm={() => confirmTarget && void runAction(confirmTarget)}
+        onCancel={() => setConfirmTarget(null)}
+      />
+      <ConfirmDialog
+        open={confirmTarget?.action === "cancel" && (confirmTarget.order.status === "paid" || confirmTarget.order.status === "fulfilled")}
+        title="取消已收款订单"
+        description="取消后订单转为待退款、库存不回补，需由管理员确认退款；此操作不可撤销。"
+        confirmLabel="取消订单"
+        danger
+        pending={pendingCancel}
+        onConfirm={() => confirmTarget && void runAction(confirmTarget)}
+        onCancel={() => setConfirmTarget(null)}
+      />
+      <ConfirmDialog
+        open={confirmTarget?.action === "cancel" && confirmTarget.order.status === "pending"}
+        title="取消待付款订单"
+        description="取消后订单作废，预留库存释放，未收款。"
+        confirmLabel="取消订单"
+        danger
+        pending={pendingCancel}
+        onConfirm={() => confirmTarget && void runAction(confirmTarget)}
+        onCancel={() => setConfirmTarget(null)}
+      />
+      <ConfirmDialog
+        open={confirmTarget?.action === "fulfill"}
+        title="标记当场交付"
+        description="交付后订单记为已履约，顾客凭订单号取货。"
+        confirmLabel="标记交付"
+        pending={pendingCancel}
+        onConfirm={() => confirmTarget && void runAction(confirmTarget)}
+        onCancel={() => setConfirmTarget(null)}
+      />
     </main>
     </WorkspaceShell>
   );

@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { browserJSON } from "@/lib/api";
+import { describeRequest } from "@/lib/errors";
+import { messageClass, useMessage } from "@/lib/message";
 import SelectMenu from "@/components/select-menu";
 
 const empty = { name: "", startsOn: "", endsOn: "", city: "", venue: "", boothNumber: "", currency: "MYR", status: "scheduled" };
@@ -17,27 +19,35 @@ function dateRange(event: EventSummary) {
 export default function EventsPage() {
   const [form, setForm] = useState(empty);
   const [events, setEvents] = useState<EventSummary[]>([]);
-  const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const { message, setMessage, setError, setSuccess } = useMessage();
   const [editingId, setEditingId] = useState("");
   const [featuredId, setFeaturedId] = useState("");
 
-  function load() {
-    browserJSON("/api/staff/events").then((res) => setEvents(Array.isArray(res.data) ? res.data as EventSummary[] : []));
-  }
+  const load = useCallback(() => {
+    setLoadError("");
+    browserJSON("/api/staff/events").then((res) => {
+      if (!res.ok) { setLoadError(describeRequest(res)); return; }
+      setEvents(Array.isArray(res.data) ? res.data as EventSummary[] : []);
+    }).catch(() => setLoadError("无法连接服务，请检查网络后重试。"))
+      .finally(() => setLoading(false));
+  }, []);
 
   useEffect(() => {
-    load();
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
+
+  useEffect(() => {
     let active = true;
     void browserJSON("/api/auth/me")
-      .then((me) => {
+      .then(async (me) => {
         const slug = (me.data as { shopSlug?: string } | null)?.shopSlug;
         if (!slug) return null;
-        return fetch(`/api/public/shops/${encodeURIComponent(slug)}`);
-      })
-      .then(async (response) => {
-        if (!response?.ok) return null;
-        return response.json() as Promise<{ featuredEventId?: string }>;
+        const shopRes = await browserJSON(`/api/public/shops/${encodeURIComponent(slug)}`);
+        return shopRes.ok ? (shopRes.data as { featuredEventId?: string }) : null;
       })
       .then((data) => {
         if (active && data) setFeaturedId(typeof data.featuredEventId === "string" ? data.featuredEventId : "");
@@ -51,17 +61,17 @@ export default function EventsPage() {
   async function toggleFeatured(item: EventSummary) {
     const next = featuredId === item.id ? "" : item.id;
     setPending(true);
-    setMessage("");
+    setError(null);
     try {
       const res = await browserJSON("/api/admin/shop/featured-event", "PATCH", { eventId: next });
       if (!res.ok) {
-        setMessage("主推活动没有保存，请稍后重试。");
+        setError(describeRequest(res));
         return;
       }
       setFeaturedId(next);
-      setMessage(next ? "已把这场活动设为店铺主推，顾客会先看到这一场的商品。" : "已取消主推，店铺按进行中的活动顺序展示。");
+      setSuccess(next ? "已把这场活动设为店铺主推，顾客会先看到这一场的商品。" : "已取消主推，店铺按进行中的活动顺序展示。");
     } catch {
-      setMessage("无法连接服务，请稍后重试。");
+      setError("无法连接服务，请稍后重试。");
     } finally {
       setPending(false);
     }
@@ -79,34 +89,34 @@ export default function EventsPage() {
       currency: item.currency ?? "MYR",
       status: item.status ?? "scheduled",
     });
-    setMessage("");
+    setMessage(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function cancelEdit() {
     setEditingId("");
     setForm(empty);
-    setMessage("");
+    setMessage(null);
   }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
-    setMessage("");
+    setError(null);
     try {
       const res = editingId
         ? await browserJSON(`/api/staff/events/${editingId}`, "PATCH", form)
         : await browserJSON("/api/staff/events", "POST", form);
       if (!res.ok) {
-        setMessage("活动没有保存，请检查活动名称和日期后重试。");
+        setError(describeRequest(res));
         return;
       }
-      setMessage(editingId ? "活动已更新，现场收银会立即使用新的场次信息。" : "活动已创建，可以继续为它上架商品。");
+      setSuccess(editingId ? "活动已更新，现场收银会立即使用新的场次信息。" : "活动已创建，可以继续为它上架商品。");
       setEditingId("");
       setForm(empty);
       load();
     } catch {
-      setMessage("无法连接服务，请检查网络后重试。");
+      setError("无法连接服务，请检查网络后重试。");
     } finally {
       setPending(false);
     }
@@ -134,7 +144,7 @@ export default function EventsPage() {
         <label className="field" htmlFor="event-status"><span>活动状态</span>
           <SelectMenu id="event-status" value={form.status} options={[{ value: "scheduled", label: "即将开始" }, { value: "live", label: "进行中" }, { value: "ended", label: "已结束" }]} onChange={(status) => setForm({ ...form, status })} />
         </label>
-        {message ? <p className={`form-message${message.includes("没有") || message.includes("无法") || message.includes("检查") ? " form-message--error" : " form-message--success"}`} role="status">{message}</p> : null}
+        {message ? <p className={messageClass(message)} role="status">{message.text}</p> : null}
         <div className="event-form-actions">
           <button className="button button--dark" type="submit" disabled={pending}>{pending ? "正在保存…" : editingId ? "保存活动修改" : "创建活动"}</button>
           {editingId ? <button className="button button--outline" type="button" disabled={pending} onClick={cancelEdit}>取消编辑</button> : null}
@@ -142,7 +152,14 @@ export default function EventsPage() {
       </form>
 
       <div className="workspace-list-heading"><h2>已有活动</h2><span>{events.length} 场</span></div>
-      {events.length === 0 ? (
+      {loading ? (
+        <p className="empty-state empty-state--compact" role="status">正在读取活动…</p>
+      ) : loadError ? (
+        <p className="empty-state empty-state--compact" role="alert">
+          <span>{loadError}</span>
+          <button type="button" className="button button--outline" onClick={() => void load()}>重试</button>
+        </p>
+      ) : events.length === 0 ? (
         <div className="empty-state empty-state--compact"><span className="empty-state__mark" aria-hidden="true">✳</span><p>还没有活动。创建后就可以为活动安排商品和库存。</p></div>
       ) : (
         <ul className="workspace-rows">

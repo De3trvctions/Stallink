@@ -5,6 +5,156 @@ export function apiOrigin() {
   return process.env.API_ORIGIN ?? "http://127.0.0.1:8080";
 }
 
+export type RequestCategory =
+  | "ok"
+  | "network"
+  | "timeout"
+  | "unauthorized"
+  | "forbidden"
+  | "client"
+  | "server";
+
+export type RequestResult = {
+  ok: boolean;
+  status: number;
+  data: Record<string, unknown>;
+  category: RequestCategory;
+  errorCode: string;
+};
+
+const REQUEST_TIMEOUT_MS = 15_000;
+
+function categoryForStatus(status: number): Exclude<RequestCategory, "ok" | "network" | "timeout"> {
+  if (status === 401) return "unauthorized";
+  if (status === 403) return "forbidden";
+  if (status >= 500) return "server";
+  return "client";
+}
+
+function classifyError(error: unknown): Pick<RequestResult, "category" | "status" | "errorCode"> {
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return { category: "timeout", status: 0, errorCode: "timeout" };
+  }
+  return { category: "network", status: 0, errorCode: "network" };
+}
+
+async function readResult(response: Response): Promise<Record<string, unknown>> {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    // A gateway HTML error page or an empty body must not be swallowed into {}.
+    return { error: response.ok ? "bad_response" : "internal" };
+  }
+}
+
+async function requestJSON(
+  path: string,
+  method: string,
+  body: unknown,
+  extraHeaders?: HeadersInit,
+): Promise<RequestResult> {
+  const headers = new Headers(extraHeaders);
+  if (body !== undefined) headers.set("Content-Type", "application/json");
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(path, {
+      method,
+      credentials: "include",
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const data = await readResult(res);
+    if (!hasValidEntityIds(data)) {
+      return { ok: false, status: 502, data: { error: "invalid_entity_id" }, category: "server", errorCode: "invalid_entity_id" };
+    }
+    const errorCode = String(data.error ?? "");
+    return {
+      ok: res.ok,
+      status: res.status,
+      data,
+      category: res.ok ? "ok" : categoryForStatus(res.status),
+      errorCode,
+    };
+  } catch (error) {
+    const classified = classifyError(error);
+    return { ok: false, data: {}, ...classified };
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function requestFormData(
+  path: string,
+  method: string,
+  form: FormData,
+  extraHeaders?: HeadersInit,
+): Promise<RequestResult> {
+  const headers = new Headers(extraHeaders);
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(path, {
+      method,
+      credentials: "include",
+      headers,
+      body: form,
+      signal: controller.signal,
+    });
+    const data = await readResult(res);
+    const errorCode = String(data.error ?? "");
+    return {
+      ok: res.ok,
+      status: res.status,
+      data,
+      category: res.ok ? "ok" : categoryForStatus(res.status),
+      errorCode,
+    };
+  } catch (error) {
+    const classified = classifyError(error);
+    return { ok: false, data: {}, ...classified };
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+export function browserJSON(path: string, method = "GET", body?: unknown, extraHeaders?: HeadersInit) {
+  return requestJSON(path, method, body, extraHeaders);
+}
+
+export function browserFormData(path: string, method: string, form: FormData, extraHeaders?: HeadersInit) {
+  return requestFormData(path, method, form, extraHeaders);
+}
+
+export type StaffOrderLine = { goodName: string; qty: number; unitPriceMinor: number; lineTotalMinor: number };
+
+export type StaffOrder = {
+  id: string;
+  number: string;
+  status: string;
+  boothName: string;
+  currency: string;
+  priceLabel: string;
+  totalMinor: number;
+  payCodeName: string | null;
+  stateVersion: number;
+  createdAt: string;
+  reservationExpiresAt: string | null;
+  refundedAt: string | null;
+  cashReceivedMinor: number | null;
+  cashChangeMinor: number | null;
+  openedByLogin: string | null;
+  openedByRole: string | null;
+  paidByLogin: string | null;
+  paidByRole: string | null;
+  eventId: string;
+  eventName: string;
+  lines: StaffOrderLine[];
+};
+
 export type Good = {
   listingId: string;
   goodId: string;
@@ -17,6 +167,7 @@ export type Good = {
   unitPriceMinor: number;
   priceTiers: PriceTier[];
   remaining: number;
+  soldOut: boolean;
   imageURL: string | null;
   images: GoodImage[];
 };
@@ -24,8 +175,6 @@ export type Good = {
 export type GoodImage = { id: string; url: string; sortOrder: number };
 
 export type BundleComponent = {
-  goodId: string;
-  listingId: string;
   name: string;
   quantity: number;
   unitPriceMinor: number;
@@ -34,7 +183,6 @@ export type BundleComponent = {
 
 export type BundleOffer = {
   bundleListingId: string;
-  bundleId: string;
   shopSlug?: string;
   eventId: string;
   eventName: string;
@@ -144,20 +292,4 @@ export async function getBundle(slug: string, bundleListingId: string) {
     throw new Error("bundle response contains an invalid entity ID");
   }
   return data as BundleOffer;
-}
-
-export async function browserJSON(path: string, method = "GET", body?: unknown, extraHeaders?: HeadersInit) {
-  const headers = new Headers(extraHeaders);
-  if (body !== undefined) headers.set("Content-Type", "application/json");
-  const res = await fetch(path, {
-    method,
-    credentials: "include",
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const data: unknown = await res.json().catch(() => ({}));
-  if (!hasValidEntityIds(data)) {
-    return { ok: false, status: 502, data: { error: "invalid_entity_id" } };
-  }
-  return { ok: res.ok, status: res.status, data: data as Record<string, unknown> };
 }

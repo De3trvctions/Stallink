@@ -1,7 +1,7 @@
-import Image from "next/image";
 import Link from "next/link";
 import { Suspense } from "react";
 import { ProductGallery } from "@/components/product-gallery";
+import { SafeImage } from "@/components/safe-image";
 import { getBundle } from "@/lib/api";
 import { formatMoney } from "@/lib/pricing";
 
@@ -44,11 +44,10 @@ async function Detail({ params }: { params: Promise<{ slug: string; bundleListin
           <section className="bundle-detail__components" aria-label="套餐内商品">
             <h2>套餐包含</h2>
             <ul>
-              {bundle.components.map((component) => (
-                <li key={component.goodId}>
-                  {component.images?.[0] ? <Image src={component.images[0].url} alt="" width={52} height={52} unoptimized /> : <span className="bundle-detail__component-placeholder" aria-hidden="true">✳</span>}
+              {bundle.components.map((component, index) => (
+                <li key={`${component.name}-${component.quantity}-${index}`}>
+                  {component.images?.[0] ? <SafeImage src={component.images[0].url} alt="" width={52} height={52} unoptimized fallback={<span className="bundle-detail__component-placeholder" aria-hidden="true">✳</span>} /> : <span className="bundle-detail__component-placeholder" aria-hidden="true">✳</span>}
                   <div><strong>{component.name}</strong><small>每套 {component.quantity} 件 · 单买 {formatMoney(bundle.currency, component.unitPriceMinor)} / 件</small></div>
-                  {component.listingId ? <Link href={`/c/${slug}/listings/${component.listingId}`} className="text-link">单独查看</Link> : null}
                 </li>
               ))}
             </ul>

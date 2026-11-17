@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AuthLayout } from "@/components/auth-layout";
 import { browserJSON } from "@/lib/api";
+import { describeRequest } from "@/lib/errors";
 
 const landing: Record<string, string> = {
   customer: "/me",
@@ -28,7 +29,9 @@ export default function LoginPage() {
     try {
       const res = await browserJSON("/api/auth/login", "POST", { loginName, password });
       if (!res.ok) {
-        setError(res.status >= 500 ? "暂时无法登录，请稍后重试。" : "账号或密码不正确，请检查后重试。");
+        setError(res.category === "unauthorized" || res.errorCode === "invalid_login_name"
+          ? "账号或密码不正确，请检查后重试。"
+          : describeRequest(res));
         return;
       }
       const role = String(res.data.role ?? "");

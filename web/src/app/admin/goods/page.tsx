@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { browserJSON } from "@/lib/api";
+import { SafeImage } from "@/components/safe-image";
+import { browserFormData, browserJSON } from "@/lib/api";
+import { describeRequest } from "@/lib/errors";
 import { formatMoney, type PriceTier } from "@/lib/pricing";
 import ModalDialog from "@/components/modal-dialog";
 import SelectMenu from "@/components/select-menu";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 type EventRow = {
   id: string; name: string; currency: string; startsOn?: string; endsOn?: string;
@@ -152,9 +155,12 @@ export default function GoodsPage() {
   const [listedQty, setListedQty] = useState(4);
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
-  const [message, setMessage] = useState("");
+  const [message, setMessageText] = useState("");
+  const [messageKind, setMessageKind] = useState<"success" | "error">("success");
+  const setMessage = (text: string, kind: "success" | "error" = "success") => { setMessageText(text); setMessageKind(kind); };
   const [pending, setPending] = useState(false);
   const [imagePending, setImagePending] = useState("");
+  const [imageDeleteTarget, setImageDeleteTarget] = useState<{ item: Listing; image: ProductImage } | null>(null);
   const [fresh, setFresh] = useState<FreshEvent>(emptyEvent);
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -252,7 +258,7 @@ export default function GoodsPage() {
     const amount = Number(price);
     const priceTiers = itemKind === "bundle" ? [] : parseTiers(tiers, Math.round(amount * 100));
     if (!Number.isSafeInteger(Math.round(amount * 100)) || amount <= 0 || priceTiers === null) {
-      setMessage("请填写有效的基础价格和优惠包件数、套装总价。");
+      setMessage("请填写有效的基础价格和优惠包件数、套装总价。", "error");
       return;
     }
     if (itemKind === "bundle") {
@@ -268,11 +274,11 @@ export default function GoodsPage() {
       for (const item of newBundleGoods) {
         const normalized = normalizeGoodName(item.name);
         if (normalized && shopGoodNames.has(normalized)) {
-          setMessage(`店里已经有「${shopGoodNames.get(normalized)}」这件商品了，请从现有商品里加入套餐，不要重复新建。`);
+          setMessage(`店里已经有「${shopGoodNames.get(normalized)}」这件商品了，请从现有商品里加入套餐，不要重复新建。`, "error");
           return;
         }
         if (normalized && draftNames.has(normalized)) {
-          setMessage(`套餐内有两个都叫「${item.name.trim()}」的新单品，请改名或合并成一件。`);
+          setMessage(`套餐内有两个都叫「${item.name.trim()}」的新单品，请改名或合并成一件。`, "error");
           return;
         }
         if (normalized) draftNames.add(normalized);
@@ -284,7 +290,7 @@ export default function GoodsPage() {
         if (!item.name.trim() || !Number.isSafeInteger(unitPriceMinor) || draftPrice <= 0 || draftTiers === null
           || !Number.isInteger(item.totalStock) || item.totalStock < 1 || !Number.isInteger(item.listedQty)
           || item.listedQty < item.quantity || item.listedQty > item.totalStock || item.imageFiles.length > 8) {
-          setMessage(`请完成套餐内商品“${item.name || "未命名"}”的名称、库存和价格设置。`);
+          setMessage(`请完成套餐内商品“${item.name || "未命名"}”的名称、库存和价格设置。`, "error");
           return;
         }
         components.push({
@@ -297,11 +303,11 @@ export default function GoodsPage() {
         });
       }
       if (createEvent || !eventId || components.length < 2 || components.length > 20) {
-        setMessage("固定套餐需要在同一活动中选择 2 至 20 件不同商品。");
+        setMessage("固定套餐需要在同一活动中选择 2 至 20 件不同商品。", "error");
         return;
       }
       if (bundleUploadBytes > 48 * 1024 * 1024) {
-        setMessage("套餐与套餐内单品的图片合计不能超过 48 MiB，以给上传请求预留空间。");
+        setMessage("套餐与套餐内单品的图片合计不能超过 48 MiB，以给上传请求预留空间。", "error");
         return;
       }
       setPending(true);
@@ -315,18 +321,13 @@ export default function GoodsPage() {
         for (const draft of newBundleGoods) {
           draft.imageFiles.forEach((file) => form.append(`componentImages.${draft.draftKey}`, file));
         }
-        const response = await fetch(editingBundle ? `/api/staff/bundles/${editingBundle.bundleId}` : "/api/staff/bundles", {
-          method: editingBundle ? "PATCH" : "POST", body: form, credentials: "include",
-        });
-        const result = await response.json().catch(() => ({})) as Record<string, unknown>;
+        const response = await browserFormData(
+          editingBundle ? `/api/staff/bundles/${editingBundle.bundleId}` : "/api/staff/bundles",
+          editingBundle ? "PATCH" : "POST",
+          form,
+        );
         if (!response.ok) {
-          const error = String(result.error ?? "");
-          setMessage(error === "invalid_price_tiers" ? "套餐数量优惠必须低于按套餐单价购买的总价。"
-            : error === "image_storage_failed" ? "服务器无法保存图片，请检查存储目录权限和磁盘空间。"
-            : error === "image_limit" ? "套餐总图限 1 张，每张不超过 6 MiB。"
-              : error === "bundle_components_not_eligible" ? "套餐内商品尚未通过审核或没有可售库存。"
-                : error === "conflict" ? "套餐已被其他操作更新，请刷新后再编辑。"
-                : "套餐没有提交，请检查商品、活动和价格。");
+          setMessage(describeRequest(response), "error");
           return;
         }
         setName("");
@@ -345,7 +346,7 @@ export default function GoodsPage() {
         setAddOpen(false);
         setMessage(editingBundle ? "套餐修改已保存，并重新提交平台审核。" : "固定套餐已提交平台审核。套餐商品仍可单独售卖，顾客选齐后收银台会自动凑套。");
       } catch {
-        setMessage("无法连接服务，请检查网络后重试。");
+        setMessage("无法连接服务，请检查网络后重试。", "error");
       } finally {
         setPending(false);
       }
@@ -363,16 +364,10 @@ export default function GoodsPage() {
       const form = new FormData();
       form.set("product", JSON.stringify(body));
       imageFiles.forEach((file) => form.append("images", file));
-      const response = await fetch("/api/staff/goods", { method: "POST", body: form, credentials: "include" });
-      const result = await response.json().catch(() => ({})) as Record<string, unknown>;
+      const response = await browserFormData("/api/staff/goods", "POST", form);
+      const result = response.data;
       if (!response.ok) {
-        const error = String(result.error ?? "");
-        setMessage(error === "invalid_price_tiers" ? "优惠包必须比对应数量的单买总价更低。"
-          : error === "stock_exceeded" ? "各场可售库存不能超过商品总库存。"
-            : error === "image_limit" ? "一件商品最多添加 8 张图片，每张不超过 6 MiB。"
-              : error === "image_storage_failed" ? "服务器无法保存图片，请检查存储目录权限和磁盘空间。"
-              : error === "invalid_image" ? "图片格式或大小不符合要求，请选择 JPG、PNG 或 WebP 图片。"
-                : "商品没有提交，请检查商品和活动信息。");
+        setMessage(describeRequest(response), "error");
         return;
       }
       setName("");
@@ -394,7 +389,7 @@ export default function GoodsPage() {
       }
       setAddOpen(false);
     } catch {
-      setMessage("无法连接服务，请检查网络后重试。");
+      setMessage("无法连接服务，请检查网络后重试。", "error");
     } finally {
       setPending(false);
     }
@@ -473,10 +468,9 @@ export default function GoodsPage() {
     try {
       const form = new FormData();
       files.forEach((file) => form.append("images", file));
-      const response = await fetch(`/api/staff/goods/${item.goodId}/images`, { method: "POST", body: form, credentials: "include" });
-      const result = await response.json().catch(() => ({})) as Record<string, unknown>;
+      const response = await browserFormData(`/api/staff/goods/${item.goodId}/images`, "POST", form);
       if (!response.ok) {
-        setExistingImageErrors((current) => ({ ...current, [item.goodId]: result.error === "image_storage_failed" ? "服务器无法保存图片，请检查存储目录权限和磁盘空间。" : result.error === "image_limit" ? "图片数量或大小超出限制：每张最多 6 MiB，每件商品最多 8 张。" : "图片没有上传，请检查格式和大小后重试。" }));
+        setExistingImageErrors((current) => ({ ...current, [item.goodId]: describeRequest(response) }));
         return;
       }
       await refreshGoodListings(item.goodId);
@@ -492,15 +486,15 @@ export default function GoodsPage() {
     setImagePending(item.goodId);
     setMessage("");
     try {
-      const response = await fetch(`/api/staff/goods/${item.goodId}/images/${image.id}`, { method: "DELETE", credentials: "include" });
+      const response = await browserJSON(`/api/staff/goods/${item.goodId}/images/${image.id}`, "DELETE");
       if (!response.ok) {
-        setMessage("图片没有删除，请刷新后重试。");
+        setMessage(describeRequest(response), "error");
         return;
       }
       await refreshGoodListings(item.goodId);
       setMessage("商品相册已更新，正在等待平台审核。");
     } catch {
-      setMessage("无法连接服务，图片没有删除。");
+      setMessage("无法连接服务，图片没有删除。", "error");
     } finally {
       setImagePending("");
     }
@@ -516,13 +510,13 @@ export default function GoodsPage() {
     try {
       const res = await browserJSON(`/api/staff/goods/${item.goodId}/images`, "PATCH", { imageIds: images.map((image) => image.id) });
       if (!res.ok) {
-        setMessage("图片顺序没有保存，请刷新后重试。");
+        setMessage("图片顺序没有保存，请刷新后重试。", "error");
         return;
       }
       await refreshGoodListings(item.goodId);
       setMessage("封面顺序已更新，正在等待平台审核。");
     } catch {
-      setMessage("无法连接服务，图片顺序没有保存。");
+      setMessage("无法连接服务，图片顺序没有保存。", "error");
     } finally {
       setImagePending("");
     }
@@ -543,25 +537,25 @@ export default function GoodsPage() {
 
   async function copyListing(item: Listing) {
     const qty = Number(copyQty);
-    if (!copyEvent || !Number.isInteger(qty) || qty < 0) { setMessage("请选择目标活动并填写有效的可售数量。"); return; }
+    if (!copyEvent || !Number.isInteger(qty) || qty < 0) { setMessage("请选择目标活动并填写有效的可售数量。", "error"); return; }
     setPending(true); setMessage("");
     try {
       const res = await browserJSON(`/api/staff/goods/${item.goodId}/listings`, "POST", { eventId: copyEvent, listedQty: qty, unitPriceMinor: item.unitPriceMinor, priceTiers: item.priceTiers ?? [], isListed: true });
-      if (!res.ok) { setMessage(res.data.error === "stock_exceeded" ? "库存不足，请减少目标活动的可售数量。" : "复制失败：目标活动可能已有该商品，或库存不足。请检查后重试。"); return; }
+      if (!res.ok) { setMessage(res.data.error === "stock_exceeded" ? "库存不足，请减少目标活动的可售数量。" : "复制失败：目标活动可能已有该商品，或库存不足。请检查后重试。", "error"); return; }
       setMessage("商品已复制到目标活动，原活动的商品仍保留。"); setCopyEvent(""); setCopyQty("0"); await loadAllEvents();
-    } catch { setMessage("无法连接服务，请检查网络后重试。"); } finally { setPending(false); }
+    } catch { setMessage("无法连接服务，请检查网络后重试。", "error"); } finally { setPending(false); }
   }
 
   async function restockItem(item: Listing) {
     const add = Number(restockQty);
-    if (!Number.isInteger(add) || add <= 0) { setMessage("请输入要新增的库存件数。"); return; }
+    if (!Number.isInteger(add) || add <= 0) { setMessage("请输入要新增的库存件数。", "error"); return; }
     setPending(true);
     setMessage("");
     try {
       const res = await browserJSON(`/api/staff/goods/${item.goodId}`, "PATCH", {
         name: item.name, description: item.description, totalStock: item.totalStock + add,
       });
-      if (!res.ok) { setMessage("库存没有增加，请稍后重试。"); return; }
+      if (!res.ok) { setMessage("库存没有增加，请稍后重试。", "error"); return; }
       setRestockQty("");
       const nextTotal = item.totalStock + add;
       setEventGroups((prev) => prev.map((group) => ({
@@ -572,7 +566,7 @@ export default function GoodsPage() {
       })));
       setMessage(`已增加 ${add} 件库存。`);
     } catch {
-      setMessage("无法连接服务，请稍后重试。");
+      setMessage("无法连接服务，请稍后重试。", "error");
     } finally {
       setPending(false);
     }
@@ -584,28 +578,28 @@ export default function GoodsPage() {
     const amount = Number(draft.price);
     const listed = Number(draft.listedQty);
     const priceTiers = parseTiers(draft.tiers, Math.round(amount * 100));
-    if (!Number.isSafeInteger(Math.round(amount * 100)) || amount <= 0 || priceTiers === null) { setMessage("请修正优惠包数量和价格后保存。"); return; }
-    if (!Number.isInteger(listed) || listed < item.soldQty) { setMessage("本场可售数量不能低于已售数量。"); return; }
+    if (!Number.isSafeInteger(Math.round(amount * 100)) || amount <= 0 || priceTiers === null) { setMessage("请修正优惠包数量和价格后保存。", "error"); return; }
+    if (!Number.isInteger(listed) || listed < item.soldQty) { setMessage("本场可售数量不能低于已售数量。", "error"); return; }
     setPending(true);
     setMessage("");
     try {
       const goodRes = await browserJSON(`/api/staff/goods/${item.goodId}`, "PATCH", { name: draft.name, description: draft.description, totalStock: item.totalStock });
       if (!goodRes.ok) {
-        setMessage(goodRes.data.error === "stock_exceeded" ? "商品总库存不能低于已分配库存。" : "商品资料没有保存，请检查输入。");
+        setMessage(goodRes.data.error === "stock_exceeded" ? "商品总库存不能低于已分配库存。" : "商品资料没有保存，请检查输入。", "error");
         return;
       }
       const listingRes = await browserJSON(`/api/staff/listings/${item.listingId}`, "PATCH", { listedQty: listed, unitPriceMinor: Math.round(amount * 100), priceTiers, isListed: draft.isListed });
       if (!listingRes.ok) {
         setMessage(listingRes.data.error === "stock_exceeded" ? "商品资料已保存，但本场数量超出库存；请调小数量后重新保存。"
           : listingRes.data.error === "invalid_price_tiers" ? "优惠包总价必须低于对应数量的单买价格。"
-            : "商品资料已保存，但本场上架信息未保存；请检查价格和数量后重试。");
+            : "商品资料已保存，但本场上架信息未保存；请检查价格和数量后重试。", "error");
         return;
       }
       setEditingListing(null);
       await loadAllEvents();
       setMessage("本场商品已保存。");
     } catch {
-      setMessage("无法连接服务，请检查网络后重试。");
+      setMessage("无法连接服务，请检查网络后重试。", "error");
     } finally {
       setPending(false);
     }
@@ -710,12 +704,12 @@ export default function GoodsPage() {
         closeDisabled={pending}
       >
           <form className="goods-form goods-form--modal" onSubmit={submit}>
-        <label className="field"><span>{editingBundle ? "编辑类型" : "添加类型"}</span><SelectMenu disabled={Boolean(editingBundle)} value={itemKind} options={[{ value: "good", label: "单个商品" }, { value: "bundle", label: "固定套餐（包含多个商品）" }]} onChange={(value) => {
+        <label className="field" htmlFor="goods-item-kind"><span>{editingBundle ? "编辑类型" : "添加类型"}</span><SelectMenu id="goods-item-kind" ariaLabel={editingBundle ? "编辑类型" : "添加类型"} disabled={Boolean(editingBundle)} value={itemKind} options={[{ value: "good", label: "单个商品" }, { value: "bundle", label: "固定套餐（包含多个商品）" }]} onChange={(value) => {
           const kind = value as "good" | "bundle";
           setItemKind(kind);
           if (kind === "bundle") setCreateEvent(false);
         }} /></label>
-        {itemKind === "good" ? <label className="check-field"><input type="checkbox" checked={createEvent} onChange={(event) => setCreateEvent(event.target.checked)} /><span>同时新建一场活动</span></label> : (
+        {itemKind === "good" ? <label className="check-field" htmlFor="goods-create-event"><input id="goods-create-event" type="checkbox" checked={createEvent} onChange={(event) => setCreateEvent(event.target.checked)} /><span>同时新建一场活动</span></label> : (
           <p className="form-hint">套餐先选择同一活动中已创建的商品。每件商品仍可单独出售，收银时服务端会自动找出最低组合价。</p>
         )}
         {createEvent && itemKind === "good" ? (
@@ -754,7 +748,7 @@ export default function GoodsPage() {
           {editingBundle && !replaceBundleImages && editingBundle.images.length > 0 ? (
             <div className="goods-image-grid">
               {editingBundle.images.map((image, index) => <figure className="goods-image-item" key={image.id}>
-                <div className="goods-image-frame"><Image src={image.url} alt={`${editingBundle.name}现有图片 ${index + 1}`} fill unoptimized /></div>
+                <div className="goods-image-frame"><SafeImage src={image.url} alt={`${editingBundle.name}现有图片 ${index + 1}`} fill unoptimized fallbackClassName="goods-image-frame--fallback" /></div>
                 <figcaption><span>{index === 0 ? "封面" : `图片 ${index + 1}`}</span></figcaption>
               </figure>)}
             </div>
@@ -775,7 +769,7 @@ export default function GoodsPage() {
           ) : <p className="goods-image-empty">{itemKind === "bundle" ? "还没有选择套餐总图。" : "还没有选择图片。你可以一次选择多张。"}</p>}
           <p className="field-hint">{imageFiles.length > 0 ? "图片已选择，提交时上传；关闭弹窗前请先保存。" : "选择后先预览，提交时上传。"}</p>
           <div className="image-picker-field"><span>选择图片 <small>JPG、PNG、WebP · 每张最大 6 MiB</small></span>
-            <label className="image-picker" style={pickerStyle}><span>选择图片</span><input style={pickerInputStyle} aria-label={itemKind === "bundle" ? "选择套餐总图" : "选择商品图片"} ref={imageInputRef} id="goods-images" type="file" accept="image/jpeg,image/png,image/webp" multiple={itemKind === "good"} onChange={selectNewImages} /></label>
+            <label className="image-picker" htmlFor="goods-images" style={pickerStyle}><span>选择图片</span><input style={pickerInputStyle} aria-label={itemKind === "bundle" ? "选择套餐总图" : "选择商品图片"} ref={imageInputRef} id="goods-images" type="file" accept="image/jpeg,image/png,image/webp" multiple={itemKind === "good"} onChange={selectNewImages} /></label>
           </div>
           {mainImageError ? <p className="form-message form-message--error" role="alert">{mainImageError}</p> : null}
         </section>
@@ -798,7 +792,7 @@ export default function GoodsPage() {
                   return { ...current, [item.goodId]: 1 };
                 })} />
                 <span className="bundle-component-picker__product">
-                  {item.imageURL ? <Image src={item.imageURL} alt="" width={44} height={44} unoptimized /> : <span className="bundle-component-picker__thumb-placeholder" aria-hidden="true" />}
+                  {item.imageURL ? <SafeImage src={item.imageURL} alt="" width={44} height={44} unoptimized fallback={<span className="bundle-component-picker__thumb-placeholder" aria-hidden="true" />} /> : <span className="bundle-component-picker__thumb-placeholder" aria-hidden="true" />}
                   <span><strong>{item.name}</strong><small>{item.reviewStatus === "approved" ? "审核通过" : statusLabel(item.reviewStatus)} · {formatMoney(currency, item.unitPriceMinor)} / 件 · 可售 {item.remaining}</small></span>
                 </span>
                 {(componentQuantities[item.goodId] ?? 0) > 0 ? <span className="quantity-control" onClick={(event) => event.stopPropagation()}>
@@ -827,7 +821,7 @@ export default function GoodsPage() {
                       return (
                         <li key={candidate.goodId}>
                           <button type="button" disabled={Boolean(blocked) || (Object.values(componentQuantities).filter((qty) => qty > 0).length + newBundleGoods.length) >= 20} onClick={() => addExistingComponent(candidate.goodId)}>
-                            {candidate.imageURL ? <Image src={candidate.imageURL} alt="" width={40} height={40} unoptimized /> : <span className="bundle-component-picker__thumb-placeholder" aria-hidden="true" />}
+                            {candidate.imageURL ? <SafeImage src={candidate.imageURL} alt="" width={40} height={40} unoptimized fallback={<span className="bundle-component-picker__thumb-placeholder" aria-hidden="true" />} /> : <span className="bundle-component-picker__thumb-placeholder" aria-hidden="true" />}
                             <span className="bundle-existing-picker__copy"><strong>{candidate.name}</strong><small>{listing ? `${formatMoney(listing.currency, listing.unitPriceMinor)} / 件 · 可售 ${listing.remaining}` : `本场未上架 · 见于 ${candidate.otherEvents.join("、") || "其他场次"}`}</small></span>
                             <span className="bundle-existing-picker__state">{blocked || "加入"}</span>
                           </button>
@@ -894,11 +888,11 @@ export default function GoodsPage() {
           <label className="field" htmlFor="goods-total-stock"><span>商品总库存</span><input id="goods-total-stock" type="number" min="0" step="1" required value={totalStock} onChange={(event) => setTotalStock(Number(event.target.value))} /></label>
           <label className="field" htmlFor="goods-listed-qty"><span>本场可售数量</span><input id="goods-listed-qty" type="number" min="0" step="1" required value={listedQty} onChange={(event) => setListedQty(Number(event.target.value))} /></label>
         </div> : null}
-        {message ? <p className={`form-message${message.includes("没有") || message.includes("不能") || message.includes("请输入") || message.includes("无法") || message.includes("修正") ? " form-message--error" : " form-message--success"}`} role="status">{message}</p> : null}
+        {message ? <p className={`form-message ${messageKind === "error" ? "form-message--error" : "form-message--success"}`} role="status">{message}</p> : null}
         <button className="button button--dark" type="submit" disabled={pending || (!createEvent && !eventId)}>{pending ? "正在提交…" : editingBundle ? "保存并重新提交审核" : itemKind === "bundle" ? "提交套餐审核" : "提交平台审核"}</button>
       </form>
       </ModalDialog>
-      {!addOpen && message ? <p className={`form-message${message.includes("没有") || message.includes("不能") || message.includes("请输入") || message.includes("无法") || message.includes("修正") ? " form-message--error" : " form-message--success"}`} role="status">{message}</p> : null}
+      {!addOpen && message ? <p className={`form-message ${messageKind === "error" ? "form-message--error" : "form-message--success"}`} role="status">{message}</p> : null}
 
       <div className="workspace-list-heading">
         <h2>活动与商品</h2>
@@ -949,17 +943,21 @@ export default function GoodsPage() {
               {!group.loading && !group.error && group.listings.length === 0 ? <p className="event-goods-empty">本场还没有上架商品。</p> : null}
               {group.bundles.length > 0 ? (
                 <ul className="listing-admin-list listing-admin-list--bundles">
-                  {group.bundles.map((bundle) => <li className="listing-admin-card bundle-admin-card" key={bundle.bundleListingId}>
+                  {group.bundles.map((bundle) => {
+                    const soldOut = bundle.remaining <= 0;
+                    return <li className={`listing-admin-card bundle-admin-card${soldOut ? " listing-admin-card--soldout" : ""}`} key={bundle.bundleListingId}>
                     <div className="listing-admin-card__heading">
                       <div><h3>{bundle.name}</h3><p>固定套餐 · {bundle.remaining} 套可售 · {formatMoney(event.currency, bundle.unitPriceMinor)} / 套</p></div>
                       <span className={`review-badge review-badge--${bundle.reviewStatus}`}>{statusLabel(bundle.reviewStatus)}</span>
                     </div>
+                    {soldOut ? <p className="listing-admin-card__stockout" role="status">本场已售罄</p> : null}
                     {bundle.reviewNote ? <p className="review-note">平台意见：{bundle.reviewNote}</p> : null}
                     <p className="bundle-admin-card__components">包含：{bundle.components.map((component) => `${component.name} × ${component.quantity}`).join(" · ")}</p>
 
-                    {bundle.images.length > 0 ? <div className="bundle-admin-card__images">{bundle.images.map((image, index) => <Image key={image.id} src={image.url} alt={`${bundle.name}图片 ${index + 1}`} width={72} height={72} unoptimized />)}</div> : null}
+                    {bundle.images.length > 0 ? <div className="bundle-admin-card__images">{bundle.images.map((image, index) => <SafeImage key={image.id} src={image.url} alt={`${bundle.name}图片 ${index + 1}`} width={72} height={72} unoptimized fallbackClassName="bundle-admin-card__image--fallback" />)}</div> : null}
                     <button className="button button--outline" type="button" disabled={pending} onClick={() => editBundle(bundle)}>编辑套餐</button>
-                  </li>)}
+                  </li>;
+                  })}
                 </ul>
               ) : null}
               {group.listings.length > 0 ? (
@@ -967,17 +965,19 @@ export default function GoodsPage() {
                   {group.listings.map((item) => {
                     const draft = drafts[item.listingId];
                     if (!draft) return null;
+                    const soldOut = item.remaining <= 0;
                     return (
-                      <li className="listing-admin-card" key={item.listingId}>
+                      <li className={`listing-admin-card${soldOut ? " listing-admin-card--soldout" : ""}`} key={item.listingId}>
                         <div className="listing-admin-card__heading">
                           <div className="listing-admin-card__identity">
                             <span className="listing-admin-card__thumb" aria-hidden="true">
-                              {item.imageURL ? <Image src={item.imageURL} alt="" width={64} height={64} unoptimized /> : <em>无图</em>}
+                              {item.imageURL ? <SafeImage src={item.imageURL} alt="" width={64} height={64} unoptimized fallback={<em>无图</em>} /> : <em>无图</em>}
                             </span>
                             <div><h3>{item.name}</h3><p>单品 · {formatMoney(item.currency, item.unitPriceMinor)} · {item.remaining} 件可售</p></div>
                           </div>
                           <span className={`review-badge review-badge--${item.reviewStatus}`}>{statusLabel(item.reviewStatus)}</span>
                         </div>
+                        {soldOut ? <p className="listing-admin-card__stockout" role="status">本场已售罄</p> : null}
                         {item.reviewNote ? <p className="review-note">平台意见：{item.reviewNote}</p> : null}
                         <button type="button" className="button button--outline" onClick={() => { setCopyEvent(""); setCopyQty("0"); setRestockQty(""); setEditingListing(item.listingId); }}>编辑商品</button>
                                               </li>
@@ -1010,13 +1010,13 @@ export default function GoodsPage() {
                               <div className="goods-image-grid">
                                 {editingItem.images.map((image, index) => (
                                   <figure className="goods-image-item" key={image.id}>
-                                    <div className="goods-image-frame"><Image src={image.url} alt={`${editingItem.name}，图片 ${index + 1}`} fill unoptimized /></div>
+                                    <div className="goods-image-frame"><SafeImage src={image.url} alt={`${editingItem.name}，图片 ${index + 1}`} fill unoptimized fallbackClassName="goods-image-frame--fallback" /></div>
                                     <figcaption>
                                       <span>{index === 0 ? "封面" : `图片 ${index + 1}`}</span>
                                       <div>
                                         <button type="button" aria-label={`商品图片 ${index + 1} 上移`} disabled={imagePending === editingItem.goodId || index === 0} onClick={() => void moveProductImage(editingItem, index, -1)}>↑</button>
                                         <button type="button" aria-label={`商品图片 ${index + 1} 下移`} disabled={imagePending === editingItem.goodId || index === editingItem.images.length - 1} onClick={() => void moveProductImage(editingItem, index, 1)}>↓</button>
-                                        <button type="button" aria-label={`删除商品图片 ${index + 1}`} disabled={imagePending === editingItem.goodId} onClick={() => void deleteProductImage(editingItem, image)}>删除</button>
+                                        <button type="button" aria-label={`删除商品图片 ${index + 1}`} disabled={imagePending === editingItem.goodId} onClick={() => setImageDeleteTarget({ item: editingItem, image })}>删除</button>
                                       </div>
                                     </figcaption>
                                   </figure>
@@ -1084,6 +1084,16 @@ export default function GoodsPage() {
                           </footer>
         </div> : null}
       </ModalDialog>
+      <ConfirmDialog
+        open={imageDeleteTarget !== null}
+        title="删除商品图片"
+        description="删除后该图片不再展示，商品资料会重新提交平台审核；此操作不可撤销。"
+        confirmLabel="删除图片"
+        danger
+        pending={imagePending !== ""}
+        onConfirm={() => imageDeleteTarget && void deleteProductImage(imageDeleteTarget.item, imageDeleteTarget.image).then(() => setImageDeleteTarget(null))}
+        onCancel={() => setImageDeleteTarget(null)}
+      />
     </main>
   );
 }

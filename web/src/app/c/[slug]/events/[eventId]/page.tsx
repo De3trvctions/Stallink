@@ -3,6 +3,12 @@ import { Suspense } from "react";
 import { BundlesGrid, GoodsGrid } from "@/components/goods-grid";
 import { getEvent } from "@/lib/api";
 
+function eventIsEnded(event: { status: string; endsOn: string | null }): boolean {
+  if (event.status === "ended") return true;
+  if (!event.endsOn) return false;
+  return new Date(`${event.endsOn}T23:59:59`).getTime() < Date.now();
+}
+
 async function EventPage({ params }: { params: Promise<{ slug: string; eventId: string }> }) {
   const { slug, eventId } = await params;
   const data = await getEvent(slug, eventId);
@@ -10,6 +16,7 @@ async function EventPage({ params }: { params: Promise<{ slug: string; eventId: 
     return <div className="empty-page"><p className="eyebrow">页面不存在</p><h1>活动暂时不可用</h1><Link href={`/c/${slug}`} className="button button--dark">返回摊位</Link></div>;
   }
   const event = data.event;
+  const ended = eventIsEnded(event);
   return (
     <>
       <nav className="breadcrumbs" aria-label="面包屑导航">
@@ -17,13 +24,14 @@ async function EventPage({ params }: { params: Promise<{ slug: string; eventId: 
       </nav>
       <header className="event-head event-head--detail">
         <p className="eyebrow"><i aria-hidden="true" />{event.city || "线下活动"} · {event.venue || "地点待公布"}</p>
-        <h1>{event.name}</h1>
+        <h1>{event.name}{ended ? <span className="event-ended-badge">已结束</span> : null}</h1>
         <div className="event-head__meta">
           <span>{event.startsOn} 至 {event.endsOn}</span>
           <span>摊位 {event.boothNumber || "待公布"}</span>
           <span>币种 {event.currency}</span>
         </div>
       </header>
+      {ended ? <p className="event-ended-notice" role="status">活动尚未开始或已结束，当前不能下单购买。</p> : null}
       <div className="section-heading section-heading--compact">
         <div><p className="eyebrow">仅限本场</p><h2>活动商品</h2></div>
         <span>{data.goods.length} 件</span>

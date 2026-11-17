@@ -5,14 +5,16 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuthLayout } from "@/components/auth-layout";
 import { browserJSON } from "@/lib/api";
+import { describeRequest } from "@/lib/errors";
+import { messageClass, useMessage } from "@/lib/message";
 
 export default function MePage() {
   const router = useRouter();
   const [displayName, setDisplayName] = useState("");
   const [contact, setContact] = useState("");
-  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const { message, setError, setSuccess } = useMessage();
 
   useEffect(() => {
     let active = true;
@@ -39,13 +41,13 @@ export default function MePage() {
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage("");
     setSaving(true);
     try {
       const res = await browserJSON("/api/me", "PATCH", { displayName, contact });
-      setMessage(res.ok ? "资料已保存。" : "保存失败，请重试。");
+      if (!res.ok) { setError(describeRequest(res)); return; }
+      setSuccess("资料已保存。");
     } catch {
-      setMessage("无法连接服务，请检查网络后重试。");
+      setError("无法连接服务，请检查网络后重试。");
     } finally {
       setSaving(false);
     }
@@ -70,7 +72,7 @@ export default function MePage() {
             <span>联系方式</span>
             <input id="profile-contact" autoComplete="tel" value={contact} onChange={(event) => setContact(event.target.value)} placeholder="电话、社交账号等" />
           </label>
-          {message ? <p className={`form-message${message.includes("失败") || message.includes("无法") ? " form-message--error" : " form-message--success"}`} role="status">{message}</p> : null}
+          {message ? <p className={messageClass(message)} role="status">{message.text}</p> : null}
           <button className="button button--dark auth-form__submit" type="submit" disabled={saving}>
             {saving ? <><span className="button-spinner" aria-hidden="true" />正在保存</> : <>保存资料 <span aria-hidden="true">→</span></>}
           </button>

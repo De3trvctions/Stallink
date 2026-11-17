@@ -59,7 +59,7 @@ func TestOrderCommandsAreDurableAndIdempotent(t *testing.T) {
 	}
 	starts := time.Now().Format(time.DateOnly)
 	ends := time.Now().AddDate(0, 0, 1).Format(time.DateOnly)
-	eventID, err := store.CreateEvent(ctx, shopID, data.EventInput{Name: "Test Event", StartsOn: starts, EndsOn: ends, Currency: "MYR", Status: "scheduled"})
+	eventID, err := store.CreateEvent(ctx, shopID, data.EventInput{Name: "Test Event", StartsOn: starts, EndsOn: ends, Currency: "MYR", Status: "live"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestOrderCommandsAreDurableAndIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payCodeID, err := store.CreatePayCode(ctx, shopID, "Cash", "unused", true)
+	payCodeID, err := store.CreatePayCode(ctx, shopID, "Cash", "unused", nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,6 +115,25 @@ func TestOrderCommandsAreDurableAndIdempotent(t *testing.T) {
 			t.Fatalf("parallel duplicate checkout returned order %q, want %q", got.ID, orderID)
 		}
 	}
+	for _, endpoint := range []string{"/api/staff/orders?status=pending", "/api/admin/orders?status=pending"} {
+		response := commandRequest(t, handler, http.MethodGet, endpoint, nil, cookie, "")
+		var page struct {
+			Items []struct {
+				ID    string `json:"id"`
+				Lines []struct {
+					GoodName       string `json:"goodName"`
+					Qty            int    `json:"qty"`
+					LineTotalMinor int64  `json:"lineTotalMinor"`
+				} `json:"lines"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &page); err != nil || response.Code != http.StatusOK || len(page.Items) != 1 || page.Items[0].ID != orderID || len(page.Items[0].Lines) != 1 || page.Items[0].Lines[0].GoodName != "Test Good" || page.Items[0].Lines[0].Qty != 1 || page.Items[0].Lines[0].LineTotalMinor != 1000 {
+			t.Fatalf("order list %s: status %d body %s err %v", endpoint, response.Code, response.Body.String(), err)
+		}
+	}
+	if response := commandRequest(t, handler, http.MethodGet, "/api/staff/orders?status=paid", nil, cookie, ""); !bytes.Contains(response.Body.Bytes(), []byte(`"items":[]`)) {
+		t.Fatalf("paid filter returned pending order: %s", response.Body.String())
+	}
 	assertCount(t, ctx, pool, `SELECT count(*) FROM orders WHERE shop_id = $1`, shopID, 1)
 	assertCount(t, ctx, pool, `SELECT count(*) FROM audit_logs WHERE subject_id = $1 AND action = 'order.create'`, orderID, 1)
 	assertCount(t, ctx, pool, `SELECT count(*) FROM inventory_reservations WHERE order_id = $1 AND state = 'active'`, orderID, 1)
@@ -143,7 +162,7 @@ func TestOrderCommandsAreDurableAndIdempotent(t *testing.T) {
 	}
 
 	payPath := "/api/staff/orders/" + orderID + "/pay"
-	payBody := map[string]string{"payCodeId": payCodeID}
+	payBody := map[string]string{"payCodeId": payCodeID.String()}
 	payKey := uuid.NewString()
 	for attempt := 0; attempt < 2; attempt++ {
 		response := commandRequest(t, handler, http.MethodPost, payPath, payBody, cookie, payKey)
@@ -157,6 +176,16 @@ func TestOrderCommandsAreDurableAndIdempotent(t *testing.T) {
 	assertCount(t, ctx, pool, `SELECT count(*) FROM inventory_movements WHERE order_id = $1 AND movement_type = 'sell'`, orderID, 1)
 	assertCount(t, ctx, pool, `SELECT count(*) FROM event_listings WHERE id = $1 AND reserved_qty = 0 AND sold_qty = 1`, listingID, 1)
 
+	reportDate := time.Now().In(data.ReportLocation("")).Format(time.DateOnly)
+	generated := commandRequest(t, handler, http.MethodPost, "/api/admin/daily-reports", map[string]string{"date": reportDate}, cookie, "")
+	if generated.Code != http.StatusOK {
+		t.Fatalf("generate report: %d %s", generated.Code, generated.Body.String())
+	}
+	exportPath := "/api/admin/daily-reports/export?date=" + reportDate
+	beforeExport := commandRequest(t, handler, http.MethodGet, exportPath, nil, cookie, "")
+	if beforeExport.Code != http.StatusOK {
+		t.Fatalf("export report: %d %s", beforeExport.Code, beforeExport.Body.String())
+	}
 	fulfillPath := "/api/staff/orders/" + orderID + "/fulfill"
 	fulfillKey := uuid.NewString()
 	for attempt := 0; attempt < 2; attempt++ {
@@ -174,6 +203,10 @@ func TestOrderCommandsAreDurableAndIdempotent(t *testing.T) {
 		if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil || got.Status != "refund_required" {
 			t.Fatalf("cancel did not require a refund: body %s, err %v", response.Body.String(), err)
 		}
+	}
+	afterExport := commandRequest(t, handler, http.MethodGet, exportPath, nil, cookie, "")
+	if afterExport.Code != http.StatusOK || !bytes.Equal(beforeExport.Body.Bytes(), afterExport.Body.Bytes()) {
+		t.Fatalf("export changed after snapshot: before %s after %s", beforeExport.Body.String(), afterExport.Body.String())
 	}
 	assertCount(t, ctx, pool, `SELECT count(*) FROM audit_logs WHERE subject_id = $1 AND action = 'order.refund_required'`, orderID, 1)
 	if response := commandRequest(t, handler, http.MethodPost, payPath, payBody, cookie, payKey); response.Code != http.StatusOK {
@@ -238,11 +271,11 @@ type integrationQuote struct {
 	TotalMinor int64  `json:"totalMinor"`
 }
 
-func requestQuote(t *testing.T, handler http.Handler, cookie *http.Cookie, eventID, listingID string, qty int, cartVersion int) integrationQuote {
+func requestQuote(t *testing.T, handler http.Handler, cookie *http.Cookie, eventID, listingID data.ID, qty int, cartVersion int) integrationQuote {
 	t.Helper()
 	body := map[string]any{
-		"eventId": eventID, "cartVersion": cartVersion,
-		"lines": []map[string]any{{"kind": "single", "listingId": listingID, "qty": qty}},
+		"eventId": eventID.String(), "cartVersion": cartVersion,
+		"lines": []map[string]any{{"kind": "single", "listingId": listingID.String(), "qty": qty}},
 	}
 	response := commandRequest(t, handler, http.MethodPost, "/api/staff/order-quotes", body, cookie, uuid.NewString())
 	if response.Code != http.StatusOK {
@@ -303,7 +336,7 @@ func commandRequest(t *testing.T, handler http.Handler, method, path string, bod
 	return response
 }
 
-func assertCount(t *testing.T, ctx context.Context, pool *pgxpool.Pool, query string, arg string, want int) {
+func assertCount(t *testing.T, ctx context.Context, pool *pgxpool.Pool, query string, arg any, want int) {
 	t.Helper()
 	var got int
 	if err := pool.QueryRow(ctx, query, arg).Scan(&got); err != nil {

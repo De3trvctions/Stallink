@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { browserJSON } from "@/lib/api";
+import { describeRequest } from "@/lib/errors";
+import { messageClass, useMessage } from "@/lib/message";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 type Sales = { id: string; loginName: string; enabled: boolean };
 
@@ -11,38 +14,37 @@ export default function SalesPage() {
   const [loginName, setLoginName] = useState("");
   const [password, setPassword] = useState("");
   const [people, setPeople] = useState<Sales[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [resetTarget, setResetTarget] = useState("");
   const [resetPassword, setResetPassword] = useState("");
-  const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
+  const [confirmTarget, setConfirmTarget] = useState<Sales | null>(null);
+  const { message, setError, setSuccess } = useMessage();
 
   function load() {
     browserJSON("/api/admin/sales").then((res) => {
-      if (res.status === 403) {
-        router.replace("/counter");
-        return;
-      }
+      if (res.category === "forbidden") { router.replace("/counter"); return; }
+      if (!res.ok) { setLoadError(describeRequest(res)); return; }
       setPeople(Array.isArray(res.data) ? res.data as Sales[] : []);
-    });
+    }).catch(() => setLoadError("无法连接服务，请检查网络后重试。"))
+      .finally(() => setLoading(false));
   }
   useEffect(load, [router]);
 
   async function createSales(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
-    setMessage("");
+    setError(null);
     try {
       const res = await browserJSON("/api/admin/sales", "POST", { loginName, password });
-      if (!res.ok) {
-        setMessage(res.data.error === "login_taken" ? "这个账号已经存在。" : "账号创建失败，请检查登录名和至少 8 位的初始密码。");
-        return;
-      }
+      if (!res.ok) { setError(describeRequest(res)); return; }
       setLoginName("");
       setPassword("");
-      setMessage("销售账号已创建。");
+      setSuccess("销售账号已创建。");
       load();
     } catch {
-      setMessage("无法连接服务，请检查网络后重试。");
+      setError("无法连接服务，请检查网络后重试。");
     } finally {
       setPending(false);
     }
@@ -50,18 +52,31 @@ export default function SalesPage() {
 
   async function savePassword(event: React.FormEvent<HTMLFormElement>, person: Sales) {
     event.preventDefault();
-    setMessage("");
+    setError(null);
     try {
       const res = await browserJSON(`/api/admin/sales/${person.id}/password`, "POST", { password: resetPassword });
-      if (!res.ok) {
-        setMessage("密码没有更新，请使用至少 8 位字符。");
-        return;
-      }
-      setMessage(`${person.loginName} 的密码已更新。`);
+      if (!res.ok) { setError("密码没有更新，请使用至少 8 位字符。"); return; }
+      setSuccess(`${person.loginName} 的密码已更新。`);
       setResetTarget("");
       setResetPassword("");
     } catch {
-      setMessage("无法连接服务，请检查网络后重试。");
+      setError("无法连接服务，请检查网络后重试。");
+    }
+  }
+
+  async function toggleEnabled(person: Sales, nextEnabled: boolean) {
+    setPending(true);
+    setError(null);
+    try {
+      const res = await browserJSON(`/api/admin/sales/${person.id}/${nextEnabled ? "enable" : "disable"}`, "POST", {});
+      if (!res.ok) { setError(describeRequest(res)); return; }
+      setSuccess(nextEnabled ? `账号「${person.loginName}」已启用。` : `账号「${person.loginName}」已停用。`);
+      load();
+    } catch {
+      setError("无法连接服务，请检查网络后重试。");
+    } finally {
+      setPending(false);
+      setConfirmTarget(null);
     }
   }
 
@@ -81,10 +96,16 @@ export default function SalesPage() {
         </label>
         <button className="button button--dark" type="submit" disabled={pending}>{pending ? "正在创建…" : "创建销售账号"}</button>
       </form>
-      {message ? <p className={`form-message${message.includes("失败") || message.includes("没有") || message.includes("无法") ? " form-message--error" : " form-message--success"}`} role="status">{message}</p> : null}
+      {message ? <p className={messageClass(message)} role="status">{message.text}</p> : null}
 
       <div className="workspace-list-heading"><h2>现有账号</h2><span>{people.length} 个</span></div>
-      {people.length === 0 ? (
+      {loading ? <p className="empty-state">正在读取账号…</p> : loadError ? (
+        <p className="empty-state" role="alert">
+          <span className="empty-state__mark" aria-hidden="true">!</span>
+          <span>{loadError}</span>
+          <button type="button" className="button button--outline" onClick={load}>重试</button>
+        </p>
+      ) : people.length === 0 ? (
         <div className="empty-state empty-state--compact"><span className="empty-state__mark" aria-hidden="true">✳</span><p>还没有销售账号。</p></div>
       ) : (
         <ul className="sales-list">
@@ -95,8 +116,10 @@ export default function SalesPage() {
                 <div><strong>{person.loginName}</strong><span className={person.enabled ? "account-status" : "account-status account-status--disabled"}><i aria-hidden="true" />{person.enabled ? "已启用" : "已停用"}</span></div>
               </div>
               <div className="sales-row__actions">
-                <button type="button" className="button button--outline" onClick={async () => { await browserJSON(`/api/admin/sales/${person.id}/${person.enabled ? "disable" : "enable"}`, "POST", {}); load(); }}>{person.enabled ? "停用" : "启用"}</button>
-                <button type="button" className="text-link" onClick={() => { setMessage(""); setResetPassword(""); setResetTarget(resetTarget === person.id ? "" : person.id); }}>{resetTarget === person.id ? "取消" : "重置密码"}</button>
+                {person.enabled
+                  ? <button type="button" className="button button--danger" disabled={pending} onClick={() => setConfirmTarget(person)}>停用</button>
+                  : <button type="button" className="button button--outline" disabled={pending} onClick={() => void toggleEnabled(person, true)}>启用</button>}
+                <button type="button" className="text-link" onClick={() => { setError(null); setResetPassword(""); setResetTarget(resetTarget === person.id ? "" : person.id); }}>{resetTarget === person.id ? "取消" : "重置密码"}</button>
               </div>
               {resetTarget === person.id ? (
                 <form className="sales-reset" onSubmit={(event) => savePassword(event, person)}>
@@ -111,6 +134,16 @@ export default function SalesPage() {
           ))}
         </ul>
       )}
+      <ConfirmDialog
+        open={confirmTarget !== null}
+        title="停用销售账号"
+        description={`停用后「${confirmTarget?.loginName ?? ""}」无法登录收银台；账号数据保留，可随时重新启用。`}
+        confirmLabel="停用"
+        danger
+        pending={pending}
+        onConfirm={() => confirmTarget && void toggleEnabled(confirmTarget, false)}
+        onCancel={() => setConfirmTarget(null)}
+      />
     </main>
   );
 }

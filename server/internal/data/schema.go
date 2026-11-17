@@ -93,6 +93,7 @@ var schema = []string{
 		name text NOT NULL CHECK (char_length(name) BETWEEN 1 AND 40),
 		image_path text NOT NULL,
 		kind text NOT NULL DEFAULT 'qr' CHECK (kind IN ('qr', 'cash')),
+		currency text,
 		is_default boolean NOT NULL DEFAULT false,
 		is_enabled boolean NOT NULL DEFAULT true
 	)`,
@@ -102,7 +103,7 @@ var schema = []string{
 		shop_id bigint NOT NULL REFERENCES shops (id),
 		event_id bigint NOT NULL REFERENCES events (id),
 		number text NOT NULL CHECK (number ~ '^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$'),
-		status text NOT NULL CHECK (status IN ('pending', 'paid', 'fulfilled', 'cancelled')),
+		status text NOT NULL CHECK (status IN ('pending', 'paid', 'fulfilled', 'cancelled', 'expired', 'refund_required')),
 		booth_name text NOT NULL DEFAULT '' CHECK (char_length(booth_name) <= 80),
 		total_minor bigint NOT NULL CHECK (total_minor >= 0),
 		currency text NOT NULL,
@@ -111,6 +112,9 @@ var schema = []string{
 		opened_by bigint NOT NULL REFERENCES users (id),
 		opened_by_role text NOT NULL,
 		paid_by bigint REFERENCES users (id),
+		refunded_at timestamptz,
+		cash_received_minor bigint,
+		cash_change_minor bigint,
 		created_at timestamptz NOT NULL DEFAULT now(),
 		UNIQUE (shop_id, number)
 	)`,

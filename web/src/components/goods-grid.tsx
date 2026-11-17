@@ -1,5 +1,5 @@
-import Image from "next/image";
 import Link from "next/link";
+import { SafeImage } from "@/components/safe-image";
 import type { BoothEvent, BundleOffer, Good } from "@/lib/api";
 import { formatMoney, lowestUnitRate } from "@/lib/pricing";
 
@@ -22,26 +22,30 @@ export function GoodsGrid({ slug, goods, showEventName = true }: { slug: string;
   return (
     <ul className="product-grid">
       {goods.map((good) => {
+        const soldOut = good.soldOut ?? good.remaining <= 0;
         const offers = (good.priceTiers ?? []).filter((tier) => tier.quantity <= good.remaining);
+        const placeholder = (
+          <div className="product-placeholder" aria-label={`${good.name} 暂无商品图片`}>
+            <span className="product-placeholder__name">{good.name}</span>
+            <span className="product-placeholder__note">暂无商品图片</span>
+          </div>
+        );
         return (
           <li key={good.listingId}>
-          <Link href={`/c/${slug}/listings/${good.listingId}`} className="product-card">
+          <Link href={`/c/${slug}/listings/${good.listingId}`} className={`product-card${soldOut ? " product-card--soldout" : ""}`}>
             <figure className="product-card__media">
               {good.imageURL ? (
-                <Image
+                <SafeImage
                   src={good.imageURL}
                   alt={good.name}
                   fill
                   sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
                   unoptimized
                   className="product-card__image"
+                  fallback={placeholder}
                 />
-              ) : (
-                <div className="product-placeholder" aria-label={`${good.name} 暂无商品图片`}>
-                  <span className="product-placeholder__name">{good.name}</span>
-                  <span className="product-placeholder__note">暂无商品图片</span>
-                </div>
-              )}
+              ) : placeholder}
+              {soldOut ? <span className="product-card__soldout-badge">售罄</span> : null}
             </figure>
             <div className="product-card__info">
               <h3>{good.name}</h3>
@@ -50,7 +54,7 @@ export function GoodsGrid({ slug, goods, showEventName = true }: { slug: string;
                 <span className="product-card__price">
                   {offers.length > 0 ? <>{formatMoney(good.currency, Math.round(lowestUnitRate(good.unitPriceMinor, offers)))}<em className="product-card__from">起</em></> : good.priceLabel}
                 </span>
-                <span className="product-card__stock">{good.remaining > 0 ? `余 ${good.remaining}` : "售罄"}</span>
+                <span className="product-card__stock">{soldOut ? "售罄" : `余 ${good.remaining}`}</span>
               </div>
               {offers.length > 0 ? <small className="product-card__bundle">{offers.map((tier) => `${tier.quantity} 件 ${formatMoney(good.currency, tier.totalPriceMinor)}`).join(" · ")}</small> : null}
             </div>
@@ -71,7 +75,7 @@ export function BundlesGrid({ slug, bundles }: { slug: string; bundles: BundleOf
         return <li className="bundle-card" key={bundle.bundleListingId}>
           <Link href={`/c/${slug}/bundles/${bundle.bundleListingId}`} className="bundle-card__link">
             <div className="bundle-card__media" aria-label={`${bundle.name}套餐图片`}>
-              {images.length > 0 ? images.slice(0, 4).map((image, index) => <Image key={image.id} src={image.url} alt={`${bundle.name}，图片 ${index + 1}`} fill={false} width={160} height={160} unoptimized />)
+              {images.length > 0 ? images.slice(0, 4).map((image, index) => <SafeImage key={image.id} src={image.url} alt={`${bundle.name}，图片 ${index + 1}`} fill={false} width={160} height={160} unoptimized fallbackClassName="bundle-card__thumb--fallback" />)
                 : <div className="bundle-card__placeholder"><span>固定组合</span><strong>{bundle.name}</strong></div>}
               {bundle.remaining <= 0 ? <span className="bundle-card__soldout">暂时售罄</span> : null}
             </div>

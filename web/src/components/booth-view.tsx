@@ -1,5 +1,5 @@
-import Image from "next/image";
 import type { Booth } from "@/lib/api";
+import { SafeImage } from "@/components/safe-image";
 import { BundlesGrid, EventList, GoodsGrid } from "@/components/goods-grid";
 
 export function BoothView({ booth }: { booth: Booth }) {
@@ -84,13 +84,14 @@ export function BoothView({ booth }: { booth: Booth }) {
         <figure className="ed-figure ed-store__figure">
           <div className="ed-figure__frame">
             {featuredGood?.imageURL ? (
-              <Image
+              <SafeImage
                 src={featuredGood.imageURL}
                 alt={featuredGood.name}
                 fill
                 sizes="(max-width: 900px) 100vw, 45vw"
                 unoptimized
                 priority
+                fallback={<div className="ed-store__poster"><span>{booth.name}</span></div>}
               />
             ) : (
               <div className="ed-store__poster">

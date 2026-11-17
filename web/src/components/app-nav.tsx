@@ -25,16 +25,19 @@ export function AppNav() {
 
   useEffect(() => {
     const preference = window.matchMedia("(prefers-color-scheme: dark)");
-    const sync = () => {
+    const resolve = (): "light" | "dark" => {
       let saved: string | null = null;
       try { saved = window.localStorage.getItem("stallink.theme"); } catch { /* Use system preference. */ }
-      const next = saved === "light" || saved === "dark" ? saved : preference.matches ? "dark" : "light";
+      return saved === "light" || saved === "dark" ? saved : preference.matches ? "dark" : "light";
+    };
+    const sync = () => {
+      const next = resolve();
       document.documentElement.dataset.theme = next;
       setTheme(next);
     };
-    const timer = window.setTimeout(sync, 0);
+    sync();
     preference.addEventListener("change", sync);
-    return () => { window.clearTimeout(timer); preference.removeEventListener("change", sync); };
+    return () => preference.removeEventListener("change", sync);
   }, []);
 
   function toggleTheme() {
@@ -95,7 +98,7 @@ export function AppNav() {
         <p className="site-header__note">{isWorkspace ? "现场订单 · 库存管理" : "独立摊位 · 现场好找"}</p>
         <nav className="site-header__actions" aria-label="账号导航">
           {theme ? <button type="button" className="theme-toggle" onClick={toggleTheme} aria-label={theme === "dark" ? "切换至浅色模式" : "切换至深色模式"}>{theme === "dark" ? "浅色" : "深色"}</button> : null}
-          {account === undefined ? <span className="header-loading" aria-hidden="true" /> : account ? (
+          {account === undefined ? <><span className="header-loading" aria-hidden="true" /><span className="sr-only" role="status">正在加载账号…</span></> : account ? (
             <>
               {account.shopSlug ? <Link href={`/c/${account.shopSlug}`} className="header-link">查看店铺</Link> : null}
               {destination ? <Link href={destination.href} className="header-account">{destination.label}<span aria-hidden="true">↗</span></Link> : null}

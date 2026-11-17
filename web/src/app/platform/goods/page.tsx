@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Image from "next/image";
+import { SafeImage } from "@/components/safe-image";
 import { useRouter } from "next/navigation";
 import { WorkspaceShell } from "@/components/workspace-shell";
 import { browserJSON } from "@/lib/api";
+import { describeRequest } from "@/lib/errors";
+import { messageClass, useMessage } from "@/lib/message";
 import { formatMoney, type PriceTier } from "@/lib/pricing";
 
 type Listing = {
@@ -33,20 +35,23 @@ export default function PlatformGoodsPage() {
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [rejectID, setRejectID] = useState("");
   const [note, setNote] = useState("");
-  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const { message, setError, setSuccess } = useMessage();
   const [saving, setSaving] = useState(false);
   const [autoApprove, setAutoApprove] = useState(true);
   const [switchSaving, setSwitchSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const res = await browserJSON("/api/platform/goods");
-      if (res.status === 401 || res.status === 403) {
+      if (res.category === "unauthorized" || res.category === "forbidden") {
         router.replace("/login");
         return;
       }
+      if (!res.ok) { setLoadError(describeRequest(res)); return; }
       setShops(Array.isArray(res.data) ? (res.data as ShopGroup[]).map((shop) => ({
         ...shop,
         goods: shop.goods.map((good) => ({ ...good, images: good.images ?? [] })),
@@ -56,7 +61,7 @@ export default function PlatformGoodsPage() {
         })),
       })) : []);
     } catch {
-      setMessage("无法连接服务，请稍后重试。");
+      setLoadError("无法连接服务，请稍后重试。");
     } finally {
       setLoading(false);
     }
@@ -82,16 +87,16 @@ export default function PlatformGoodsPage() {
     if (switchSaving) return;
     const next = !autoApprove;
     setSwitchSaving(true);
-    setMessage("");
+    setError(null);
     try {
       const res = await browserJSON("/api/platform/review/auto-approve", "PATCH", { enabled: next });
       if (!res.ok) {
-        setMessage("自动通过开关保存失败，请重试。");
+        setError(describeRequest(res));
         return;
       }
       setAutoApprove(Boolean((res.data as { enabled?: boolean })?.enabled ?? next));
     } catch {
-      setMessage("无法连接服务，开关没有保存。");
+      setError("无法连接服务，开关没有保存。");
     } finally {
       setSwitchSaving(false);
     }
@@ -106,19 +111,19 @@ export default function PlatformGoodsPage() {
 
   async function review(goodID: string, status: "approved" | "rejected", reason = "") {
     setSaving(true);
-    setMessage("");
+    setError(null);
     try {
       const res = await browserJSON(`/api/platform/goods/${goodID}/review`, "PATCH", { status, note: reason });
       if (!res.ok) {
-        setMessage(res.data.error === "invalid_review" ? "拒绝商品需要填写不超过 500 字的原因。" : "审核没有保存，请刷新后重试。");
+        setError(describeRequest(res));
         return;
       }
       setRejectID("");
       setNote("");
-      setMessage(status === "approved" ? "商品已通过审核。" : "商品已拒绝并通知店铺查看原因。");
+      setSuccess(status === "approved" ? "商品已通过审核。" : "商品已拒绝并通知店铺查看原因。");
       await load();
     } catch {
-      setMessage("无法连接服务，请检查网络后重试。");
+      setError("无法连接服务，请检查网络后重试。");
     } finally {
       setSaving(false);
     }
@@ -126,29 +131,26 @@ export default function PlatformGoodsPage() {
 
   async function reviewBundle(bundleID: string, status: "approved" | "rejected", reason = "") {
     setSaving(true);
-    setMessage("");
+    setError(null);
     try {
       const bundle = shops.flatMap((shop) => shop.bundles).find((candidate) => candidate.bundleId === bundleID);
       if (!bundle) {
-        setMessage("找不到这条套餐审核记录，请刷新后重试。");
+        setError("找不到这条套餐审核记录，请刷新后重试。");
         return;
       }
       const res = await browserJSON(`/api/platform/bundles/${bundleID}/review`, "PATCH", {
         status, note: reason, expectedRevision: bundle.revision,
       });
       if (!res.ok) {
-        setMessage(res.data.error === "bundle_components_not_eligible" ? "套餐中的商品需要先通过商品审核并保持上架。"
-          : res.data.error === "conflict" ? "套餐在审核期间被店铺修改，请刷新后重新审核。"
-          : res.data.error === "invalid_review" ? "拒绝套餐需要填写不超过 500 字的原因。"
-            : "套餐审核没有保存，请刷新后重试。");
+        setError(describeRequest(res));
         return;
       }
       setRejectID("");
       setNote("");
-      setMessage(status === "approved" ? "套餐已通过审核。" : "套餐已拒绝并通知店铺查看原因。");
+      setSuccess(status === "approved" ? "套餐已通过审核。" : "套餐已拒绝并通知店铺查看原因。");
       await load();
     } catch {
-      setMessage("无法连接服务，请检查网络后重试。");
+      setError("无法连接服务，请检查网络后重试。");
     } finally {
       setSaving(false);
     }
@@ -189,8 +191,10 @@ export default function PlatformGoodsPage() {
           </button>
           <button className="button button--outline review-refresh" type="button" onClick={() => void load()} disabled={loading}>刷新目录</button>
         </div>
-        {message ? <p className="form-message" role="status">{message}</p> : null}
-        {loading ? <p className="review-loading" role="status">正在读取各店商品…</p> : visibleShops.length === 0 ? <p className="review-loading">还没有店铺。</p> : (
+        {message ? <p className={messageClass(message)} role="status">{message.text}</p> : null}
+        {loading ? <p className="review-loading" role="status">正在读取各店商品…</p> : loadError ? (
+          <p className="review-loading" role="alert">{loadError} <button type="button" className="button button--outline" onClick={() => void load()}>重试</button></p>
+        ) : visibleShops.length === 0 ? <p className="review-loading">还没有店铺。</p> : (
           <div className="review-shops">
             {visibleShops.map((shop) => (
               <section className="review-shop" key={shop.shopId}>
@@ -211,7 +215,7 @@ export default function PlatformGoodsPage() {
                           <div className="review-good__images" aria-label={`${good.name}商品图片`}>
                             {good.images.map((image, index) => (
                               <a href={image.url} target="_blank" rel="noreferrer" key={image.id} aria-label={`查看${good.name}图片 ${index + 1}`}>
-                                <Image src={image.url} alt={`${good.name}，图片 ${index + 1}`} width={112} height={112} unoptimized />
+                                <SafeImage src={image.url} alt={`${good.name}，图片 ${index + 1}`} width={112} height={112} unoptimized fallbackClassName="review-good__image--fallback" />
                                 {index === 0 ? <span>封面</span> : null}
                               </a>
                             ))}
@@ -254,14 +258,14 @@ export default function PlatformGoodsPage() {
                       </div>
                       {bundle.images.length > 0 ? <div className="review-good__images" aria-label={`${bundle.name}套餐图片`}>
                         {bundle.images.map((image, index) => <a href={image.url} target="_blank" rel="noreferrer" key={image.id} aria-label={`查看套餐图片 ${index + 1}`}>
-                          <Image src={image.url} alt={`${bundle.name}，图片 ${index + 1}`} width={112} height={112} unoptimized />{index === 0 ? <span>封面</span> : null}
+                          <SafeImage src={image.url} alt={`${bundle.name}，图片 ${index + 1}`} width={112} height={112} unoptimized fallbackClassName="review-good__image--fallback" />{index === 0 ? <span>封面</span> : null}
                         </a>)}
                       </div> : <p className="review-good__no-images">此套餐尚未上传图片。</p>}
                       {bundle.description ? <p className="review-good__description">{bundle.description}</p> : null}
                       {bundle.reviewNote ? <p className="review-note"><strong>上次拒绝原因：</strong>{bundle.reviewNote}</p> : null}
                       <div className="review-bundle__component-list" aria-label={`${bundle.name}组成商品审核状态`}>
                         {bundle.components.map((component) => <div className="review-bundle__component" key={component.goodId}>
-                          {component.images[0] ? <Image src={component.images[0].url} alt="" width={44} height={44} unoptimized /> : <span className="bundle-component-picker__thumb-placeholder" aria-hidden="true" />}
+                          {component.images[0] ? <SafeImage src={component.images[0].url} alt="" width={44} height={44} unoptimized fallback={<span className="bundle-component-picker__thumb-placeholder" aria-hidden="true" />} /> : <span className="bundle-component-picker__thumb-placeholder" aria-hidden="true" />}
                           <div><strong>{component.name} × {component.quantity}</strong><small>{component.reviewStatus === "approved" ? "商品审核通过" : statusText[component.reviewStatus] ?? "未审核"} · {component.isListed ? `本场可售 ${component.remaining}` : "本场已下架"} · {formatMoney(bundle.currency, component.unitPriceMinor)} / 件</small></div>
                         </div>)}
                       </div>

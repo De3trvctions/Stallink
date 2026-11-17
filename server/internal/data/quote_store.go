@@ -32,6 +32,23 @@ type OrderQuote struct {
 	ExpiresAt       time.Time
 }
 
+// validateEventOpen reports whether the event accepts orders in its current
+// status. live always accepts; scheduled accepts only when pre-sale is
+// allowed; ended and every other status reject.
+func validateEventOpen(status string, allowScheduled bool) error {
+	switch status {
+	case "live":
+		return nil
+	case "scheduled":
+		if allowScheduled {
+			return nil
+		}
+		return ErrEventNotOpen
+	default:
+		return ErrEventNotOpen
+	}
+}
+
 func (s *ShopStore) CreateOrderQuote(
 	ctx context.Context,
 	shopID, actorID, eventID ID,
@@ -40,6 +57,7 @@ func (s *ShopStore) CreateOrderQuote(
 	ttl time.Duration,
 	maxStates int,
 	bundlesEnabled bool,
+	allowScheduled bool,
 ) (OrderQuote, error) {
 	if cartVersion < 0 || len(lines) == 0 || ttl <= 0 {
 		return OrderQuote{}, catalog.ErrInvalidCart
@@ -59,11 +77,14 @@ func (s *ShopStore) CreateOrderQuote(
 	} else if err != nil {
 		return OrderQuote{}, fmt.Errorf("read quote catalog revision: %w", err)
 	}
-	var exists bool
-	if err := tx.QueryRow(ctx, `SELECT true FROM events WHERE id = $1 AND shop_id = $2`, eventID, shopID).Scan(&exists); errors.Is(err, pgx.ErrNoRows) {
+	var eventStatus string
+	if err := tx.QueryRow(ctx, `SELECT status FROM events WHERE id = $1 AND shop_id = $2`, eventID, shopID).Scan(&eventStatus); errors.Is(err, pgx.ErrNoRows) {
 		return OrderQuote{}, ErrNotFound
 	} else if err != nil {
 		return OrderQuote{}, fmt.Errorf("check quote event: %w", err)
+	}
+	if err := validateEventOpen(eventStatus, allowScheduled); err != nil {
+		return OrderQuote{}, err
 	}
 	listingRows, err := tx.Query(ctx, `
 		SELECT l.id::text, g.id::text, g.name, l.unit_price_minor, l.price_tiers,

@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/De3trvctions/Stallink/internal/auth"
+	"github.com/De3trvctions/Stallink/internal/catalog"
 	"github.com/De3trvctions/Stallink/internal/data"
 	"github.com/De3trvctions/Stallink/internal/logging"
 	"go.uber.org/zap"
@@ -146,13 +147,26 @@ func (a *API) CreatePayCode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_image")
 		return
 	}
+	if !validPayCodeName(name) {
+		writeErr(w, http.StatusBadRequest, "invalid_pay_code_name")
+		return
+	}
 	path, err := saveBlob(r.Context(), a.DataDir, file)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid_image")
 		return
 	}
 	isDefault := r.FormValue("isDefault") == "true"
-	id, err := a.DB.CreatePayCode(r.Context(), *account.ShopID, name, path, isDefault)
+	currencyRaw := strings.TrimSpace(r.FormValue("currency"))
+	var currency *string
+	if currencyRaw != "" {
+		if !catalog.ValidCurrency(currencyRaw) {
+			writeErr(w, http.StatusBadRequest, "invalid_pay_code_currency")
+			return
+		}
+		currency = &currencyRaw
+	}
+	id, err := a.DB.CreatePayCode(r.Context(), *account.ShopID, name, path, currency, isDefault)
 	if err != nil {
 		writeDataErr(w, r, err)
 		return
@@ -166,9 +180,10 @@ func (a *API) UpdatePayCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name      string `json:"name"`
-		IsEnabled bool   `json:"isEnabled"`
-		IsDefault bool   `json:"isDefault"`
+		Name      string  `json:"name"`
+		IsEnabled bool    `json:"isEnabled"`
+		IsDefault bool    `json:"isDefault"`
+		Currency  *string `json:"currency"`
 	}
 	if err := readJSON(r, &body); err != nil || body.Name == "" {
 		writeErr(w, http.StatusBadRequest, "invalid_json")
@@ -178,7 +193,18 @@ func (a *API) UpdatePayCode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := a.DB.UpdatePayCode(r.Context(), *account.ShopID, id, body.Name, body.IsEnabled, body.IsDefault); err != nil {
+	var currency *string
+	if body.Currency != nil {
+		trimmed := strings.TrimSpace(*body.Currency)
+		if trimmed != "" {
+			if !catalog.ValidCurrency(trimmed) {
+				writeErr(w, http.StatusBadRequest, "invalid_pay_code_currency")
+				return
+			}
+			currency = &trimmed
+		}
+	}
+	if err := a.DB.UpdatePayCode(r.Context(), *account.ShopID, id, body.Name, currency, body.IsEnabled, body.IsDefault); err != nil {
 		writeDataErr(w, r, err)
 		return
 	}
@@ -211,7 +237,7 @@ func (a *API) AdminOrders(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_date")
 		return
 	}
-	orders, more, err := a.DB.ListOrderPage(r.Context(), *account.ShopID, "", date, search, limit, (page-1)*limit)
+	orders, more, err := a.DB.ListOrderPage(r.Context(), *account.ShopID, "", date, search, r.URL.Query().Get("status"), a.ReportTimezone, limit, (page-1)*limit)
 	if err != nil {
 		logging.ErrorContext(r.Context(), "admin orders", zap.Error(err))
 		writeErr(w, http.StatusInternalServerError, "internal")
@@ -277,12 +303,17 @@ func (a *API) CreateSales(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_json")
 		return
 	}
+	login := strings.TrimSpace(body.LoginName)
+	if !validLoginName(login) {
+		writeErr(w, http.StatusBadRequest, "invalid_login_name")
+		return
+	}
 	hash, err := auth.HashPassword(body.Password)
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid_profile")
 		return
 	}
-	id, err := a.DB.CreateAccount(r.Context(), body.LoginName, hash, "sales", account.ShopID, "", "")
+	id, err := a.DB.CreateAccount(r.Context(), login, hash, "sales", account.ShopID, "", "")
 	if err != nil {
 		writeDataErr(w, r, err)
 		return
@@ -503,11 +534,35 @@ func (a *API) ReviewGood(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+const maxBlobBytes = 6 << 20
+
+var errBlobTooLarge = errors.New("blob exceeds size limit")
+
+// limitWriter counts bytes written and aborts once the limit is exceeded, so
+// the multipart header.Size alone cannot be trusted to enforce the cap.
+type limitWriter struct {
+	file    *os.File
+	limit   int64
+	written int64
+}
+
+func (w *limitWriter) Write(p []byte) (int, error) {
+	if w.written+int64(len(p)) > w.limit {
+		return 0, errBlobTooLarge
+	}
+	n, err := w.file.Write(p)
+	w.written += int64(n)
+	return n, err
+}
+
 func saveBlob(ctx context.Context, dir string, src io.Reader) (string, error) {
 	buf := make([]byte, 512)
 	n, err := io.ReadFull(src, buf)
 	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
 		return "", err
+	}
+	if int64(n) > maxBlobBytes {
+		return "", errBlobTooLarge
 	}
 	kind := http.DetectContentType(buf[:n])
 	if kind != "image/jpeg" && kind != "image/png" && kind != "image/webp" {
@@ -538,10 +593,11 @@ func saveBlob(ctx context.Context, dir string, src io.Reader) (string, error) {
 			}
 		}
 	}()
-	if _, err := file.Write(buf[:n]); err != nil {
+	writer := &limitWriter{file: file, limit: maxBlobBytes, written: int64(n)}
+	if _, err := writer.Write(buf[:n]); err != nil {
 		return "", err
 	}
-	if _, err := io.Copy(file, src); err != nil {
+	if _, err := io.Copy(writer, src); err != nil {
 		return "", err
 	}
 	stored = true

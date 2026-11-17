@@ -311,14 +311,24 @@ func bundleJSON(bundle data.BundleCard, view string) map[string]any {
 		images = append(images, map[string]any{"id": id, "url": imagePrefix + id, "sortOrder": sortOrder})
 	}
 	components := make([]any, 0, len(bundle.Components))
+	isPublic := view != "staff" && view != "platform"
 	for _, component := range bundle.Components {
 		componentImages := make([]any, 0, len(component.ImageIDs))
 		for sortOrder, id := range component.ImageIDs {
 			url := componentPrefix + component.GoodID + "/images/" + id
-			if view != "staff" && view != "platform" {
+			if isPublic {
 				url = componentPrefix + id
 			}
 			componentImages = append(componentImages, map[string]any{"id": id, "url": url, "sortOrder": sortOrder})
+		}
+		if isPublic {
+			// Public components expose only customer-facing fields: name,
+			// quantity, price and images. Internal IDs and review state stay out.
+			components = append(components, map[string]any{
+				"name": component.GoodName, "quantity": component.Quantity,
+				"unitPriceMinor": component.UnitPriceMinor, "images": componentImages,
+			})
+			continue
 		}
 		components = append(components, map[string]any{
 			"goodId": component.GoodID, "listingId": component.ListingID, "name": component.GoodName,
@@ -331,16 +341,24 @@ func bundleJSON(bundle data.BundleCard, view string) map[string]any {
 	if len(images) > 0 {
 		imageURL = images[0].(map[string]any)["url"]
 	}
-	return map[string]any{
-		"bundleListingId": bundle.ListingID, "bundleId": bundle.BundleID, "shopId": bundle.ShopID,
-		"shopName": bundle.ShopName, "shopSlug": bundle.ShopSlug,
+	payload := map[string]any{
+		"bundleListingId": bundle.ListingID,
+		"shopName":        bundle.ShopName, "shopSlug": bundle.ShopSlug,
 		"eventId": bundle.EventID, "eventName": bundle.EventName, "currency": bundle.Currency,
 		"name": bundle.Name, "description": bundle.Description, "unitPriceMinor": bundle.UnitPriceMinor,
 		"priceLabel": priceLabel(bundle.Currency, bundle.UnitPriceMinor), "priceTiers": bundle.PriceTiers,
-		"remaining": bundle.Remaining, "isListed": bundle.IsListed, "reviewStatus": bundle.ReviewStatus,
-		"reviewNote": bundle.ReviewNote, "revision": bundle.Revision, "images": images, "imageURL": imageURL,
+		"remaining": bundle.Remaining, "isListed": bundle.IsListed,
+		"images": images, "imageURL": imageURL,
 		"components": components,
 	}
+	if !isPublic {
+		payload["bundleId"] = bundle.BundleID
+		payload["shopId"] = bundle.ShopID
+		payload["reviewStatus"] = bundle.ReviewStatus
+		payload["reviewNote"] = bundle.ReviewNote
+		payload["revision"] = bundle.Revision
+	}
+	return payload
 }
 
 func bundleCardsJSON(bundles []data.BundleCard, view string) []any {

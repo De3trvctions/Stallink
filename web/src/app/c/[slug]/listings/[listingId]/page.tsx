@@ -16,6 +16,7 @@ async function Detail({ params }: { params: Promise<{ slug: string; listingId: s
       </div>
     );
   }
+  const soldOut = good.soldOut ?? good.remaining <= 0;
   const offers = (good.priceTiers ?? []).filter((tier) => tier.quantity <= good.remaining);
 
   return (
@@ -30,8 +31,8 @@ async function Detail({ params }: { params: Promise<{ slug: string; listingId: s
           <h1>{good.name}</h1>
           <div className="product-detail__price-row">
             <strong>{offers.length > 0 ? `${formatMoney(good.currency, Math.round(lowestUnitRate(good.unitPriceMinor, offers)))} 起` : good.priceLabel}</strong>
-            <span className={good.remaining > 0 ? "stock-label" : "stock-label stock-label--empty"}>
-              {good.remaining > 0 ? `现场余量 ${good.remaining}` : "本场售罄"}
+            <span className={soldOut ? "stock-label stock-label--empty" : "stock-label"}>
+              {soldOut ? "本场售罄" : `现场余量 ${good.remaining}`}
             </span>
           </div>
           {good.description ? <p className="product-detail__description">{good.description}</p> : null}

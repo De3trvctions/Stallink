@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { browserJSON } from "@/lib/api";
+import { describeRequest } from "@/lib/errors";
+import { messageClass, useMessage } from "@/lib/message";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { WorkspaceShell } from "@/components/workspace-shell";
 
 type Shop = { id: string; name: string; slug: string; isEnabled: boolean };
@@ -11,40 +14,62 @@ export default function PlatformPage() {
   const router = useRouter();
   const [form, setForm] = useState({ name: "", slug: "", notice: "", adminLogin: "", adminPassword: "" });
   const [shops, setShops] = useState<Shop[]>([]);
-  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [pending, setPending] = useState(false);
+  const [confirmTarget, setConfirmTarget] = useState<Shop | null>(null);
+  const { message, setError, setSuccess } = useMessage();
 
-  function load() {
+  const load = useCallback(() => {
+    setLoadError("");
     browserJSON("/api/platform/shops").then((res) => {
-      if (res.status === 401 || res.status === 403) {
+      if (res.category === "unauthorized" || res.category === "forbidden") {
         router.replace("/login");
         return;
       }
+      if (!res.ok) { setLoadError(describeRequest(res)); return; }
       setShops(Array.isArray(res.data) ? res.data as Shop[] : []);
-    });
-  }
-  useEffect(load, [router]);
+    }).catch(() => setLoadError("无法连接服务，请检查网络后重试。"))
+      .finally(() => setLoading(false));
+  }, [router]);
+  useEffect(() => {
+    const timer = window.setTimeout(load, 0);
+    return () => window.clearTimeout(timer);
+  }, [router, load]);
 
   async function createShop(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
-    setMessage("");
+    setError(null);
     try {
       const res = await browserJSON("/api/platform/shops", "POST", form);
       if (!res.ok) {
-        setMessage(res.status === 409
-          ? "店铺链接或管理员账号已被使用，请换一个。"
-          : "店铺没有创建，请检查必填信息后重试。"
-        );
+        setError(res.errorCode === "login_taken" ? "管理员账号已被使用，请换一个。" : describeRequest(res));
         return;
       }
-      setMessage(`店铺已创建：/c/${form.slug}`);
+      setSuccess(`店铺已创建：/c/${form.slug}`);
       setForm({ name: "", slug: "", notice: "", adminLogin: "", adminPassword: "" });
       load();
     } catch {
-      setMessage("无法连接服务，请检查网络后重试。");
+      setError("无法连接服务，请检查网络后重试。");
     } finally {
       setPending(false);
+    }
+  }
+
+  async function toggleShop(shop: Shop, nextEnabled: boolean) {
+    setPending(true);
+    setError(null);
+    try {
+      const res = await browserJSON(`/api/platform/shops/${shop.id}`, "PATCH", { isEnabled: nextEnabled });
+      if (!res.ok) { setError(describeRequest(res)); return; }
+      setSuccess(nextEnabled ? `店铺「${shop.name}」已重新启用。` : `店铺「${shop.name}」已停用。`);
+      load();
+    } catch {
+      setError("无法连接服务，请检查网络后重试。");
+    } finally {
+      setPending(false);
+      setConfirmTarget(null);
     }
   }
 
@@ -61,12 +86,18 @@ export default function PlatformPage() {
           <div className="platform-form-divider"><span>店铺管理员</span><i /></div>
           <label className="field" htmlFor="platform-admin-login"><span>管理员账号 <small>3-32 位，不含空格</small></span><input id="platform-admin-login" autoComplete="off" required minLength={3} maxLength={32} pattern="\S{3,32}" value={form.adminLogin} onChange={(event) => setForm({ ...form, adminLogin: event.target.value })} placeholder="为店主创建登录名" /></label>
           <label className="field" htmlFor="platform-admin-password"><span>初始密码 <small>至少 8 位</small></span><input id="platform-admin-password" type="password" autoComplete="new-password" required minLength={8} maxLength={72} value={form.adminPassword} onChange={(event) => setForm({ ...form, adminPassword: event.target.value })} placeholder="设置临时密码" /></label>
-          {message ? <p className={`form-message${message.includes("没有") || message.includes("无法") || message.includes("请") ? " form-message--error" : " form-message--success"}`} role="status">{message}</p> : null}
+          {message ? <p className={messageClass(message)} role="status">{message.text}</p> : null}
           <button className="button button--dark" type="submit" disabled={pending}>{pending ? "正在创建…" : "创建店铺"}</button>
         </form>
 
         <div className="workspace-list-heading"><h2>已开设店铺</h2><span>{shops.length} 家</span></div>
-        {shops.length === 0 ? (
+        {loading ? <p className="empty-state">正在读取店铺…</p> : loadError ? (
+          <p className="empty-state" role="alert">
+            <span className="empty-state__mark" aria-hidden="true">!</span>
+            <span>{loadError}</span>
+            <button type="button" className="button button--outline" onClick={load}>重试</button>
+          </p>
+        ) : shops.length === 0 ? (
           <div className="empty-state empty-state--compact"><span className="empty-state__mark" aria-hidden="true">✳</span><p>还没有店铺。创建后，店主可以管理自己的商品和活动。</p></div>
         ) : (
           <ul className="platform-shop-list">
@@ -74,16 +105,26 @@ export default function PlatformPage() {
               <li key={shop.id}>
                 <div><strong>{shop.name}</strong><span>/c/{shop.slug}</span></div>
                 <span className={shop.isEnabled ? "account-status" : "account-status account-status--disabled"}><i aria-hidden="true" />{shop.isEnabled ? "公开中" : "已停用"}</span>
-                <button type="button" className="button button--outline" onClick={async () => {
-                  const res = await browserJSON(`/api/platform/shops/${shop.id}`, "PATCH", { isEnabled: !shop.isEnabled });
-                  if (res.ok) load();
-                  else setMessage("店铺状态没有更新，请重试。");
-                }}>{shop.isEnabled ? "停用店铺" : "重新启用"}</button>
+                {shop.isEnabled ? (
+                  <button type="button" className="button button--danger" disabled={pending} onClick={() => setConfirmTarget(shop)}>停用店铺</button>
+                ) : (
+                  <button type="button" className="button button--outline" disabled={pending} onClick={() => void toggleShop(shop, true)}>重新启用</button>
+                )}
               </li>
             ))}
           </ul>
         )}
       </main>
+      <ConfirmDialog
+        open={confirmTarget !== null}
+        title="停用店铺"
+        description={`停用后「${confirmTarget?.name ?? ""}」的公开链接暂时无法访问，在售商品一并隐藏；可随时重新启用，这不是删除店铺。`}
+        confirmLabel="停用店铺"
+        danger
+        pending={pending}
+        onConfirm={() => confirmTarget && void toggleShop(confirmTarget, false)}
+        onCancel={() => setConfirmTarget(null)}
+      />
     </WorkspaceShell>
   );
 }

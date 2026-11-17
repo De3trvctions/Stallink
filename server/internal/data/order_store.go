@@ -44,6 +44,9 @@ type Order struct {
 	StateVersion         int64
 	CreatedAt            time.Time
 	ReservationExpiresAt *time.Time
+	RefundedAt           *time.Time
+	CashReceivedMinor    *int64
+	CashChangeMinor      *int64
 	Lines                []OrderLine
 	PricingGroups        []catalog.PricingGroup
 }
@@ -52,6 +55,7 @@ type PayCode struct {
 	ID        ID
 	Name      string
 	Kind      string
+	Currency  *string
 	IsDefault bool
 	IsEnabled bool
 }
@@ -64,7 +68,7 @@ type AuditEntry struct {
 	CreatedAt   string
 }
 
-func (s *ShopStore) CreateOrderCommand(ctx context.Context, identity CommandIdentity, clientOrderID string, quoteID ID, expectedTotal int64, boothName string, reservationsEnabled bool, reservationTTL time.Duration) (OrderCommandResult, error) {
+func (s *ShopStore) CreateOrderCommand(ctx context.Context, identity CommandIdentity, clientOrderID string, quoteID ID, expectedTotal int64, boothName string, reservationsEnabled bool, reservationTTL time.Duration, allowScheduled bool) (OrderCommandResult, error) {
 	checkoutHash := hashCheckout(identity, clientOrderID)
 	return s.runOrderCommand(ctx, identity, 201, func(tx pgx.Tx) (Order, error) {
 		var existingID ID
@@ -83,7 +87,7 @@ func (s *ShopStore) CreateOrderCommand(ctx context.Context, identity CommandIden
 		if err != nil {
 			return Order{}, err
 		}
-		return createOrderFromQuoteTx(ctx, tx, identity, clientOrderID, checkoutHash, boothName, quote, reservationsEnabled, reservationTTL)
+		return createOrderFromQuoteTx(ctx, tx, identity, clientOrderID, checkoutHash, boothName, quote, reservationsEnabled, reservationTTL, allowScheduled)
 	})
 }
 
@@ -135,12 +139,15 @@ func loadQuoteForCheckout(ctx context.Context, tx pgx.Tx, identity CommandIdenti
 	return quote, nil
 }
 
-func createOrderFromQuoteTx(ctx context.Context, tx pgx.Tx, identity CommandIdentity, clientOrderID string, checkoutHash [32]byte, boothName string, quote OrderQuote, reservationsEnabled bool, reservationTTL time.Duration) (Order, error) {
-	var currency string
-	if err := tx.QueryRow(ctx, `SELECT currency FROM events WHERE id = $1 AND shop_id = $2`, quote.EventID, identity.ShopID).Scan(&currency); errors.Is(err, pgx.ErrNoRows) {
+func createOrderFromQuoteTx(ctx context.Context, tx pgx.Tx, identity CommandIdentity, clientOrderID string, checkoutHash [32]byte, boothName string, quote OrderQuote, reservationsEnabled bool, reservationTTL time.Duration, allowScheduled bool) (Order, error) {
+	var currency, eventStatus string
+	if err := tx.QueryRow(ctx, `SELECT currency, status FROM events WHERE id = $1 AND shop_id = $2`, quote.EventID, identity.ShopID).Scan(&currency, &eventStatus); errors.Is(err, pgx.ErrNoRows) {
 		return Order{}, ErrNotFound
 	} else if err != nil {
 		return Order{}, fmt.Errorf("read quote event: %w", err)
+	}
+	if err := validateEventOpen(eventStatus, allowScheduled); err != nil {
+		return Order{}, err
 	}
 	orderID, created, err := insertOrderHeader(ctx, tx, identity, clientOrderID, checkoutHash, quote.EventID, boothName, quote.TotalMinor, currency, reservationsEnabled, reservationTTL)
 	if err != nil {
@@ -268,18 +275,19 @@ func insertOrderHeader(ctx context.Context, tx pgx.Tx, identity CommandIdentity,
 	return 0, false, fmt.Errorf("could not allocate order number")
 }
 
-func (s *ShopStore) PayOrderCommand(ctx context.Context, identity CommandIdentity, orderID, payCodeID ID) (OrderCommandResult, error) {
+func (s *ShopStore) PayOrderCommand(ctx context.Context, identity CommandIdentity, orderID, payCodeID ID, cashReceivedMinor *int64) (OrderCommandResult, error) {
 	return s.runOrderCommand(ctx, identity, 200, func(tx pgx.Tx) (Order, error) {
-		return payOrderTx(ctx, tx, identity.ShopID, identity.ActorID, orderID, payCodeID)
+		return payOrderTx(ctx, tx, identity.ShopID, identity.ActorID, orderID, payCodeID, cashReceivedMinor)
 	})
 }
 
-func payOrderTx(ctx context.Context, tx pgx.Tx, shopID, actorID, orderID, payCodeID ID) (Order, error) {
+func payOrderTx(ctx context.Context, tx pgx.Tx, shopID, actorID, orderID, payCodeID ID, cashReceivedMinor *int64) (Order, error) {
 	if payCodeID == 0 {
 		return Order{}, ErrPayCode
 	}
-	var status, reservationMode string
-	err := tx.QueryRow(ctx, `SELECT status, reservation_mode FROM orders WHERE id = $1 AND shop_id = $2 FOR UPDATE`, orderID, shopID).Scan(&status, &reservationMode)
+	var status, reservationMode, orderCurrency string
+	var totalMinor int64
+	err := tx.QueryRow(ctx, `SELECT status, reservation_mode, currency, total_minor FROM orders WHERE id = $1 AND shop_id = $2 FOR UPDATE`, orderID, shopID).Scan(&status, &reservationMode, &orderCurrency, &totalMinor)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Order{}, ErrNotFound
 	}
@@ -299,13 +307,21 @@ func payOrderTx(ctx context.Context, tx pgx.Tx, shopID, actorID, orderID, payCod
 	if !catalog.CanTransit(status, "paid") {
 		return Order{}, ErrStatus
 	}
-	var payName string
-	err = tx.QueryRow(ctx, `SELECT name FROM pay_codes WHERE id = $1 AND shop_id = $2 AND is_enabled`, payCodeID, shopID).Scan(&payName)
+	var payName, payKind string
+	var payCurrency *string
+	err = tx.QueryRow(ctx, `SELECT name, kind, currency FROM pay_codes WHERE id = $1 AND shop_id = $2 AND is_enabled`, payCodeID, shopID).Scan(&payName, &payKind, &payCurrency)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Order{}, ErrPayCode
 	}
 	if err != nil {
 		return Order{}, fmt.Errorf("pay code: %w", err)
+	}
+	if !payCodeCurrencyMatches(payCurrency, orderCurrency) {
+		return Order{}, ErrPayCodeCurrencyMismatch
+	}
+	cashReceived, cashChange, err := cashSettlement(totalMinor, cashReceivedMinor)
+	if err != nil {
+		return Order{}, err
 	}
 	if reservationMode == "reserved" {
 		if err := consumeOrderReservations(ctx, tx, shopID, orderID); err != nil {
@@ -316,20 +332,17 @@ func payOrderTx(ctx context.Context, tx pgx.Tx, shopID, actorID, orderID, payCod
 	}
 	_, err = tx.Exec(ctx, `
 		UPDATE orders SET status = 'paid', reservation_mode = CASE WHEN reservation_mode = 'reserved' THEN 'consumed' ELSE reservation_mode END,
-			pay_code_id = $2, pay_code_name = $3, paid_by = $4, state_version = state_version + 1 WHERE id = $1`,
-		orderID, payCodeID, payName, actorID)
+			pay_code_id = $2, pay_code_name = $3, paid_by = $4, cash_received_minor = $5, cash_change_minor = $6,
+			state_version = state_version + 1 WHERE id = $1`,
+		orderID, payCodeID, payName, actorID, cashReceived, cashChange)
 	if err != nil {
 		return Order{}, fmt.Errorf("mark paid: %w", err)
 	}
 	if err := insertAudit(ctx, tx, shopID, actorID, "order.pay", "order", orderID); err != nil {
 		return Order{}, err
 	}
-	var amount int64
-	var currency string
-	if err := tx.QueryRow(ctx, `SELECT total_minor, currency FROM orders WHERE id = $1`, orderID).Scan(&amount, &currency); err != nil {
-		return Order{}, fmt.Errorf("read payment snapshot: %w", err)
-	}
-	if _, err := tx.Exec(ctx, `INSERT INTO order_payments(order_id, shop_id, actor_id, pay_code_id, pay_code_name_snapshot, amount_minor, currency) VALUES ($1,$2,$3,$4,$5,$6,$7)`, orderID, shopID, actorID, payCodeID, payName, amount, currency); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO order_payments(order_id, shop_id, actor_id, pay_code_id, pay_code_name_snapshot, amount_minor, currency, pay_code_currency) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		orderID, shopID, actorID, payCodeID, payName, totalMinor, orderCurrency, payCurrency); err != nil {
 		return Order{}, fmt.Errorf("record order payment: %w", err)
 	}
 	return getOrderTx(ctx, tx, shopID, orderID)
@@ -443,6 +456,66 @@ func cancelOrderTx(ctx context.Context, tx pgx.Tx, shopID, actorID, orderID ID) 
 	return getOrderTx(ctx, tx, shopID, orderID)
 }
 
+// ConfirmRefundCommand closes the refund_required -> cancelled exit: stock is
+// restored to the shelf, a reverse `refund` movement is written, and refunded_at
+// records when the money was actually returned. A repeat call on an already
+// confirmed order is idempotent and does not restore stock a second time.
+func (s *ShopStore) ConfirmRefundCommand(ctx context.Context, identity CommandIdentity, orderID ID) (OrderCommandResult, error) {
+	return s.runOrderCommand(ctx, identity, 200, func(tx pgx.Tx) (Order, error) {
+		return confirmRefundTx(ctx, tx, identity.ShopID, identity.ActorID, orderID)
+	})
+}
+
+// refundConfirmDecision classifies the locked order before any refund mutation.
+// "idempotent" means the refund was already confirmed (cancelled with
+// refunded_at set) and stock must not be restored twice; "proceed" means the
+// order is waiting for refund confirmation. Any other status is ErrStatus.
+func refundConfirmDecision(status string, refundedAt *time.Time) (string, error) {
+	if status == "cancelled" && refundedAt != nil {
+		return "idempotent", nil
+	}
+	if status != "refund_required" {
+		return "", ErrStatus
+	}
+	return "proceed", nil
+}
+
+func confirmRefundTx(ctx context.Context, tx pgx.Tx, shopID, actorID, orderID ID) (Order, error) {
+	var status string
+	var refundedAt *time.Time
+	err := tx.QueryRow(ctx, `SELECT status, refunded_at FROM orders WHERE id = $1 AND shop_id = $2 FOR UPDATE`, orderID, shopID).Scan(&status, &refundedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Order{}, ErrNotFound
+	}
+	if err != nil {
+		return Order{}, fmt.Errorf("lock order for refund: %w", err)
+	}
+	decision, err := refundConfirmDecision(status, refundedAt)
+	if err != nil {
+		return Order{}, err
+	}
+	if decision == "idempotent" {
+		return getOrderTx(ctx, tx, shopID, orderID)
+	}
+	if err := applyStock(ctx, tx, orderID, false); err != nil {
+		return Order{}, err
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO inventory_movements(shop_id, order_id, listing_id, movement_type, qty)
+		SELECT $1, $2, listing_id, 'refund', SUM(qty)
+		FROM order_lines WHERE order_id = $2
+		GROUP BY listing_id`, shopID, orderID); err != nil {
+		return Order{}, fmt.Errorf("write refund movements: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE orders SET status = 'cancelled', refunded_at = now(), state_version = state_version + 1 WHERE id = $1`, orderID); err != nil {
+		return Order{}, fmt.Errorf("confirm refund: %w", err)
+	}
+	if err := insertAudit(ctx, tx, shopID, actorID, "order.refund_confirm", "order", orderID); err != nil {
+		return Order{}, err
+	}
+	return getOrderTx(ctx, tx, shopID, orderID)
+}
+
 func applyStock(ctx context.Context, tx pgx.Tx, orderID ID, sell bool) error {
 	rows, err := tx.Query(ctx, `
 		SELECT ol.listing_id::text, ol.good_id::text, ol.qty
@@ -537,7 +610,8 @@ func getOrderTx(ctx context.Context, tx pgx.Tx, shopID, orderID ID) (Order, erro
 	err := tx.QueryRow(ctx, `
 		SELECT o.id::text, o.number, o.status, o.booth_name, o.currency, o.pay_code_name,
 			opener.login_name, o.opened_by_role, COALESCE(payer.login_name, ''), COALESCE(payer.role, ''),
-			o.event_id::text, e.name, o.total_minor, o.state_version, o.created_at, o.reservation_expires_at
+			o.event_id::text, e.name, o.total_minor, o.state_version, o.created_at, o.reservation_expires_at, o.refunded_at,
+			o.cash_received_minor, o.cash_change_minor
 		FROM orders o
 		JOIN users opener ON opener.id = o.opened_by
 		LEFT JOIN users payer ON payer.id = o.paid_by
@@ -545,7 +619,8 @@ func getOrderTx(ctx context.Context, tx pgx.Tx, shopID, orderID ID) (Order, erro
 		WHERE o.id = $1 AND o.shop_id = $2`, orderID, shopID).
 		Scan(&order.ID, &order.Number, &order.Status, &order.BoothName, &order.Currency, &order.PayCodeName,
 			&order.OpenedByLogin, &order.OpenedByRole, &order.PaidByLogin, &order.PaidByRole,
-			&order.EventID, &order.EventName, &order.TotalMinor, &order.StateVersion, &order.CreatedAt, &order.ReservationExpiresAt)
+			&order.EventID, &order.EventName, &order.TotalMinor, &order.StateVersion, &order.CreatedAt, &order.ReservationExpiresAt, &order.RefundedAt,
+			&order.CashReceivedMinor, &order.CashChangeMinor)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Order{}, ErrNotFound
 	}
@@ -595,7 +670,8 @@ func (s *ShopStore) ListOrders(ctx context.Context, shopID ID, eventID string) (
 	rows, err := s.pool.Query(ctx, `
 		SELECT o.id::text, o.number, o.status, o.booth_name, o.currency, o.pay_code_name,
 			opener.login_name, o.opened_by_role, COALESCE(payer.login_name, ''), COALESCE(payer.role, ''),
-			o.event_id::text, e.name, o.total_minor, o.state_version, o.created_at, o.reservation_expires_at
+			o.event_id::text, e.name, o.total_minor, o.state_version, o.created_at, o.reservation_expires_at, o.refunded_at,
+			o.cash_received_minor, o.cash_change_minor
 		FROM orders o
 		JOIN users opener ON opener.id = o.opened_by
 		LEFT JOIN users payer ON payer.id = o.paid_by
@@ -609,7 +685,7 @@ func (s *ShopStore) ListOrders(ctx context.Context, shopID ID, eventID string) (
 	var orders []Order
 	for rows.Next() {
 		var order Order
-		if err := rows.Scan(&order.ID, &order.Number, &order.Status, &order.BoothName, &order.Currency, &order.PayCodeName, &order.OpenedByLogin, &order.OpenedByRole, &order.PaidByLogin, &order.PaidByRole, &order.EventID, &order.EventName, &order.TotalMinor, &order.StateVersion, &order.CreatedAt, &order.ReservationExpiresAt); err != nil {
+		if err := rows.Scan(&order.ID, &order.Number, &order.Status, &order.BoothName, &order.Currency, &order.PayCodeName, &order.OpenedByLogin, &order.OpenedByRole, &order.PaidByLogin, &order.PaidByRole, &order.EventID, &order.EventName, &order.TotalMinor, &order.StateVersion, &order.CreatedAt, &order.ReservationExpiresAt, &order.RefundedAt, &order.CashReceivedMinor, &order.CashChangeMinor); err != nil {
 			return nil, fmt.Errorf("scan order: %w", err)
 		}
 		orders = append(orders, order)
@@ -700,7 +776,7 @@ func (s *ShopStore) ListAudit(ctx context.Context, shopID ID) ([]AuditEntry, err
 	return out, nil
 }
 
-func (s *ShopStore) CreatePayCode(ctx context.Context, shopID ID, name, path string, isDefault bool) (ID, error) {
+func (s *ShopStore) CreatePayCode(ctx context.Context, shopID ID, name, path string, currency *string, isDefault bool) (ID, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("begin pay code: %w", err)
@@ -713,8 +789,8 @@ func (s *ShopStore) CreatePayCode(ctx context.Context, shopID ID, name, path str
 	}
 	var id ID
 	err = tx.QueryRow(ctx, `
-		INSERT INTO pay_codes (shop_id, name, image_path, is_default, is_enabled)
-		VALUES ($1,$2,$3,$4,true) RETURNING id::text`, shopID, name, path, isDefault).Scan(&id)
+		INSERT INTO pay_codes (shop_id, name, image_path, currency, is_default, is_enabled)
+		VALUES ($1,$2,$3,$4,$5,true) RETURNING id::text`, shopID, name, path, currency, isDefault).Scan(&id)
 	if err != nil {
 		return 0, fmt.Errorf("insert pay code: %w", err)
 	}
@@ -770,7 +846,7 @@ func (s *ShopStore) CreateCashPayCode(ctx context.Context, shopID ID, name strin
 	return id, nil
 }
 
-func (s *ShopStore) UpdatePayCode(ctx context.Context, shopID, id ID, name string, enabled, isDefault bool) error {
+func (s *ShopStore) UpdatePayCode(ctx context.Context, shopID, id ID, name string, currency *string, enabled, isDefault bool) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin update pay code: %w", err)
@@ -785,8 +861,8 @@ func (s *ShopStore) UpdatePayCode(ctx context.Context, shopID, id ID, name strin
 		isDefault = false
 	}
 	tag, err := tx.Exec(ctx, `
-		UPDATE pay_codes SET name = $3, is_enabled = $4, is_default = $5 WHERE id = $1 AND shop_id = $2`,
-		id, shopID, name, enabled, isDefault)
+		UPDATE pay_codes SET name = $3, currency = COALESCE($4, currency), is_enabled = $5, is_default = $6 WHERE id = $1 AND shop_id = $2`,
+		id, shopID, name, currency, enabled, isDefault)
 	if err != nil {
 		return fmt.Errorf("update pay code: %w", err)
 	}
@@ -798,7 +874,7 @@ func (s *ShopStore) UpdatePayCode(ctx context.Context, shopID, id ID, name strin
 
 func (s *ShopStore) ListPayCodes(ctx context.Context, shopID ID, enabledOnly bool) ([]PayCode, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id::text, name, kind, is_default, is_enabled FROM pay_codes
+		SELECT id::text, name, kind, currency, is_default, is_enabled FROM pay_codes
 		WHERE shop_id = $1 AND (NOT $2 OR is_enabled)
 		ORDER BY is_default DESC, name`, shopID, enabledOnly)
 	if err != nil {
@@ -808,7 +884,7 @@ func (s *ShopStore) ListPayCodes(ctx context.Context, shopID ID, enabledOnly boo
 	var out []PayCode
 	for rows.Next() {
 		var code PayCode
-		if err := rows.Scan(&code.ID, &code.Name, &code.Kind, &code.IsDefault, &code.IsEnabled); err != nil {
+		if err := rows.Scan(&code.ID, &code.Name, &code.Kind, &code.Currency, &code.IsDefault, &code.IsEnabled); err != nil {
 			return nil, fmt.Errorf("scan pay code: %w", err)
 		}
 		out = append(out, code)

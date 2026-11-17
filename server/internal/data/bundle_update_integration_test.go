@@ -59,21 +59,26 @@ func TestUpdateBundleCreatesNewComponentAtomically(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	shopID := integrationID(t, shop)
+	actorID := integrationID(t, actor)
+	eventID := integrationID(t, event)
+	oneID := integrationID(t, one)
+	twoID := integrationID(t, two)
 	store := NewShopStore(pool)
-	input := BundleInput{Name: "bundle", EventID: event, UnitPriceMinor: 150, IsListed: true, Components: []BundleComponentInput{{GoodID: one, Quantity: 1}, {GoodID: two, Quantity: 1}}}
-	id, _, err := store.CreateBundle(ctx, shop, actor, input)
+	input := BundleInput{Name: "bundle", EventID: eventID, UnitPriceMinor: 150, IsListed: true, Components: []BundleComponentInput{{GoodID: oneID, Quantity: 1}, {GoodID: twoID, Quantity: 1}}}
+	id, _, err := store.CreateBundle(ctx, shopID, actorID, input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	input.Components = append(input.Components, BundleComponentInput{DraftKey: "new", Quantity: 1, Draft: &BundleGoodDraft{Name: "new item", TotalStock: 3, ListedQty: 3, UnitPriceMinor: 100, IsListed: true}})
-	if _, err := store.UpdateBundle(ctx, shop, actor, id, 1, input, false); err != nil {
+	if _, err := store.UpdateBundle(ctx, shopID, actorID, id, 1, input, false); err != nil {
 		t.Fatal(err)
 	}
 	var count int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM bundle_components WHERE bundle_id=$1`, id).Scan(&count); err != nil || count != 3 {
 		t.Fatalf("components = %d; err = %v", count, err)
 	}
-	if _, err := store.UpdateBundle(ctx, shop, actor, id, 1, input, false); err == nil {
+	if _, err := store.UpdateBundle(ctx, shopID, actorID, id, 1, input, false); err == nil {
 		t.Fatal("stale revision must fail")
 	}
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM goods WHERE name='new item'`).Scan(&count); err != nil || count != 1 {

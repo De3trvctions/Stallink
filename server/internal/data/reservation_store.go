@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/De3trvctions/Stallink/internal/catalog"
@@ -16,6 +17,54 @@ type reservationLine struct {
 	listingID ID
 	goodID    ID
 	qty       int
+}
+
+// inventoryLockOrder returns distinct goods and listings in the global lock order.
+func inventoryLockOrder(lines []reservationLine) ([]ID, []ID) {
+	goods := make(map[ID]struct{}, len(lines))
+	listings := make(map[ID]struct{}, len(lines))
+	for _, line := range lines {
+		goods[line.goodID] = struct{}{}
+		listings[line.listingID] = struct{}{}
+	}
+	goodIDs := make([]ID, 0, len(goods))
+	for id := range goods {
+		goodIDs = append(goodIDs, id)
+	}
+	listingIDs := make([]ID, 0, len(listings))
+	for id := range listings {
+		listingIDs = append(listingIDs, id)
+	}
+	sort.Slice(goodIDs, func(i, j int) bool { return goodIDs[i] < goodIDs[j] })
+	sort.Slice(listingIDs, func(i, j int) bool { return listingIDs[i] < listingIDs[j] })
+	return goodIDs, listingIDs
+}
+
+func reservationLinesMatchOrder(expected, active []reservationLine) bool {
+	if len(expected) != len(active) {
+		return false
+	}
+	expectedByListing := make(map[ID]reservationLine, len(expected))
+	for _, line := range expected {
+		if _, exists := expectedByListing[line.listingID]; exists {
+			return false
+		}
+		expectedByListing[line.listingID] = line
+	}
+	activeByListing := make(map[ID]reservationLine, len(active))
+	for _, line := range active {
+		if _, exists := activeByListing[line.listingID]; exists {
+			return false
+		}
+		activeByListing[line.listingID] = line
+	}
+	for listingID, want := range expectedByListing {
+		got, exists := activeByListing[listingID]
+		if !exists || got.goodID != want.goodID || got.qty != want.qty {
+			return false
+		}
+	}
+	return true
 }
 
 func reserveOrderInventory(ctx context.Context, tx pgx.Tx, shopID, orderID ID, ttl time.Duration) error {
@@ -78,22 +127,26 @@ func orderReservationLines(ctx context.Context, tx pgx.Tx, orderID ID) ([]reserv
 
 func consumeOrderReservations(ctx context.Context, tx pgx.Tx, shopID, orderID ID) error {
 	rows, err := tx.Query(ctx, `
-		SELECT listing_id::text, qty FROM inventory_reservations
-		WHERE shop_id = $1 AND order_id = $2 AND state = 'active' AND expires_at > now()
-		ORDER BY listing_id FOR UPDATE`, shopID, orderID)
+		SELECT r.listing_id::text, COALESCE(l.good_id::text, ''), r.qty
+		FROM inventory_reservations r
+		LEFT JOIN event_listings l ON l.id = r.listing_id AND l.shop_id = r.shop_id
+		WHERE r.shop_id = $1 AND r.order_id = $2 AND r.state = 'active' AND r.expires_at > now()
+		ORDER BY r.listing_id FOR UPDATE OF r`, shopID, orderID)
 	if err != nil {
 		return fmt.Errorf("read active reservations: %w", err)
 	}
-	type activeReservation struct {
-		listingID ID
-		qty       int
-	}
-	var active []activeReservation
+	var active []reservationLine
 	for rows.Next() {
-		var item activeReservation
-		if err := rows.Scan(&item.listingID, &item.qty); err != nil {
+		var item reservationLine
+		var rawGoodID string
+		if err := rows.Scan(&item.listingID, &rawGoodID, &item.qty); err != nil {
 			rows.Close()
 			return fmt.Errorf("scan active reservation: %w", err)
+		}
+		item.goodID, err = ParseID(rawGoodID)
+		if err != nil {
+			rows.Close()
+			return fmt.Errorf("invalid good for reservation listing %s: %w", item.listingID, err)
 		}
 		active = append(active, item)
 	}
@@ -105,17 +158,35 @@ func consumeOrderReservations(ctx context.Context, tx pgx.Tx, shopID, orderID ID
 	if len(active) == 0 {
 		return ErrReservationExpired
 	}
-	var goodIDs []ID
-	for _, item := range active {
-		var goodID ID
-		if err := tx.QueryRow(ctx, `SELECT good_id::text FROM event_listings WHERE id = $1 AND shop_id = $2 FOR UPDATE`, item.listingID, shopID).Scan(&goodID); err != nil {
-			return fmt.Errorf("lock reserved listing: %w", err)
-		}
+	expected, err := orderReservationLines(ctx, tx, orderID)
+	if err != nil {
+		return err
+	}
+	if !reservationLinesMatchOrder(expected, active) {
+		return ErrReservationExpired
+	}
+	goodIDs, listingIDs := inventoryLockOrder(active)
+	for _, goodID := range goodIDs {
 		var total int
 		if err := tx.QueryRow(ctx, `SELECT total_stock FROM goods WHERE id = $1 AND shop_id = $2 FOR UPDATE`, goodID, shopID).Scan(&total); err != nil {
 			return fmt.Errorf("lock reserved good: %w", err)
 		}
-		tag, err := tx.Exec(ctx, `UPDATE goods SET total_stock = total_stock - $2 WHERE id = $1 AND total_stock >= $2`, goodID, item.qty)
+	}
+	goodByListing := make(map[ID]ID, len(active))
+	for _, item := range active {
+		goodByListing[item.listingID] = item.goodID
+	}
+	for _, listingID := range listingIDs {
+		var lockedGoodID ID
+		if err := tx.QueryRow(ctx, `SELECT good_id::text FROM event_listings WHERE id = $1 AND shop_id = $2 FOR UPDATE`, listingID, shopID).Scan(&lockedGoodID); err != nil {
+			return fmt.Errorf("lock reserved listing: %w", err)
+		}
+		if expected := goodByListing[listingID]; lockedGoodID != expected {
+			return fmt.Errorf("reserved listing %s changed goods while locking", listingID)
+		}
+	}
+	for _, item := range active {
+		tag, err := tx.Exec(ctx, `UPDATE goods SET total_stock = total_stock - $2 WHERE id = $1 AND shop_id = $3 AND total_stock >= $2`, item.goodID, item.qty, shopID)
 		if err != nil {
 			return fmt.Errorf("consume reserved stock: %w", err)
 		}
@@ -135,7 +206,6 @@ func consumeOrderReservations(ctx context.Context, tx pgx.Tx, shopID, orderID ID
 		if _, err := tx.Exec(ctx, `INSERT INTO inventory_movements(shop_id, order_id, listing_id, movement_type, qty) VALUES ($1,$2,$3,'sell',$4)`, shopID, orderID, item.listingID, item.qty); err != nil {
 			return fmt.Errorf("write sale movement: %w", err)
 		}
-		goodIDs = append(goodIDs, goodID)
 	}
 	for _, goodID := range goodIDs {
 		if err := assertAllocation(ctx, tx, goodID); err != nil {

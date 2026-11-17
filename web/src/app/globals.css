@@ -1,4 +1,5 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
+@source "../";
 
 :root {
   /* 纸白 / 墨黑 / 钴蓝：顾客端画册、店员端票据共用一套色板 */
@@ -455,15 +456,47 @@ button:disabled { cursor: wait; opacity: 0.64; }
 .workspace-page > main { width: 100%; max-width: none; margin: 0; padding: clamp(1.5rem, 3.5vw, 3rem); }
 .workspace-page > main > h1 { margin: 0; color: var(--ink); font: 500 clamp(1.9rem, 3vw, 2.6rem)/1.08 var(--font-display); letter-spacing: -0.045em; }
 .workspace-page > main > h1 + p { max-width: 620px; margin: 0.5rem 0 0; color: var(--muted); font-size: 0.82rem; }
+
+/* 标题包在 header.workspace-page__heading 内时，沿用同一套展示层级 */
+.workspace-page__heading { max-width: 980px; margin: 0 0 1.2rem; }
+.workspace-page__heading .eyebrow { margin: 0 0 0.35rem; }
+.workspace-page__heading h1 { margin: 0; color: var(--ink); font: 500 clamp(1.9rem, 3vw, 2.6rem)/1.08 var(--font-display); letter-spacing: -0.045em; }
+.workspace-page__heading h1 + p { max-width: 620px; margin: 0.5rem 0 0; color: var(--muted); font-size: 0.82rem; }
+
+/* 工作台筛选工具栏：一行可换行，筛选 chip 与次要按钮分组排列 */
+.workspace-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.7rem; margin: 1.4rem 0 1.1rem; }
+.workspace-toolbar > .button { margin-left: auto; }
+.workspace-toolbar > .select-menu { width: auto; min-width: 12rem; }
+@media (max-width: 600px) {
+  .workspace-toolbar > .select-menu { width: 100%; }
+}
+.workspace-toolbar button:not(.button) {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 0.8rem;
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); font-size: 0.72rem;
+}
+.workspace-toolbar button:not(.button):hover:not([data-active="true"]) { background: var(--surface-soft); color: var(--ink); }
+.workspace-toolbar button:not(.button)[data-active="true"] {
+  border-color: var(--accent); background: var(--accent-soft); color: var(--accent-dark); font-weight: 650;
+}
 .workspace-page form { margin-top: 1.8rem; }
 .workspace-page form label { color: var(--ink-soft); font-weight: 600; }
 .workspace-page input:not([type="checkbox"]):not([type="file"]), .workspace-page select, .workspace-page textarea { min-height: 44px; border-color: var(--line-strong); border-radius: 0; background: var(--surface); color: var(--ink); font-size: 0.82rem; }
 .workspace-page textarea { min-height: 100px; padding-top: 0.7rem; }
 .workspace-page input[type="file"] { color: var(--muted); font-size: 0.75rem; }
 .workspace-page input[type="checkbox"] { accent-color: var(--accent); }
-.workspace-page form button, .workspace-page main > button { min-height: 46px; border: 0; background: var(--accent-dark); color: white; font-size: 0.82rem; font-weight: 650; transition: background 150ms ease, transform 150ms ease; }
-.workspace-page form button:hover, .workspace-page main > button:hover { background: var(--accent); }
-.workspace-page form button:active, .workspace-page main > button:active { transform: translateY(1px); }
+.workspace-page form button:where(:not(.button--outline):not(.select-menu__trigger):not(.counter-sheet__close):not(.goods-modal__close):not(.review-cancel):not(.event-feature-button):not(.counter-product)),
+.workspace-page main > button:not(.button--outline):not(.select-menu__trigger) { min-height: 46px; border: 0; background: var(--accent-dark); color: white; font-size: 0.82rem; font-weight: 650; transition: background 150ms ease, transform 150ms ease; }
+.workspace-page form button:where(:not(.button--outline):not(.select-menu__trigger):not(.counter-sheet__close):not(.goods-modal__close):not(.review-cancel):not(.event-feature-button):not(.counter-product)):hover,
+.workspace-page main > button:not(.button--outline):not(.select-menu__trigger):hover { background: var(--accent); }
+.workspace-page form button:where(:not(.button--outline):not(.select-menu__trigger):not(.counter-sheet__close):not(.goods-modal__close):not(.review-cancel):not(.event-feature-button):not(.counter-product)):active,
+.workspace-page main > button:not(.button--outline):not(.select-menu__trigger):active { transform: translateY(1px); }
+
+/* 描边次按钮、自定义下拉触发器与弹窗/抽屉关闭按钮保持表面描边，不被灌成主按钮底色 */
+.workspace-page form button.button--outline,
+.workspace-page form .select-menu__trigger,
+.workspace-page form .counter-sheet__close,
+.workspace-page form .goods-modal__close { border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); }
+.workspace-page form button.button--outline:hover { border-color: var(--accent); background: transparent; color: var(--accent); }
 .workspace-page ul.divide-y, .workspace-page ul.space-y-2, .workspace-page ul.space-y-3 { margin-top: 1.5rem; }
 .workspace-page li.bg-white { border: 1px solid var(--line); color: var(--ink); }
 .workspace-page li button { min-height: 36px; border-color: var(--line-strong); background: var(--surface); color: var(--ink); font-size: 0.7rem; }
@@ -537,6 +570,7 @@ button:disabled { cursor: wait; opacity: 0.64; }
 .pay-code-row__thumb { width: 56px; height: 56px; flex: 0 0 56px; padding: 2px; border: 1px solid var(--line-strong); background: #fff; cursor: zoom-in; }
 .pay-code-row__thumb img { width: 100%; height: 100%; object-fit: contain; }
 .pay-code-row__thumb:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pay-code-row__thumb--empty { display: grid; place-items: center; background: var(--surface-soft); color: var(--ink); cursor: default; font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.06em; }
 
 /* 收款方式：现金是独立选项，不需要二维码 */
 .pay-cash-toggle { display: flex; align-items: center; justify-content: space-between; gap: 1rem; max-width: 720px; margin: 1.2rem 0 0.4rem; padding: 0.9rem 1rem; border: 1px solid var(--line-strong); background: var(--surface); }
@@ -852,7 +886,7 @@ button:disabled { cursor: wait; opacity: 0.64; }
 .counter-catalog-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.55rem; margin-top: 0.9rem; }
 .counter-catalog-search input { width: 100%; min-height: 44px; padding: 0.55rem 0.65rem; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font-size: 0.75rem; }
 .counter-catalog-filter { display: flex; flex-wrap: wrap; gap: 0.25rem; }
-.counter-catalog-filter button { min-height: 40px; padding: 0 0.55rem; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 0.65rem; }
+.counter-catalog-filter button { min-height: 40px; padding: 0 0.55rem; border: 1px solid var(--line); background: var(--surface); color: var(--muted); font-size: 0.65rem; appearance: none; }
 .counter-catalog-filter button[data-active="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-dark); }
 .counter-section-heading, .counter-summary__heading, .counter-payment__heading { display: flex; align-items: center; justify-content: space-between; gap: 0.8rem; }
 .counter-section-heading h2, .counter-summary__heading h2, .counter-payment__heading h2 { margin: 0.2rem 0 0; font: 500 1.35rem var(--font-display); }
@@ -861,7 +895,7 @@ button:disabled { cursor: wait; opacity: 0.64; }
 .counter-products { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .counter-bundles { margin-top: 1.3rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 .counter-product--bundle { border-color: var(--line-strong); background: linear-gradient(135deg, var(--surface), var(--accent-soft)); }
-.counter-product { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; width: 100%; min-height: 74px; padding: 0.75rem; border: 1px solid var(--line); background: var(--surface); text-align: left; }
+.counter-product { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 0.7rem; width: 100%; min-height: 74px; padding: 0.75rem; border: 1px solid var(--line); background: var(--surface); color: var(--ink); text-align: left; appearance: none; }
 .counter-product:not(:disabled):hover { border-color: var(--accent); background: var(--accent-soft); }
 .counter-product:disabled, .counter-product--unavailable { cursor: help; background: var(--surface-soft); color: var(--muted); }
 .counter-product.counter-product--unavailable:hover { border-color: var(--line); background: var(--surface-soft); }
@@ -1204,31 +1238,52 @@ button:disabled { cursor: wait; opacity: 0.64; }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --canvas: #131316;
-  --surface: #191a1e;
-  --surface-soft: #222329;
-  --ink: #f2efe9;
-  --ink-soft: #d3d0c7;
-  --muted: #a6a39a;
-  --line: #33322d;
-  --line-strong: #4a483f;
-  --accent: #9fb0ff;
-  --accent-dark: #1b1d24;
-  --accent-soft: #232842;
-  --accent-light: #39406b;
+  /* 依据 Material Design 深色规范：深灰而非纯黑做底、靠表面变亮表达层级、
+     文字用不同明度的白分层、品牌色降饱和且只用于小面积强调。
+     --accent 同时被 86 处当作文字色、又曾被海报当作大面积底色，深色下两者
+     互相矛盾，因此海报等大面积品牌底改走 ed-store__poster 的深色覆盖。 */
+  --canvas: #0e1014;
+  --surface: #16181d;
+  --surface-soft: #1e2129;
+  --ink: #e8e9ee;
+  --ink-soft: #c6c8d2;
+  --muted: #9a9ca8;
+  --line: #2a2d35;
+  --line-strong: #40444f;
+  --accent: #a3b8ff;
+  --accent-dark: #1b1e27;
+  --accent-soft: #222738;
+  --accent-light: #4d5a8c;
   --warning: #f0a58f;
   --shadow-soft: 0 18px 40px rgba(0, 0, 0, .28);
 }
+
+/* 海报在浅色下是深钴蓝底米白字；深色下 --accent 已变成浅蓝，
+   若继续铺整版会得到刺眼亮紫 + 白字，改成深色品牌底渐变。 */
+[data-theme="dark"] .ed-store__poster {
+  background: linear-gradient(135deg, #1d2436 0%, #14171f 100%);
+  color: var(--ink);
+}
 [data-theme="dark"] .button--dark,
-[data-theme="dark"] .workspace-page form button,
-[data-theme="dark"] .workspace-page main > button,
+[data-theme="dark"] .workspace-page form button:where(:not(.button--outline):not(.select-menu__trigger):not(.counter-sheet__close):not(.goods-modal__close):not(.review-cancel):not(.event-feature-button):not(.counter-product)),
+[data-theme="dark"] .workspace-page main > button:not(.button--outline):not(.select-menu__trigger),
 [data-theme="dark"] .workspace-page form .counter-submit,
 [data-theme="dark"] .header-account:hover { background: #34579c; color: #f7fbf8; }
 [data-theme="dark"] .button--dark:hover,
-[data-theme="dark"] .workspace-page form button:hover,
-[data-theme="dark"] .workspace-page main > button:hover,
+[data-theme="dark"] .workspace-page form button:where(:not(.button--outline):not(.select-menu__trigger):not(.counter-sheet__close):not(.goods-modal__close):not(.review-cancel):not(.event-feature-button):not(.counter-product)):hover,
+[data-theme="dark"] .workspace-page main > button:not(.button--outline):not(.select-menu__trigger):hover,
 [data-theme="dark"] .workspace-page form .counter-submit:hover { background: #4169b6; color: #f7fbf8; }
-[data-theme="dark"] .header-account { color: var(--ink); }
+/* 深色下描边次按钮保持可读墨色；触发器/关闭按钮回到表面底，不跟主按钮蓝底 */
+[data-theme="dark"] .button--outline { color: var(--ink); border-color: var(--line-strong); }
+[data-theme="dark"] .button--outline:hover { color: var(--accent); border-color: var(--accent); }
+[data-theme="dark"] .workspace-page form button.button--outline,
+[data-theme="dark"] .workspace-page form .select-menu__trigger,
+[data-theme="dark"] .workspace-page form .counter-sheet__close,
+[data-theme="dark"] .workspace-page form .goods-modal__close { background: var(--surface); color: var(--ink-soft); border-color: var(--line-strong); }
+[data-theme="dark"] .workspace-page form button.button--outline { color: var(--ink); }
+/* 深色下 --ink 是米白，按钮底色同为 --ink，文字必须反转为深色画布色，
+   否则「创建账号 / 工作台」会变成白底白字。 */
+[data-theme="dark"] .header-account { color: var(--canvas); }
 [data-theme="dark"] .workspace-page .bg-white,
 [data-theme="dark"] .review-shop { background: var(--surface); }
 [data-theme="dark"] .workspace-page form button.counter-product,
@@ -1242,6 +1297,9 @@ button:disabled { cursor: wait; opacity: 0.64; }
 [data-theme="dark"] .workspace-page form .quantity-control button { background: transparent; color: var(--ink); }
 [data-theme="dark"] .counter-product__count,
 [data-theme="dark"] .review-filter button span { background: #34579c; color: #f7fbf8; }
+/* 深色选中 chip 不再用近黑的 --accent-dark 作文字色，改用可读墨色 */
+[data-theme="dark"] .review-filter button[data-active="true"],
+[data-theme="dark"] .workspace-toolbar button:not(.button)[data-active="true"] { color: var(--ink); }
 [data-theme="dark"] .workspace-sidebar { background: var(--surface-soft); }
 [data-theme="dark"] .workspace-nav__link[data-active="true"] { color: var(--ink); }
 [data-theme="dark"] .auth-story { color: #f7fbf8; }
@@ -1373,7 +1431,7 @@ button:disabled { cursor: wait; opacity: 0.64; }
 .section-heading h2 { font-family: var(--font-display); font-weight: 400; letter-spacing: -0.01em; font-size: clamp(1.3rem, 3vw, 1.8rem); }
 .section-heading > span { font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.1em; }
 
-.ed-frame { width: min(1360px, calc(100% - 2.5rem)); margin: 0 auto; }
+.ed-frame { width: min(var(--content), calc(100% - 3rem)); margin: 0 auto; }
 .ed-mono { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.14em; color: var(--muted); }
 
 /* 首页 */
@@ -1977,9 +2035,9 @@ button:disabled { cursor: wait; opacity: 0.64; }
   opacity: 1;
 }
 
-/* 平板：折叠侧栏后导航横排，避免两根按钮竖着堆在左侧 */
+/* 平板：折叠侧栏后导航换行排列，避免当前激活项被横向滚动裁切 */
 @media (min-width: 761px) and (max-width: 900px) {
-  .workspace-nav { display: flex; flex-wrap: nowrap; gap: 0.35rem; overflow-x: auto; }
+  .workspace-nav { display: flex; flex-wrap: wrap; gap: 0.35rem; overflow-x: visible; }
   .workspace-nav__group { display: contents; }
   .workspace-nav__label { display: none; }
   .workspace-nav__link { flex: 0 0 auto; padding: 0 0.85rem; border: 1px solid var(--line); }
@@ -2333,6 +2391,7 @@ button:disabled { cursor: wait; opacity: 0.64; }
 /* 销售日报 */
 .report-page { max-width: 1080px; }
 .report-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.7rem; margin: 1.4rem 0 1.1rem; }
+.report-toolbar__actions { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.6rem; margin-left: auto; }
 .report-date { display: grid; gap: 0.35rem; }
 .report-date span { color: var(--muted); font-family: var(--font-mono); font-size: 0.58rem; letter-spacing: 0.06em; }
 .report-date input { min-height: var(--touch); padding: 0.45rem 0.65rem; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font-family: var(--font-mono); font-size: 0.72rem; }
@@ -2614,4 +2673,119 @@ button:disabled { cursor: wait; opacity: 0.64; }
   .report-rank span { font-size: 9pt; }
   .report-rank strong { font-size: 9pt; }
   .report-table li, .report-rank li { break-inside: avoid; }
+}
+
+/* ===== 本轮新增：危险操作分级 / 订单行 / 售罄与结束态 / 凭证与现金 / 日报分组 ===== */
+
+.button--danger {
+  border-color: var(--warning);
+  background: #fdf1ec;
+  color: var(--warning);
+}
+.button--danger:hover:not(:disabled) { background: #fbe3da; border-color: var(--warning); }
+.button--danger:disabled { opacity: 0.5; }
+
+[aria-disabled="true"] { cursor: help; }
+
+/* 订单行 */
+.order-row { display: grid; gap: 0.7rem; padding: 1rem 1.2rem; }
+.order-row + .order-row { border-top: 1px solid var(--line); }
+.order-row__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+.order-row__head > div { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.order-row__meta { display: flex; flex-direction: column; gap: 0.2rem; color: var(--muted); font-size: 0.75rem; text-align: right; }
+.order-row__booth { margin: 0; color: var(--ink-soft); font-size: 0.78rem; }
+.order-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+.order-lines li { display: flex; justify-content: space-between; gap: 1rem; font-size: 0.78rem; }
+.order-lines li span:last-child { font-variant-numeric: tabular-nums; }
+.order-row__footer { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; }
+.order-row__totals { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.78rem; color: var(--ink-soft); }
+.order-row__totals strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.order-row__actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.order-row__actions .button { min-height: 36px; padding: 0 0.75rem; font-size: 0.72rem; }
+
+.order-status { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.15rem 0.55rem; border: 1px solid var(--line-strong); border-radius: 999px; font-size: 0.66rem; color: var(--muted); }
+.order-status--paid, .order-status--fulfilled { color: var(--accent); border-color: var(--accent-light); }
+.order-status--refund_required, .order-status--cancelled, .order-status--expired { color: var(--warning); border-color: #ecc9bc; }
+.order-status--refunded { color: #fff; background: var(--warning); border-color: var(--warning); }
+
+/* 公开商品售罄 */
+.product-card--soldout { opacity: 0.62; }
+.product-card--soldout .product-card__image { filter: grayscale(0.6); }
+.product-card__soldout-badge { position: absolute; top: 0.5rem; left: 0.5rem; padding: 0.18rem 0.5rem; border-radius: 4px; background: var(--warning); color: #fff; font-size: 0.62rem; letter-spacing: 0.05em; }
+
+/* 活动结束 */
+.event-ended-badge { margin-left: 0.5rem; padding: 0.15rem 0.55rem; border-radius: 999px; background: var(--surface-soft); color: var(--muted); font-size: 0.7rem; font-family: var(--font-ui); }
+.event-ended-notice { margin: 1rem 0; padding: 0.7rem 0.9rem; border-left: 2px solid var(--warning); background: #fdf4ef; color: var(--warning); font-size: 0.8rem; }
+
+/* 收款成功凭证 */
+.pay-receipt { justify-items: center; text-align: center; gap: 0.8rem; }
+.pay-receipt__hint { margin: 0; color: var(--muted); font-size: 0.75rem; }
+.pay-receipt__number { font-family: var(--font-mono); font-size: 2.6rem; letter-spacing: 0.12em; color: var(--ink); }
+.pay-receipt__amount { margin: 0; font-size: 1.05rem; font-weight: 600; }
+
+/* 现金实收与找零 */
+.pay-cash-received { width: min(280px, 100%); }
+.pay-cash-received input { min-height: 44px; }
+.pay-cash-change { margin: 0; color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* 日报分币种分组 */
+.report-currency-group + .report-currency-group { margin-top: 0.9rem; }
+.report-currency-group__label { margin: 0 0 0.4rem; color: var(--muted); font-size: 0.7rem; letter-spacing: 0.06em; }
+.report-empty { margin: 1.5rem 0; color: var(--muted); font-size: 0.78rem; }
+
+/* 收款码表单与列表 */
+.pay-code-form__row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.95rem; }
+.pay-code-row__meta { color: var(--muted); font-size: 0.68rem; }
+.pay-code-row__actions { display: flex; gap: 0.5rem; }
+.pay-code-form__preview { margin-top: 0.5rem; width: 120px; height: 120px; object-fit: contain; border: 1px solid var(--line-strong); background: #fff; }
+.field__error { color: var(--warning); font-size: 0.72rem; }
+.field--checkbox { display: flex; align-items: center; gap: 0.55rem; width: fit-content; }
+.field--checkbox input { width: 16px; height: 16px; }
+
+/* 确认弹窗 */
+.confirm-dialog { border: 1px solid var(--line-strong); border-radius: 16px; background: var(--surface); padding: 0; max-width: 420px; box-shadow: var(--shadow-soft); }
+.confirm-dialog::backdrop { background: rgba(22, 23, 26, 0.38); }
+.confirm-dialog__panel { display: grid; gap: 1rem; padding: 1.4rem; }
+.confirm-dialog__panel h2 { margin: 0; font: 500 1.25rem var(--font-display); }
+.confirm-dialog__description { margin: 0; color: var(--ink-soft); font-size: 0.82rem; line-height: 1.6; }
+.confirm-dialog__actions { display: flex; justify-content: flex-end; gap: 0.6rem; }
+
+/* 错误兜底页 */
+.error-page__actions { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+
+/* 收银卡片字号与行高 */
+.counter-product__copy strong { font-size: 0.84rem; line-height: 1.4; }
+.counter-product__price b { font-size: 0.84rem; }
+.counter-cart__title strong { font-size: 0.82rem; }
+.counter-cart__amount { text-align: right; font-variant-numeric: tabular-nums; }
+.quantity-control button { min-height: 44px; min-width: 44px; }
+
+/* 深色：公共页/认证页主按钮回到钴蓝，并与卡片表面留出描边边界 */
+[data-theme="dark"] .button--dark { background: #34579c; color: #f7fbf8; border: 1px solid #4169b6; }
+[data-theme="dark"] .button--dark:hover { background: #4169b6; color: #f7fbf8; }
+
+/* 窄屏补齐：专属链接前缀输入框、活动详情眉题占位文本 */
+.slug-input { display: flex; align-items: stretch; gap: 0; }
+.slug-input > span { display: grid; place-items: center; padding: 0 0.6rem; border: 1px solid var(--line-strong); border-right: 0; background: var(--surface-soft); color: var(--muted); font-family: var(--font-mono); font-size: 0.78rem; }
+.slug-input input { flex: 1; min-width: 0; }
+.kicker { margin: 0; color: var(--muted); font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.16em; text-transform: uppercase; }
+
+/* 图片加载失败后的降级占位（与既有空图占位同色系，避免浏览器破图图标） */
+.goods-image-frame--fallback { width: 100%; aspect-ratio: 1; background: var(--surface-soft); }
+.bundle-admin-card__image--fallback { width: 56px; height: 56px; border: 1px solid var(--line); background: var(--surface-soft); }
+.review-good__image--fallback { width: 100%; height: 100%; background: var(--surface-soft); }
+.product-gallery__thumb--fallback,
+.bundle-card__thumb--fallback { width: 100%; height: 100%; background: var(--surface-soft); }
+.pay-dialog__qr--fallback { width: min(300px, 68vw); aspect-ratio: 1; border: 1px solid var(--line-strong); background: var(--surface-soft); }
+
+/* 工作台 0 库存卡片：简洁状态提示，不做重设计 */
+.listing-admin-card--soldout { opacity: 0.72; }
+.listing-admin-card__stockout { margin: 0.3rem 0 0; color: var(--warning); font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.04em; }
+
+/* 打印：隐藏导航与操作按钮，保留票据/日报内容 */
+@media print {
+  .order-row__actions, .pay-dialog__actions, .pay-code-row__actions,
+  .report-toolbar .button, .workspace-toolbar .button, .review-actions,
+  .sales-row__actions, .platform-shop-list .button { display: none !important; }
+  .pay-receipt__number { font-size: 22pt; }
 }

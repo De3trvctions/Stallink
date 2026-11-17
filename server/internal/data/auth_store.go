@@ -61,7 +61,8 @@ func (s *ShopStore) DeleteSession(ctx context.Context, tokenHash []byte) error {
 func (s *ShopStore) AccountByToken(ctx context.Context, tokenHash []byte) (Account, error) {
 	return s.scanAccount(s.pool.QueryRow(ctx, accountSelect+`
 		JOIN sessions sess ON sess.user_id = u.id
-		WHERE sess.token_hash = $1 AND sess.expires_at > now() AND u.is_enabled`, tokenHash))
+		WHERE sess.token_hash = $1 AND sess.expires_at > now() AND u.is_enabled
+			AND (u.shop_id IS NULL OR s.is_enabled)`, tokenHash))
 }
 
 func (s *ShopStore) UpdateProfile(ctx context.Context, userID ID, display, contact string) error {

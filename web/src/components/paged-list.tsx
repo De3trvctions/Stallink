@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { browserJSON } from "@/lib/api";
+import { browserJSON, type RequestResult } from "@/lib/api";
+import { describeRequest } from "@/lib/errors";
 
 export function usePagedList<T>(endpoint: string, enabled = true) {
   const [input, setInput] = useState("");
@@ -23,9 +24,12 @@ export function usePagedList<T>(endpoint: string, enabled = true) {
       const params = new URLSearchParams({ page: String(page), limit: "20", q: query });
       browserJSON(`${endpoint}${endpoint.includes("?") ? "&" : "?"}${params}`).then((res) => {
         if (id !== sequence.current) return;
-        if (!res.ok || !Array.isArray(res.data.items)) throw new Error("request failed");
+        if (!res.ok || !Array.isArray(res.data.items)) throw res;
         setItems(res.data.items as T[]); setHasMore(res.data.hasMore === true);
-      }).catch(() => { if (id === sequence.current) { setError("加载失败，请检查网络后重试。"); setItems([]); setHasMore(false); } })
+      }).catch((reason: unknown) => { if (id === sequence.current) {
+        setError(reason && typeof reason === "object" && "category" in reason ? describeRequest(reason as RequestResult) : "加载失败，请检查网络后重试。");
+        setItems([]); setHasMore(false);
+      } })
         .finally(() => { if (id === sequence.current) setLoading(false); });
     }, 0);
     return () => { ++tracker.current; window.clearTimeout(timer); };

@@ -219,7 +219,7 @@ func (a *API) AddGoodImages(w http.ResponseWriter, r *http.Request) {
 		removeGoodImages(r.Context(), a.DataDir, paths)
 		return
 	}
-	ids, err := a.DB.AddGoodImages(r.Context(), *account.ShopID, account.ID, goodID, paths)
+	ids, err := a.DB.AddGoodImages(r.Context(), *account.ShopID, account.ID, goodID, paths, a.autoApprove(r.Context()))
 	if err != nil {
 		removeGoodImages(r.Context(), a.DataDir, paths)
 		writeDataErr(w, r, err)
@@ -248,7 +248,7 @@ func (a *API) DeleteGoodImage(w http.ResponseWriter, r *http.Request) {
 	if !valid {
 		return
 	}
-	path, err := a.DB.DeleteGoodImage(r.Context(), *account.ShopID, account.ID, goodID, imageID)
+	path, err := a.DB.DeleteGoodImage(r.Context(), *account.ShopID, account.ID, goodID, imageID, a.autoApprove(r.Context()))
 	if err != nil {
 		writeDataErr(w, r, err)
 		return
@@ -273,7 +273,7 @@ func (a *API) ReorderGoodImages(w http.ResponseWriter, r *http.Request) {
 	if !valid {
 		return
 	}
-	if err := a.DB.ReorderGoodImages(r.Context(), *account.ShopID, account.ID, goodID, body.ImageIDs); err != nil {
+	if err := a.DB.ReorderGoodImages(r.Context(), *account.ShopID, account.ID, goodID, body.ImageIDs, a.autoApprove(r.Context())); err != nil {
 		writeDataErr(w, r, err)
 		return
 	}
@@ -357,7 +357,7 @@ func (a *API) AddListing(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := a.DB.AddListing(r.Context(), *account.ShopID, account.ID, goodID, data.ListedGood{
 		EventID: body.EventID, ListedQty: body.ListedQty, UnitPriceMinor: body.UnitPriceMinor, PriceTiers: body.PriceTiers, IsListed: body.IsListed,
-	})
+	}, a.autoApprove(r.Context()))
 	if err != nil {
 		writeDataErr(w, r, err)
 		return
@@ -421,7 +421,7 @@ func (a *API) UpdateGood(w http.ResponseWriter, r *http.Request) {
 	if !valid {
 		return
 	}
-	if err := a.DB.UpdateGoodStock(r.Context(), *account.ShopID, account.ID, goodID, body.Name, body.Description, body.TotalStock); err != nil {
+	if err := a.DB.UpdateGoodStock(r.Context(), *account.ShopID, account.ID, goodID, body.Name, body.Description, body.TotalStock, a.autoApprove(r.Context())); err != nil {
 		writeDataErr(w, r, err)
 		return
 	}
@@ -463,7 +463,7 @@ func (a *API) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	clientOrderID = parsedClientOrderID.String()
 	started := time.Now()
 	result, err := a.DB.CreateOrderCommand(r.Context(), identity, clientOrderID, body.QuoteID, body.ExpectedTotalMinor,
-		body.BoothName, a.ReservationsEnabled, a.ReservationTTL)
+		body.BoothName, a.ReservationsEnabled, a.ReservationTTL, a.AllowScheduledOrders)
 	logOrderCommandResult(r.Context(), identity, result, err, started)
 	if err != nil {
 		writeDataErr(w, r, err)
@@ -504,7 +504,7 @@ func (a *API) CreateOrderQuote(w http.ResponseWriter, r *http.Request) {
 	}
 	quoteStarted := time.Now()
 	quote, err := a.DB.CreateOrderQuote(r.Context(), shopID, account.ID, body.EventID, body.CartVersion, body.Lines,
-		quoteTTL, maxStates, a.BundlesEnabled)
+		quoteTTL, maxStates, a.BundlesEnabled, a.AllowScheduledOrders)
 	if err != nil {
 		writeDataErr(w, r, err)
 		return
@@ -526,7 +526,7 @@ func (a *API) StaffOrders(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_pagination")
 		return
 	}
-	orders, more, err := a.DB.ListOrderPage(r.Context(), *account.ShopID, r.URL.Query().Get("eventId"), "", search, limit, (page-1)*limit)
+	orders, more, err := a.DB.ListOrderPage(r.Context(), *account.ShopID, r.URL.Query().Get("eventId"), "", search, r.URL.Query().Get("status"), a.ReportTimezone, limit, (page-1)*limit)
 	if err != nil {
 		logging.ErrorContext(r.Context(), "orders", zap.Error(err))
 		writeErr(w, http.StatusInternalServerError, "internal")
@@ -590,10 +590,15 @@ func (a *API) Pay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		PayCodeID data.ID `json:"payCodeId"`
+		PayCodeID         data.ID `json:"payCodeId"`
+		CashReceivedMinor *int64  `json:"cashReceivedMinor"`
 	}
 	if err := readJSON(r, &body); err != nil || body.PayCodeID == 0 {
 		writeErr(w, http.StatusBadRequest, "pay_code_required")
+		return
+	}
+	if body.CashReceivedMinor != nil && *body.CashReceivedMinor < 0 {
+		writeErr(w, http.StatusBadRequest, "invalid_cash_received")
 		return
 	}
 	orderID, valid := pathEntityID(w, r, "orderID")
@@ -601,7 +606,7 @@ func (a *API) Pay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.orderActionCommand(w, r, account, "order.pay:"+orderID.String(), body, func(identity data.CommandIdentity) (data.OrderCommandResult, error) {
-		return a.DB.PayOrderCommand(r.Context(), identity, orderID, body.PayCodeID)
+		return a.DB.PayOrderCommand(r.Context(), identity, orderID, body.PayCodeID, body.CashReceivedMinor)
 	})
 }
 
@@ -681,6 +686,24 @@ func (a *API) Cancel(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RefundConfirm closes the refund_required exit: the shop has physically
+// returned the goods and handed the money back, so stock is restored and the
+// order moves to cancelled. Staff group per the confirmed setting that the
+// cashier acts as shop administrator; no extra role gate is applied here.
+func (a *API) RefundConfirm(w http.ResponseWriter, r *http.Request) {
+	account, ok := a.staff(w, r)
+	if !ok {
+		return
+	}
+	orderID, valid := pathEntityID(w, r, "orderID")
+	if !valid {
+		return
+	}
+	a.orderActionCommand(w, r, account, "order.refund_confirm:"+orderID.String(), struct{}{}, func(identity data.CommandIdentity) (data.OrderCommandResult, error) {
+		return a.DB.ConfirmRefundCommand(r.Context(), identity, orderID)
+	})
+}
+
 func (a *API) orderAction(w http.ResponseWriter, r *http.Request, fn func(data.Account) (data.Order, error)) {
 	account, ok := a.staff(w, r)
 	if !ok {
@@ -709,6 +732,9 @@ func readEvent(w http.ResponseWriter, r *http.Request) (data.EventInput, bool) {
 
 func validEvent(in data.EventInput) bool {
 	if in.Name == "" || !catalog.ValidCurrency(in.Currency) || !catalog.ValidEventStatus(in.Status) {
+		return false
+	}
+	if len([]rune(in.Name)) > 120 || len([]rune(in.Venue)) > 120 || len([]rune(in.BoothNumber)) > 40 {
 		return false
 	}
 	start, err1 := time.Parse(time.DateOnly, in.StartsOn)
@@ -742,7 +768,10 @@ func orderJSON(order data.Order) map[string]any {
 		"currency": order.Currency, "priceLabel": priceLabel(order.Currency, order.TotalMinor),
 		"totalMinor": order.TotalMinor, "payCodeName": order.PayCodeName,
 		"stateVersion": order.StateVersion, "createdAt": order.CreatedAt, "reservationExpiresAt": order.ReservationExpiresAt,
-		"openedByLogin": order.OpenedByLogin, "openedByRole": order.OpenedByRole,
+		"refundedAt":        order.RefundedAt,
+		"cashReceivedMinor": order.CashReceivedMinor,
+		"cashChangeMinor":   order.CashChangeMinor,
+		"openedByLogin":     order.OpenedByLogin, "openedByRole": order.OpenedByRole,
 		"paidByLogin": paidBy, "paidByRole": order.PaidByRole,
 		"eventId": order.EventID, "eventName": order.EventName, "lines": lines, "pricingGroups": order.PricingGroups,
 	}
@@ -774,7 +803,8 @@ func payCodesJSON(codes []data.PayCode) []any {
 			imageURL = "/api/files/pay-codes/" + code.ID.String()
 		}
 		out = append(out, map[string]any{
-			"id": code.ID, "name": code.Name, "kind": code.Kind, "isDefault": code.IsDefault, "isEnabled": code.IsEnabled,
+			"id": code.ID, "name": code.Name, "kind": code.Kind, "currency": code.Currency,
+			"isDefault": code.IsDefault, "isEnabled": code.IsEnabled,
 			"imageURL": imageURL,
 		})
 	}

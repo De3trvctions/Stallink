@@ -1,4 +1,4 @@
-import { browserJSON } from "@/lib/api";
+import { browserJSON, type RequestResult } from "@/lib/api";
 
 type StoredOrderCommand = {
   key: string;
@@ -33,7 +33,7 @@ export async function sendOrderCommand(
   scope: string,
   path: string,
   body: unknown,
-) {
+): Promise<RequestResult> {
   const encodedBody = JSON.stringify(body);
   let command = readCommand(scope);
   if (command && command.body !== encodedBody) {
@@ -41,6 +41,8 @@ export async function sendOrderCommand(
       ok: false,
       status: 409,
       data: { error: "command_payload_unresolved" } as Record<string, unknown>,
+      category: "client",
+      errorCode: "command_payload_unresolved",
     };
   }
   if (!command) {
@@ -52,6 +54,8 @@ export async function sendOrderCommand(
         ok: false,
         status: 500,
         data: { error: "command_storage_unavailable" } as Record<string, unknown>,
+        category: "server",
+        errorCode: "command_storage_unavailable",
       };
     }
   }
@@ -62,7 +66,7 @@ export async function sendOrderCommand(
     "Idempotency-Key": command.key,
   });
   const errorCode = String(result.data.error ?? "");
-  const terminalRejection = result.status < 500 && !["command_in_progress", "idempotency_conflict"].includes(errorCode);
+  const terminalRejection = result.status >= 400 && result.status < 500 && !["command_in_progress", "idempotency_conflict"].includes(errorCode);
   if (result.ok || terminalRejection) {
     try {
       if (readCommand(scope)?.key === command.key) localStorage.removeItem(prefix + scope);

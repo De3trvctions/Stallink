@@ -1,15 +1,18 @@
 "use client";
 
-import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { browserJSON } from "@/lib/api";
+import { SafeImage } from "@/components/safe-image";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { browserJSON, type RequestResult } from "@/lib/api";
+import { describeRequest } from "@/lib/errors";
 import { formatMoney, type PriceTier } from "@/lib/pricing";
 import { clearCounterDraft, clearPendingCounterOrder, loadCounterDraft, loadPendingCounterOrder, saveCounterDraft, savePendingCounterOrder, type CounterDraftScope } from "@/lib/counter-draft";
 import { clearPendingOrderCommand, newClientOrderId, pendingOrderCommand, sendOrderCommand } from "@/lib/order-command";
+import { messageClass, useMessage } from "@/lib/message";
 import { WorkspaceShell } from "@/components/workspace-shell";
 import SelectMenu from "@/components/select-menu";
 
-type EventRow = { id: string; name: string; boothNumber: string; currency: string; status?: string };
+type EventRow = { id: string; name: string; boothNumber: string; currency: string; status?: string; endsOn?: string };
 type Listing = {
   listingId: string; goodId: string; name: string; description: string; currency: string;
   unitPriceMinor: number; priceLabel: string; priceTiers: PriceTier[]; remaining: number;
@@ -22,7 +25,7 @@ type Bundle = {
   isListed: boolean; reviewStatus: string; reviewNote: string; components: BundleComponent[];
   imageURL: string | null;
 };
-type PayCode = { id: string; name: string; kind: "qr" | "cash"; isDefault: boolean; imageURL: string };
+type PayCode = { id: string; name: string; kind: "qr" | "cash"; isDefault: boolean; currency: string | null; imageURL: string };
 type QuoteGroup = { kind: string; name: string; applications: number; totalMinor: number; lines: { name: string; quantity: number }[] };
 type Quote = {
   id: string; eventId: string; cartVersion: number; catalogRevision: number; expiresAt: string;
@@ -32,6 +35,17 @@ type Me = { id: string; shopId: string };
 type CreateOrderBody = { clientOrderId: string; quoteId: string; expectedTotalMinor: number; boothName: string };
 type CartDraft = { qty: Record<string, number>; bundleQty: Record<string, number>; boothName: string };
 type CatalogFilter = "all" | "good" | "bundle";
+type PaidReceipt = { id: string; number: string; totalMinor: number; currency: string };
+
+function eventIsClosed(event?: EventRow): boolean {
+  if (!event) return false;
+  if (event.status === "ended") return true;
+  if (event.endsOn) {
+    const end = new Date(`${event.endsOn}T23:59:59`);
+    if (!Number.isNaN(end.getTime()) && end.getTime() < Date.now()) return true;
+  }
+  return false;
+}
 
 function availability(item: Listing, singleLimit = item.remaining, bundleUsed = 0) {
   if (item.reviewStatus === "pending") return "等待平台审核";
@@ -52,7 +66,8 @@ function bundleAvailability(bundle: Bundle, limit = bundle.remaining) {
   return `固定套餐 · 最多 ${limit} 套`;
 }
 
-function unavailableReason(item: Listing) {
+function unavailableReason(item: Listing, closed: boolean) {
+  if (closed) return "活动已结束，暂时不能加入订单。";
   if (item.reviewStatus === "pending") return `「${item.name}」正在等待平台审核，暂时不能加入订单。`;
   if (item.reviewStatus === "rejected") return `「${item.name}」审核未通过${item.reviewNote ? `：${item.reviewNote}` : ""}，暂时不能加入订单。`;
   if (!item.isListed) return `「${item.name}」本场已下架，暂时不能加入订单。`;
@@ -60,7 +75,8 @@ function unavailableReason(item: Listing) {
   return "";
 }
 
-function bundleUnavailableReason(bundle: Bundle) {
+function bundleUnavailableReason(bundle: Bundle, closed: boolean) {
+  if (closed) return "活动已结束，暂时不能加入订单。";
   if (bundle.reviewStatus === "pending") return `「${bundle.name}」套餐正在等待平台审核，暂时不能加入订单。`;
   if (bundle.reviewStatus === "rejected") return `「${bundle.name}」套餐审核未通过${bundle.reviewNote ? `：${bundle.reviewNote}` : ""}，暂时不能加入订单。`;
   if (!bundle.isListed) return `「${bundle.name}」本场已下架，暂时不能加入订单。`;
@@ -75,7 +91,14 @@ function bundleGroup(kind: string) {
   return "单品";
 }
 
+function toMinor(amount: string): number | null {
+  const value = Number(amount);
+  if (!Number.isFinite(value) || value < 0) return null;
+  return Math.round(value * 100);
+}
+
 export default function CounterPage() {
+  const router = useRouter();
   const [events, setEvents] = useState<EventRow[]>([]);
   const [eventId, setEventId] = useState("");
   const [listings, setListings] = useState<Listing[]>([]);
@@ -87,20 +110,27 @@ export default function CounterPage() {
   const [boothName, setBoothName] = useState("");
   const [me, setMe] = useState<Me | null>(null);
   const [orderId, setOrderId] = useState("");
+  const [resumedOrder, setResumedOrder] = useState(false);
   const [orderNumber, setOrderNumber] = useState("");
   const [orderPriceLabel, setOrderPriceLabel] = useState("");
+  const [orderTotalMinor, setOrderTotalMinor] = useState(0);
+  const [orderCurrency, setOrderCurrency] = useState("MYR");
   const [reservationExpiresAt, setReservationExpiresAt] = useState("");
   const [codes, setCodes] = useState<PayCode[]>([]);
   const [payCodeId, setPayCodeId] = useState("");
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState("");
-  const [message, setMessage] = useState("");
+  const { message, setMessage } = useMessage();
   const [catalogNotice, setCatalogNotice] = useState("");
   const [catalogNoticeVersion, setCatalogNoticeVersion] = useState(0);
+  const [initError, setInitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [cartVersion, setCartVersion] = useState(0);
   const [cartOpen, setCartOpen] = useState(false);
+  const [cashReceived, setCashReceived] = useState("");
+  const [paidReceipt, setPaidReceipt] = useState<PaidReceipt | null>(null);
+  const [fulfilling, setFulfilling] = useState(false);
 
   useEffect(() => {
     if (!cartOpen) return;
@@ -124,9 +154,20 @@ export default function CounterPage() {
   const [loadedDraftKey, setLoadedDraftKey] = useState("");
   const quoteRequest = useRef(0);
   const catalogSignature = useRef("");
+  const qtyRef = useRef(qty);
+  useEffect(() => { qtyRef.current = qty; }, [qty]);
+  const bundleQtyRef = useRef(bundleQty);
+  useEffect(() => { bundleQtyRef.current = bundleQty; }, [bundleQty]);
+  const refreshCatalogRef = useRef<() => void>(() => {});
 
-  useEffect(() => {
-    void Promise.all([browserJSON("/api/staff/events"), browserJSON("/api/auth/me"), browserJSON("/api/staff/pay-codes")]).then(([eventsRes, meRes, codesRes]) => {
+  const loadInitial = useCallback(async () => {
+    try {
+      const [eventsRes, meRes, codesRes] = await Promise.all([
+        browserJSON("/api/staff/events"),
+        browserJSON("/api/auth/me"),
+        browserJSON("/api/staff/pay-codes"),
+      ]);
+      if (eventsRes.category === "unauthorized") { router.replace("/login"); return; }
       const rows = Array.isArray(eventsRes.data) ? eventsRes.data as EventRow[] : [];
       const sorted = [...rows.filter((row) => row.status === "live"), ...rows.filter((row) => row.status !== "live")];
       setEvents(sorted);
@@ -136,8 +177,15 @@ export default function CounterPage() {
       const codeList = Array.isArray(codesRes.data) ? codesRes.data as PayCode[] : [];
       setCodes(codeList);
       setPayCodeId((current) => current || codeList.find((code) => code.isDefault)?.id || codeList[0]?.id || "");
-    });
-  }, []);
+    } catch {
+      setInitError("目录暂时无法读取，请检查网络后重试。");
+    }
+  }, [router]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadInitial(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadInitial]);
 
   useEffect(() => {
     let active = true;
@@ -167,12 +215,49 @@ export default function CounterPage() {
       setBoothName(saved?.value.boothName ?? "");
       setLoadedDraftKey(draftKey);
       setCartVersion((version) => version + 1);
+      refreshCatalogRef.current();
     }, 0);
     return () => window.clearTimeout(timer);
   }, [eventId, me]);
 
   useEffect(() => {
-    if (!me?.id || !me.shopId || !eventId) return;
+    if (!me?.id || !me.shopId || events.length === 0) return;
+    const resumeId = new URLSearchParams(window.location.search).get("resume");
+    if (!resumeId || !/^[1-9][0-9]*$/.test(resumeId)) return;
+    let active = true;
+    void browserJSON(`/api/staff/orders/${resumeId}`).then((res) => {
+      if (!active) return;
+      if (!res.ok || res.data.status !== "pending") {
+        setMessage({ kind: "error", text: res.ok ? "该订单已不是待付款状态，请刷新订单列表。" : describeRequest(res) });
+        return;
+      }
+      const orderEventId = String(res.data.eventId ?? "");
+      if (!events.some((event) => event.id === orderEventId)) {
+        setMessage({ kind: "error", text: "未找到订单所属活动，请刷新后重试。" });
+        return;
+      }
+      setEventId(orderEventId);
+      setResumedOrder(true);
+      setOrderId(resumeId);
+      setOrderNumber(String(res.data.number));
+      const total = Number(res.data.totalMinor ?? 0);
+      const orderCurrency = String(res.data.currency ?? "MYR");
+      setOrderCurrency(orderCurrency);
+      setOrderTotalMinor(total);
+      setOrderPriceLabel(String(res.data.priceLabel ?? formatMoney(orderCurrency, total)));
+      setReservationExpiresAt(res.data.reservationExpiresAt ? String(res.data.reservationExpiresAt) : "");
+      const pending = pendingOrderCommand<{ payCodeId: string; cashReceivedMinor?: number }>(`pay:${me.id}:${me.shopId}:${resumeId}`);
+      if (pending) {
+        setPayCodeId(pending.body.payCodeId);
+        setCashReceived(pending.body.cashReceivedMinor !== undefined ? (pending.body.cashReceivedMinor / 100).toFixed(2) : "");
+      }
+      setPayOpen(true);
+    });
+    return () => { active = false; };
+  }, [events, me, setMessage]);
+
+  useEffect(() => {
+    if (!me?.id || !me.shopId || !eventId || new URLSearchParams(window.location.search).has("resume")) return;
     const scope: CounterDraftScope = { accountId: me.id, shopId: me.shopId, eventId };
     const saved = loadPendingCounterOrder(scope);
     if (!saved) return;
@@ -191,20 +276,23 @@ export default function CounterPage() {
       setPayOpen(true);
       setOrderNumber(String(res.data.number ?? saved.number));
       setOrderPriceLabel(String(res.data.priceLabel ?? saved.priceLabel));
+      setOrderTotalMinor(Number(res.data.totalMinor ?? 0));
+      setOrderCurrency(String(res.data.currency ?? "MYR"));
       setReservationExpiresAt(res.data.reservationExpiresAt ? String(res.data.reservationExpiresAt) : "");
       const codesRes = await browserJSON("/api/staff/pay-codes");
       if (!active) return;
       const list = Array.isArray(codesRes.data) ? codesRes.data as PayCode[] : [];
       setCodes(list);
       const payScope = `pay:${me.id}:${me.shopId}:${saved.id}`;
-      const savedPay = pendingOrderCommand<{ payCodeId: string }>(payScope);
+      const savedPay = pendingOrderCommand<{ payCodeId: string; cashReceivedMinor?: number }>(payScope);
       setPayCodeId(savedPay?.body.payCodeId ?? list.find((code) => code.isDefault)?.id ?? list[0]?.id ?? "");
-      setMessage("已恢复上一笔待付款订单，可继续收款。");
+      if (savedPay?.body.cashReceivedMinor !== undefined) setCashReceived((savedPay.body.cashReceivedMinor / 100).toFixed(2));
+      setMessage({ kind: "success", text: "已恢复上一笔待付款订单，可继续收款。" });
     }).catch(() => {
       // Keep the checkout marker and retry recovery on the next page load.
     });
     return () => { active = false; };
-  }, [eventId, me]);
+  }, [eventId, me, setMessage]);
 
   useEffect(() => {
     if (!me?.id || !me.shopId || !eventId) return;
@@ -218,6 +306,8 @@ export default function CounterPage() {
   }, [boothName, bundleQty, eventId, loadedDraftKey, me, qty]);
 
   function switchEvent(nextId: string) {
+    if (new URLSearchParams(window.location.search).has("resume")) window.history.replaceState(null, "", "/counter");
+    setResumedOrder(false);
     setEventId(nextId);
     setQty({});
     setBundleQty({});
@@ -235,6 +325,7 @@ export default function CounterPage() {
 
   const liveEvents = events.filter((event) => event.status === "live");
   const selectedEvent = events.find((event) => event.id === eventId);
+  const eventClosed = eventIsClosed(selectedEvent);
   const currency = selectedEvent?.currency ?? "MYR";
   const normalizedSearch = catalogSearch.trim().toLocaleLowerCase();
   const visibleListings = useMemo(() => listings.filter((item) =>
@@ -276,48 +367,7 @@ export default function CounterPage() {
     return Math.max(0, limit);
   }
 
-  useEffect(() => {
-    if (!listings.length) return;
-    const trimmed = listings.filter((item) => (qty[item.listingId] ?? 0)
-      > Math.max(0, item.remaining - (bundleUsageByListing[item.listingId] ?? 0)));
-    if (trimmed.length) showCatalogNotice(`库存已变化：「${trimmed.map((item) => item.name).join("、")}」已按本场剩余调整。`);
-    setQty((previous) => {
-      let changed = false;
-      const next = { ...previous };
-      listings.forEach((item) => {
-        const limit = Math.max(0, item.remaining - (bundleUsageByListing[item.listingId] ?? 0));
-        if ((next[item.listingId] ?? 0) > limit) {
-          next[item.listingId] = limit;
-          changed = true;
-        }
-      });
-      return changed ? next : previous;
-    });
-    setQuote(null);
-    setQuoteError("");
-  }, [listings, bundleUsageByListing, qty]);
-
-  useEffect(() => {
-    if (!bundles.length) return;
-    const trimmed = bundles.filter((bundle) => (bundleQty[bundle.bundleListingId] ?? 0) > Math.max(0, bundle.remaining));
-    if (trimmed.length) showCatalogNotice(`库存已变化：「${trimmed.map((bundle) => bundle.name).join("、")}」已售完，已从购物车移除。`);
-    setBundleQty((previous) => {
-      let changed = false;
-      const next = { ...previous };
-      bundles.forEach((bundle) => {
-        const limit = Math.max(0, bundle.remaining);
-        if ((next[bundle.bundleListingId] ?? 0) > limit) {
-          next[bundle.bundleListingId] = limit;
-          changed = true;
-        }
-      });
-      return changed ? next : previous;
-    });
-    setQuote(null);
-    setQuoteError("");
-  }, [bundles, bundleQty]);
-
-  async function refreshCatalog() {
+  const refreshCatalog = useCallback(async () => {
     if (!eventId) return;
     const [listingRes, bundleRes] = await Promise.all([
       browserJSON(`/api/staff/events/${eventId}/listings`),
@@ -331,7 +381,57 @@ export default function CounterPage() {
     catalogSignature.current = signature;
     setListings(nextListings);
     setBundles(nextBundles);
-  }
+
+    // Reconcile the cart against the fresh catalog. This previously lived in
+    // effects watching listings/bundles/qty; keeping it in the catalog sync
+    // callback means no setState runs synchronously inside an effect.
+    const currentQty = qtyRef.current;
+    const currentBundleQty = bundleQtyRef.current;
+    const usage: Record<string, number> = {};
+    nextBundles.forEach((bundle) => {
+      const count = currentBundleQty[bundle.bundleListingId] ?? 0;
+      if (count <= 0) return;
+      bundle.components.forEach((component) => {
+        usage[component.listingId] = (usage[component.listingId] ?? 0) + component.quantity * count;
+      });
+    });
+    const singleOverflow = nextListings.filter((item) => {
+      const limit = Math.max(0, item.remaining - (usage[item.listingId] ?? 0));
+      return (currentQty[item.listingId] ?? 0) > limit;
+    });
+    const bundleOverflow = nextBundles.filter((bundle) =>
+      (currentBundleQty[bundle.bundleListingId] ?? 0) > Math.max(0, bundle.remaining));
+    if (singleOverflow.length) {
+      setCatalogNotice(`库存已变化：「${singleOverflow.map((item) => item.name).join("、")}」已按本场剩余调整。`);
+      setCatalogNoticeVersion((version) => version + 1);
+    }
+    if (bundleOverflow.length) {
+      setCatalogNotice(`库存已变化：「${bundleOverflow.map((bundle) => bundle.name).join("、")}」已售完，已从购物车移除。`);
+      setCatalogNoticeVersion((version) => version + 1);
+    }
+    if (singleOverflow.length || bundleOverflow.length) {
+      setQty((previous) => {
+        const next = { ...previous };
+        nextListings.forEach((item) => {
+          const limit = Math.max(0, item.remaining - (usage[item.listingId] ?? 0));
+          if ((next[item.listingId] ?? 0) > limit) next[item.listingId] = limit;
+        });
+        return next;
+      });
+      setBundleQty((previous) => {
+        const next = { ...previous };
+        nextBundles.forEach((bundle) => {
+          const limit = Math.max(0, bundle.remaining);
+          if ((next[bundle.bundleListingId] ?? 0) > limit) next[bundle.bundleListingId] = limit;
+        });
+        return next;
+      });
+      setQuote(null);
+      setQuoteError("");
+      setCartVersion((version) => version + 1);
+    }
+  }, [eventId]);
+  useEffect(() => { refreshCatalogRef.current = refreshCatalog; }, [refreshCatalog]);
 
   useEffect(() => {
     if (!eventId) return;
@@ -346,7 +446,7 @@ export default function CounterPage() {
       window.removeEventListener("focus", sync);
       document.removeEventListener("visibilitychange", sync);
     };
-  }, [eventId]);
+  }, [eventId, refreshCatalog]);
 
   const cartLines = useMemo(() => {
     const lines = listings.flatMap((item) => {
@@ -383,7 +483,7 @@ export default function CounterPage() {
             setQuoteError(res.data.error === "not_enough_stock" || res.data.error === "invalid_cart"
               ? "套餐与单品共用库存，请核对所选数量。"
               : res.data.error === "pricing_complexity_exceeded" ? "这组商品优惠规则过于复杂，暂时无法准确报价，请减少品项后重试。"
-                : "暂时无法计算价格，请重试。");
+                : describeRequest(res));
             return;
           }
           const result = res.data as unknown as Quote;
@@ -401,7 +501,7 @@ export default function CounterPage() {
         });
     }, 150);
     return () => window.clearTimeout(timeout);
-  }, [cartLines, cartVersion, eventId]);
+  }, [cartLines, cartVersion, eventId, refreshCatalog]);
 
   function reconcileSingleOverflow() {
     let changed = false;
@@ -423,7 +523,7 @@ export default function CounterPage() {
 
   function adjust(item: Listing, amount: number) {
     if (amount > 0) {
-      const reason = unavailableReason(item);
+      const reason = unavailableReason(item, eventClosed);
       if (reason) { showCatalogNotice(reason); return; }
       const repaired = reconcileSingleOverflow();
       if (repaired.changed) {
@@ -449,7 +549,7 @@ export default function CounterPage() {
 
   function adjustBundle(bundle: Bundle, amount: number) {
     if (amount > 0) {
-      const reason = bundleUnavailableReason(bundle);
+      const reason = bundleUnavailableReason(bundle, eventClosed);
       if (reason) { showCatalogNotice(reason); return; }
       const repaired = reconcileSingleOverflow();
       if (repaired.changed) {
@@ -473,11 +573,19 @@ export default function CounterPage() {
     setCartVersion((version) => version + 1);
   }
 
+  function clearPendingOrderMarker() {
+    setOrderId("");
+    setOrderNumber("");
+    setOrderPriceLabel("");
+    setReservationExpiresAt("");
+    setPayOpen(false);
+  }
+
   async function place(event: React.FormEvent) {
     event.preventDefault();
     if (cartLines.length === 0 || !me?.id || !me.shopId) return;
     if (!quote || quoteLoading || quote.cartVersion !== cartVersion) {
-      setMessage("正在更新价格预览，请稍候再生成订单。");
+      setMessage({ kind: "error", text: "正在更新价格预览，请稍候再生成订单。" });
       return;
     }
     const scope = `create:${me.id}:${me.shopId}:${eventId}`;
@@ -486,7 +594,7 @@ export default function CounterPage() {
       clientOrderId: newClientOrderId(), quoteId: quote.id, expectedTotalMinor: quote.totalMinor, boothName,
     };
     setSubmitting(true);
-    setMessage("");
+    setMessage(null);
     try {
       const res = await sendOrderCommand(scope, "/api/staff/orders", body);
       if (!res.ok) {
@@ -495,69 +603,139 @@ export default function CounterPage() {
           setQuote(null);
           setCartVersion((version) => version + 1);
         }
-        setMessage(res.data.error === "not_enough_stock" ? "库存刚刚发生变化，请重新核对数量。"
-          : res.data.error === "quote_expired" || res.data.error === "quote_stale" ? "價格預覽已失效，正在重新計算。"
-            : res.data.error === "command_payload_unresolved" ? "上一笔开单仍待服务端确认，请重试上一笔操作后再修改购物车。"
-              : "订单没有生成，请检查后重试。");
+        setMessage({ kind: "error", text: describeRequest(res) });
         return;
       }
       const result = res.data;
+      const totalMinor = Number(result.totalMinor ?? quote.totalMinor);
+      const orderCurrency = String(result.currency ?? currency);
       setOrderId(String(result.id));
       setPayOpen(true);
       setOrderNumber(String(result.number));
-      setOrderPriceLabel(String(result.priceLabel ?? formatMoney(currency, Number(result.totalMinor ?? quote.totalMinor))));
+      setOrderPriceLabel(String(result.priceLabel ?? formatMoney(orderCurrency, totalMinor)));
+      setOrderTotalMinor(totalMinor);
+      setOrderCurrency(orderCurrency);
       setReservationExpiresAt(result.reservationExpiresAt ? String(result.reservationExpiresAt) : "");
       savePendingCounterOrder({ accountId: me.id, shopId: me.shopId, eventId }, {
         id: String(result.id), number: String(result.number),
-        priceLabel: String(result.priceLabel ?? formatMoney(currency, Number(result.totalMinor ?? quote.totalMinor))),
+        priceLabel: String(result.priceLabel ?? formatMoney(orderCurrency, totalMinor)),
         reservationExpiresAt: result.reservationExpiresAt ? String(result.reservationExpiresAt) : null,
       });
-      setQty({});
-      setBundleQty({});
-      setBoothName("");
-      setQuote(null);
-      if (me?.id && me.shopId) clearCounterDraft({ accountId: me.id, shopId: me.shopId, eventId });
+      // 开单成功但未收款：购物车与草稿保留，便于库存/价格变化后按原组合重开。
       const codesRes = await browserJSON("/api/staff/pay-codes");
       const list = Array.isArray(codesRes.data) ? codesRes.data as PayCode[] : [];
       setCodes(list);
       setPayCodeId(list.find((code) => code.isDefault)?.id ?? list[0]?.id ?? "");
+      setCashReceived("");
       setCartOpen(false);
       void refreshCatalog();
-      setMessage(`订单 ${String(result.number)} 已生成，待付款。`);
+      setMessage({ kind: "success", text: `订单 ${String(result.number)} 已生成，待付款。` });
     } catch {
-      setMessage("无法连接服务，请重试同一笔开单以安全恢复结果。");
+      setMessage({ kind: "error", text: "无法连接服务，请重试同一笔开单以安全恢复结果。" });
     } finally {
       setSubmitting(false);
     }
   }
 
+  function resetAfterFailedPayment(res: RequestResult) {
+    // 预留过期 / 库存不足：关闭弹窗、清掉待付单标记，购物车保留并按最新目录重新计价。
+    if (me?.id && me.shopId) {
+      const scope = { accountId: me.id, shopId: me.shopId, eventId };
+      if (loadPendingCounterOrder(scope)?.id === orderId) clearPendingCounterOrder(scope);
+    }
+    if (resumedOrder) window.history.replaceState(null, "", "/counter");
+    setResumedOrder(false);
+    clearPendingOrderMarker();
+    setQuote(null);
+    setCartVersion((version) => version + 1);
+    void refreshCatalog();
+    setMessage({ kind: "error", text: describeRequest(res) });
+  }
+
   async function confirm() {
     if (!orderId || !me?.id || !me.shopId) return;
+    const scope = `pay:${me.id}:${me.shopId}:${orderId}`;
+    const saved = pendingOrderCommand<{ payCodeId: string; cashReceivedMinor?: number }>(scope);
+    const activeCode = codes.find((code) => code.id === payCodeId);
+    if (!saved && !activeCode) return;
+    let cashReceivedMinor: number | undefined;
+    if (!saved && activeCode?.kind === "cash") {
+      const received = toMinor(cashReceived);
+      if (received === null) {
+        setMessage({ kind: "error", text: "请填写实收现金金额。" });
+        return;
+      }
+      if (received < orderTotalMinor) {
+        setMessage({ kind: "error", text: `实收金额不能少于订单总额 ${formatMoney(orderCurrency, orderTotalMinor)}。` });
+        return;
+      }
+      cashReceivedMinor = received;
+    }
     setSubmitting(true);
     try {
-      const scope = `pay:${me.id}:${me.shopId}:${orderId}`;
-      const saved = pendingOrderCommand<{ payCodeId: string }>(scope);
-      const res = await sendOrderCommand(scope, `/api/staff/orders/${orderId}/pay`, saved?.body ?? { payCodeId });
+      const res = await sendOrderCommand(scope, `/api/staff/orders/${orderId}/pay`, {
+        payCodeId,
+        ...(cashReceivedMinor !== undefined ? { cashReceivedMinor } : {}),
+        ...(saved?.body ?? {}),
+      });
+      if (res.status === 409 && res.data.error === "reservation_expired") {
+        resetAfterFailedPayment(res);
+        return;
+      }
       if (res.status === 409 && res.data.error === "not_enough_stock") {
-        setMessage("本场剩余不够，订单仍待付款。请取消订单后重新开单。");
+        resetAfterFailedPayment(res);
         return;
       }
-      if (res.status === 409 && res.data.error === "pay_code_required") {
-        setMessage("这家店还没有可用的收款方式。");
+      if (!res.ok) {
+        setMessage({ kind: "error", text: describeRequest(res) });
         return;
       }
-      setMessage(res.ok ? "已确认收款，库存已扣减。" : "确认失败，请重试。" );
-      if (res.ok) {
-        clearPendingCounterOrder({ accountId: me.id, shopId: me.shopId, eventId });
-        setPayOpen(false);
-        void refreshCatalog();
-        setOrderId("");
-        setReservationExpiresAt("");
+      // 收款成功：清掉草稿与待付单标记，弹出取货凭证。
+      if (me?.id && me.shopId) {
+        const scope = { accountId: me.id, shopId: me.shopId, eventId };
+        if (loadPendingCounterOrder(scope)?.id === orderId) clearPendingCounterOrder(scope);
+        if (!resumedOrder) clearCounterDraft(scope);
       }
+      if (!resumedOrder) {
+        setQty({});
+        setBundleQty({});
+        setBoothName("");
+        setQuote(null);
+      }
+      if (resumedOrder) window.history.replaceState(null, "", "/counter");
+      setResumedOrder(false);
+      setPaidReceipt({
+        id: orderId,
+        number: orderNumber,
+        totalMinor: orderTotalMinor,
+        currency: orderCurrency,
+      });
+      clearPendingOrderMarker();
+      void refreshCatalog();
     } catch {
-      setMessage("无法连接服务，请重试同一笔收款操作以安全恢复结果。");
+      setMessage({ kind: "error", text: "无法连接服务，请重试同一笔收款操作以安全恢复结果。" });
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function fulfillReceipt() {
+    if (!paidReceipt || !me?.id || !me.shopId) return;
+    setFulfilling(true);
+    try {
+      const scope = `fulfill:${me.id}:${me.shopId}:${paidReceipt.id}`;
+      const res = await sendOrderCommand(scope, `/api/staff/orders/${paidReceipt.id}/fulfill`, {});
+      if (!res.ok) {
+        setMessage({ kind: "error", text: describeRequest(res) });
+        return;
+      }
+      setMessage({ kind: "success", text: `订单 ${paidReceipt.number} 已标记为当场交付。` });
+      setPaidReceipt(null);
+      void refreshCatalog();
+    } catch {
+      setMessage({ kind: "error", text: "无法连接服务，请重试交付操作。" });
+    } finally {
+      setFulfilling(false);
     }
   }
 
@@ -565,25 +743,33 @@ export default function CounterPage() {
     try {
       const res = await browserJSON(`/api/staff/orders/${orderId}/unpaid`, "POST", {});
       if (!res.ok) {
-        setMessage("订单状态没有更新，请重试。");
+        setMessage({ kind: "error", text: describeRequest(res) });
         return;
       }
-      setMessage("顾客未付款，订单保留为待付款状态。");
-      if (me?.id && me.shopId) clearPendingCounterOrder({ accountId: me.id, shopId: me.shopId, eventId });
-      setPayOpen(false);
+      setMessage({ kind: "success", text: "顾客未付款，订单保留为待付款状态。" });
+      if (me?.id && me.shopId) {
+        const scope = { accountId: me.id, shopId: me.shopId, eventId };
+        if (loadPendingCounterOrder(scope)?.id === orderId) clearPendingCounterOrder(scope);
+      }
+      if (resumedOrder) window.history.replaceState(null, "", "/counter");
+      setResumedOrder(false);
+      clearPendingOrderMarker();
       void refreshCatalog();
-      setOrderId("");
-      setReservationExpiresAt("");
     } catch {
-      setMessage("无法连接服务，请检查网络后重试。");
+      setMessage({ kind: "error", text: "无法连接服务，请检查网络后重试。" });
     }
   }
 
-  const activePayCode = codes.find((code) => code.id === payCodeId) ?? codes[0];
+  const activePayCode = codes.find((code) => code.id === payCodeId);
   const selectedCount = quote?.itemCount ?? cartLines.reduce((sum, line) => sum + line.qty, 0);
   const unresolvedPayCommand = orderId && me?.id && me.shopId
     ? pendingOrderCommand<{ payCodeId: string }>(`pay:${me.id}:${me.shopId}:${orderId}`)
     : null;
+  const cashReceivedMinor = toMinor(cashReceived);
+  const cashChangeMinor = activePayCode?.kind === "cash" && cashReceivedMinor !== null && orderTotalMinor > 0
+    ? cashReceivedMinor - orderTotalMinor
+    : null;
+  const cashInvalid = activePayCode?.kind === "cash" && (cashReceivedMinor === null || cashReceivedMinor < orderTotalMinor);
 
   return (
     <WorkspaceShell kind="sales">
@@ -591,10 +777,13 @@ export default function CounterPage() {
         <p className="eyebrow">现场收银</p>
         <h1>创建订单</h1>
         <p>点选商品即可加一。服务器会实时计算数量优惠和固定套餐，自动选择顾客最省的组合。</p>
+        {initError ? (
+          <p className="counter-quote-error" role="alert">{initError} <button type="button" onClick={() => void loadInitial()}>重试</button></p>
+        ) : null}
         <form className="counter-form" onSubmit={place}>
           <div className="counter-context">
             <label className="field"><span>活动场次</span>
-              <SelectMenu value={eventId} placeholder="选择活动" ariaLabel="活动场次" options={events.map((event) => ({ value: event.id, label: `${event.name}${event.boothNumber ? ` · ${event.boothNumber}` : ""}${event.status === "live" ? "（进行中）" : ""}` }))} onChange={switchEvent} />
+              <SelectMenu value={eventId} placeholder="选择活动" ariaLabel="活动场次" options={events.map((event) => ({ value: event.id, label: `${event.name}${event.boothNumber ? ` · ${event.boothNumber}` : ""}${event.status === "live" ? "（进行中）" : event.status === "ended" ? "（已结束）" : ""}` }))} onChange={switchEvent} />
               {liveEvents.length > 1 ? <div className="counter-event-chips" role="group" aria-label="进行中的活动">
                 {liveEvents.map((event) => <button type="button" key={event.id} data-active={event.id === eventId} aria-pressed={event.id === eventId} onClick={() => switchEvent(event.id)}>{event.name}{event.boothNumber ? ` · ${event.boothNumber}` : ""}</button>)}
               </div> : null}
@@ -603,6 +792,8 @@ export default function CounterPage() {
               <input value={boothName} onChange={(change) => setBoothName(change.target.value)} placeholder="方便现场叫号" />
             </label>
           </div>
+
+          {eventClosed ? <p className="counter-quote-error" role="alert">这场活动已结束，暂时不能加入新订单。</p> : null}
 
           <div className="counter-layout">
             <section className="counter-catalog" aria-labelledby="counter-catalog-heading">
@@ -617,18 +808,18 @@ export default function CounterPage() {
               {visibleListings.length > 0 ? (
                 <ul className="counter-products">
                   {visibleListings.map((item) => {
-                    const disabled = item.reviewStatus !== "approved" || !item.isListed || item.remaining <= 0;
+                    const disabled = eventClosed || item.reviewStatus !== "approved" || !item.isListed || item.remaining <= 0;
                     const count = qty[item.listingId] ?? 0;
                     return (
                       <li key={item.listingId}>
-                        <button type="button" className={`counter-product${disabled ? " counter-product--unavailable" : ""}${disabled && item.reviewStatus === "approved" && item.isListed && item.remaining <= 0 ? " counter-product--stockout" : ""}`} aria-disabled={disabled} onClick={() => adjust(item, 1)}>
+                        <button type="button" className={`counter-product${disabled ? " counter-product--unavailable" : ""}${disabled && item.reviewStatus === "approved" && item.isListed && item.remaining <= 0 ? " counter-product--stockout" : ""}`} disabled={disabled} onClick={() => adjust(item, 1)}>
                           {item.imageURL
-                            ? <Image className="counter-product__thumb" src={item.imageURL} alt="" width={56} height={56} unoptimized />
+                            ? <SafeImage className="counter-product__thumb" src={item.imageURL} alt="" width={56} height={56} unoptimized fallback={<span className="counter-product__thumb counter-product__thumb--empty" aria-hidden="true">无图</span>} />
                             : <span className="counter-product__thumb counter-product__thumb--empty" aria-hidden="true">无图</span>}
                           <span className="counter-product__copy"><strong>{item.name}</strong><small className={disabled ? "counter-product__status counter-product__status--off" : "counter-product__status"}>{availability(item, maxSingleQty(item), bundleUsageByListing[item.listingId] ?? 0)}</small></span>
                           <span className="counter-product__price"><b>{item.priceLabel}</b>{disabled && item.isListed && item.reviewStatus === "approved" && item.remaining <= 0 ? null : item.priceTiers?.filter((tier) => tier.quantity <= item.remaining).map((tier) => <small key={tier.quantity}>{tier.quantity} 件 {formatMoney(currency, tier.totalPriceMinor)}</small>)}<i aria-hidden="true" className={disabled ? "counter-product__add--off" : undefined}>{disabled ? "原因" : "＋"}</i></span>
                           {count > 0 ? <span className="counter-product__count" aria-label={`已选 ${count} 件`}>{count}</span> : null}
-                          {disabled && item.reviewStatus === "approved" && item.isListed && item.remaining <= 0 ? <span className="counter-product__badge">缺货</span> : null}
+                          {disabled && item.reviewStatus === "approved" && item.isListed && item.remaining <= 0 ? <span className="counter-product__badge">售罄</span> : null}
                         </button>
                       </li>
                     );
@@ -640,17 +831,17 @@ export default function CounterPage() {
                   <div className="counter-section-heading"><div><p className="eyebrow">固定搭配</p><h2>套餐</h2></div><span>{visibleBundles.length} 套</span></div>
                   <ul className="counter-products">
                     {visibleBundles.map((bundle) => {
-                      const disabled = bundle.reviewStatus !== "approved" || !bundle.isListed || bundle.remaining <= 0;
+                      const disabled = eventClosed || bundle.reviewStatus !== "approved" || !bundle.isListed || bundle.remaining <= 0;
                       const count = bundleQty[bundle.bundleListingId] ?? 0;
                       return <li key={bundle.bundleListingId}>
-                        <button type="button" className={`counter-product counter-product--bundle${disabled ? " counter-product--unavailable" : ""}${disabled && bundle.reviewStatus === "approved" && bundle.isListed && bundle.remaining <= 0 ? " counter-product--stockout" : ""}`} aria-disabled={disabled} onClick={() => adjustBundle(bundle, 1)}>
+                        <button type="button" className={`counter-product counter-product--bundle${disabled ? " counter-product--unavailable" : ""}${disabled && bundle.reviewStatus === "approved" && bundle.isListed && bundle.remaining <= 0 ? " counter-product--stockout" : ""}`} disabled={disabled} onClick={() => adjustBundle(bundle, 1)}>
                           {bundle.imageURL
-                            ? <Image className="counter-product__thumb" src={bundle.imageURL} alt="" width={56} height={56} unoptimized />
+                            ? <SafeImage className="counter-product__thumb" src={bundle.imageURL} alt="" width={56} height={56} unoptimized fallback={<span className="counter-product__thumb counter-product__thumb--empty" aria-hidden="true">无图</span>} />
                             : <span className="counter-product__thumb counter-product__thumb--empty" aria-hidden="true">无图</span>}
                           <span className="counter-product__copy"><strong>{bundle.name}</strong><small className={disabled ? "counter-product__status counter-product__status--off" : "counter-product__status"}>{bundleAvailability(bundle, maxBundleQty(bundle))}</small><small>{bundle.components.map((component) => `${component.name} × ${component.quantity}`).join(" · ")}</small></span>
                           <span className="counter-product__price"><b>{bundle.priceLabel}</b><i aria-hidden="true" className={disabled ? "counter-product__add--off" : undefined}>{disabled ? "原因" : "＋"}</i></span>
                           {count > 0 ? <span className="counter-product__count" aria-label={`已选 ${count} 套`}>{count}</span> : null}
-                          {disabled && bundle.reviewStatus === "approved" && bundle.isListed && bundle.remaining <= 0 ? <span className="counter-product__badge">缺货</span> : null}
+                          {disabled && bundle.reviewStatus === "approved" && bundle.isListed && bundle.remaining <= 0 ? <span className="counter-product__badge">售罄</span> : null}
                         </button>
                       </li>;
                     })}
@@ -671,7 +862,7 @@ export default function CounterPage() {
                   <ul className="counter-cart counter-cart--selection">
                     {listings.filter((item) => (qty[item.listingId] ?? 0) > 0).map((item) => <li className="counter-cart__line" key={item.listingId}>
                       {item.imageURL
-                        ? <Image className="counter-cart__thumb" src={item.imageURL} alt="" width={40} height={40} unoptimized />
+                        ? <SafeImage className="counter-cart__thumb" src={item.imageURL} alt="" width={40} height={40} unoptimized fallback={<span className="counter-cart__thumb counter-cart__thumb--empty" aria-hidden="true">无图</span>} />
                         : <span className="counter-cart__thumb counter-cart__thumb--empty" aria-hidden="true">无图</span>}
                       <div className="counter-cart__identity">
                         <strong>{item.name}</strong>
@@ -679,13 +870,13 @@ export default function CounterPage() {
                       </div>
                       <div className="quantity-control">
                         <button type="button" aria-label={`减少 ${item.name}`} onClick={() => adjust(item, -1)}>−</button><span aria-live="polite">{qty[item.listingId]}</span>
-                        <button type="button" aria-label={`增加 ${item.name}`} aria-disabled={qty[item.listingId] >= maxSingleQty(item)} onClick={() => adjust(item, 1)}>＋</button>
+                        <button type="button" aria-label={`增加 ${item.name}`} disabled={qty[item.listingId] >= maxSingleQty(item)} onClick={() => adjust(item, 1)}>＋</button>
                       </div>
                       <strong className="counter-cart__amount">{formatMoney(currency, item.unitPriceMinor * qty[item.listingId])}</strong>
                     </li>)}
                     {bundles.filter((bundle) => (bundleQty[bundle.bundleListingId] ?? 0) > 0).map((bundle) => <li className="counter-cart__line" key={bundle.bundleListingId}>
                       {bundle.imageURL
-                        ? <Image className="counter-cart__thumb" src={bundle.imageURL} alt="" width={40} height={40} unoptimized />
+                        ? <SafeImage className="counter-cart__thumb" src={bundle.imageURL} alt="" width={40} height={40} unoptimized fallback={<span className="counter-cart__thumb counter-cart__thumb--empty" aria-hidden="true">无图</span>} />
                         : <span className="counter-cart__thumb counter-cart__thumb--empty" aria-hidden="true">无图</span>}
                       <div className="counter-cart__identity">
                         <strong>{bundle.name}</strong>
@@ -693,14 +884,14 @@ export default function CounterPage() {
                       </div>
                       <div className="quantity-control">
                         <button type="button" aria-label={`减少 ${bundle.name}`} onClick={() => adjustBundle(bundle, -1)}>−</button><span aria-live="polite">{bundleQty[bundle.bundleListingId]}</span>
-                        <button type="button" aria-label={`增加 ${bundle.name}`} aria-disabled={bundleQty[bundle.bundleListingId] >= maxBundleQty(bundle)} onClick={() => adjustBundle(bundle, 1)}>＋</button>
+                        <button type="button" aria-label={`增加 ${bundle.name}`} disabled={bundleQty[bundle.bundleListingId] >= maxBundleQty(bundle)} onClick={() => adjustBundle(bundle, 1)}>＋</button>
                       </div>
                       <strong className="counter-cart__amount">{formatMoney(currency, bundle.unitPriceMinor * bundleQty[bundle.bundleListingId])}</strong>
                     </li>)}
                   </ul>
                   <div className="counter-quote-breakdown" aria-label="服务器计算的优惠明细">
                     <p className="counter-quote-breakdown__caption">价格分摊 · 已含优惠</p>
-                    {quote?.groups.map((group, index) => <div className="counter-quote-breakdown__row" key={`${group.kind}-${index}`}>
+                    {quote?.groups.map((group) => <div className="counter-quote-breakdown__row" key={`${group.kind}-${group.name}-${group.applications}`}>
                       <span>{bundleGroup(group.kind)}{group.applications > 1 ? ` × ${group.applications}` : ""}<small>{group.name}</small></span>
                       <strong>{formatMoney(currency, group.totalMinor)}</strong>
                     </div>)}
@@ -711,10 +902,10 @@ export default function CounterPage() {
               <div className="counter-total">
                 {quote?.savingsMinor ? <p><span>商品原价</span><strong>{formatMoney(currency, quote.baseMinor)}</strong></p> : null}
                 {quote?.savingsMinor ? <p><span>自动组合优惠</span><strong>− {formatMoney(currency, quote.savingsMinor)}</strong></p> : null}
-                <p className="counter-total__amount"><span>应付总额</span><strong>{quoteLoading ? "正在重新计价…" : quote ? formatMoney(currency, quote.totalMinor) : "-"}</strong></p>
+                <p className="counter-total__amount"><span>应付总额（{currency}）</span><strong>{quoteLoading ? "正在重新计价…" : quote ? formatMoney(currency, quote.totalMinor) : "-"}</strong></p>
                 {quoteError ? <p className="counter-quote-error" role="alert">{quoteError}</p> : null}
               </div>
-              <button className="button button--dark counter-submit" type="submit" disabled={submitting || cartLines.length === 0 || !eventId || quoteLoading || !quote}>{submitting ? "正在生成…" : "生成订单"}</button>
+              <button className="button button--dark counter-submit" type="submit" disabled={submitting || cartLines.length === 0 || !eventId || quoteLoading || !quote || eventClosed}>{submitting ? "正在生成…" : "生成订单"}</button>
             </aside>
           </div>
           <div className="counter-bar">
@@ -722,12 +913,12 @@ export default function CounterPage() {
               <span className="counter-bar__count">已选 {selectedCount} 件 · 查看明细</span>
               <strong>{quoteLoading ? "正在计价…" : quote ? formatMoney(currency, quote.totalMinor) : "-"}</strong>
             </button>
-            <button className="button button--dark counter-bar__submit" type="submit" disabled={submitting || cartLines.length === 0 || !eventId || quoteLoading || !quote}>{submitting ? "正在生成…" : "生成订单"}</button>
+            <button className="button button--dark counter-bar__submit" type="submit" disabled={submitting || cartLines.length === 0 || !eventId || quoteLoading || !quote || eventClosed}>{submitting ? "正在生成…" : "生成订单"}</button>
           </div>
         </form>
 
-        {message ? <p className="counter-message" role="status">{message}</p> : null}
-        {orderId && !payOpen ? (
+        {message ? <p className={messageClass(message)} role="status">{message.text}</p> : null}
+        {orderId && !payOpen && !paidReceipt ? (
           <section className="counter-pending" aria-label="待付款订单">
             <div><span className="eyebrow">待付款</span><strong>订单 {orderNumber}</strong><p>{orderPriceLabel}</p></div>
             <div className="counter-pending__actions">
@@ -745,27 +936,53 @@ export default function CounterPage() {
                 <button type="button" className="pay-dialog__close" aria-label="稍后处理这笔订单" disabled={submitting} onClick={() => setPayOpen(false)}>×</button>
               </header>
               <strong className="pay-dialog__amount">{orderPriceLabel}</strong>
-              {!activePayCode ? <p className="counter-empty">本店还没有可用收款方式，请让店铺管理员先配置。</p> : activePayCode.kind === "cash" ? (
+              {resumedOrder ? <p className="counter-reservation-note">收款后当前购物车会保留，请检查其中商品，避免重复开单。</p> : null}
+              {unresolvedPayCommand ? <p className="counter-reservation-note">上次收款结果尚未确认，重试将使用原收款方式和实收金额。</p> : null}
+              {!activePayCode ? <p className="counter-empty">{unresolvedPayCommand ? "上次使用的收款方式已不可用，请重试以确认原收款结果。" : "本店还没有可用收款方式，请让店铺管理员先配置。"}</p> : activePayCode.kind === "cash" ? (
                 <div className="pay-dialog__cash">
                   <span>现金收款</span>
                   <strong>{orderPriceLabel}</strong>
+                  <label className="field pay-cash-received">
+                    <span>实收金额（{orderCurrency}）</span>
+                    <input inputMode="decimal" value={cashReceived} disabled={submitting || Boolean(unresolvedPayCommand)} onChange={(change) => setCashReceived(change.target.value)} placeholder="顾客交付的现金金额" />
+                  </label>
+                  {cashChangeMinor !== null && !cashInvalid ? <p className="pay-cash-change">找零：{formatMoney(orderCurrency, cashChangeMinor)}</p> : null}
+                  {cashInvalid ? <p className="counter-quote-error" role="alert">实收金额不能少于订单总额。</p> : null}
                   <small>请点收现金，确认后扣减库存。</small>
                 </div>
               ) : (
                 <div className="pay-dialog__qr">
-                  <Image src={activePayCode.imageURL} alt={`${activePayCode.name} 收款码`} width={560} height={560} unoptimized />
-                  <span>{activePayCode.name}{activePayCode.isDefault ? " · 默认收款方式" : ""}</span>
+                  <SafeImage src={activePayCode.imageURL} alt={`${activePayCode.name} 收款码`} width={560} height={560} unoptimized fallbackClassName="pay-dialog__qr--fallback" />
+                  <span>{activePayCode.name}{activePayCode.isDefault ? " · 默认收款方式" : ""}{activePayCode.currency ? ` · ${activePayCode.currency}` : ""}</span>
                 </div>
               )}
               {codes.length > 1 ? <div className="pay-dialog__codes" role="group" aria-label="切换收款方式">
-                {codes.map((code) => <button key={code.id} type="button" data-active={code.id === payCodeId} aria-pressed={code.id === payCodeId} disabled={Boolean(unresolvedPayCommand)} onClick={() => setPayCodeId(code.id)}>{code.name}</button>)}
+                {codes.map((code) => <button key={code.id} type="button" data-active={code.id === payCodeId} aria-pressed={code.id === payCodeId} disabled={Boolean(unresolvedPayCommand)} onClick={() => { setPayCodeId(code.id); setCashReceived(""); }}>{code.name}</button>)}
               </div> : null}
               {reservationExpiresAt ? <p className="counter-reservation-note">库存已预留至 {new Date(reservationExpiresAt).toLocaleString("zh-CN")}。请在此时间前确认收款。</p>
                 : <p className="counter-reservation-note">此订单暂未设置库存预留期限。</p>}
               <div className="pay-dialog__actions">
-                <button className="button button--dark" type="button" disabled={submitting || !payCodeId} onClick={confirm}>{submitting ? "正在确认…" : "顾客已付款，扣减库存"}</button>
+                <button className="button button--dark" type="button" disabled={submitting || !payCodeId || cashInvalid} onClick={confirm}>{submitting ? "正在确认…" : "顾客已付款，扣减库存"}</button>
                 <button className="button button--outline" type="button" disabled={submitting} onClick={() => setPayOpen(false)}>稍后处理</button>
                 <button className="text-link" type="button" disabled={submitting} onClick={unpaid}>顾客未付，保留待付款</button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {paidReceipt ? (
+          <div className="pay-dialog" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+            <div className="pay-dialog__panel pay-receipt">
+              <header className="pay-dialog__head">
+                <div><p className="eyebrow">收款成功</p><h2 id="receipt-title">取货凭证</h2></div>
+                <button type="button" className="pay-dialog__close" aria-label="关闭凭证" disabled={fulfilling} onClick={() => setPaidReceipt(null)}>×</button>
+              </header>
+              <p className="pay-receipt__hint">请把下面的订单号交给店员核对取货</p>
+              <strong className="pay-receipt__number">{paidReceipt.number}</strong>
+              <p className="pay-receipt__amount">{formatMoney(paidReceipt.currency, paidReceipt.totalMinor)}</p>
+              <div className="pay-dialog__actions">
+                <button className="button button--dark" type="button" disabled={fulfilling} onClick={() => void fulfillReceipt()}>{fulfilling ? "正在交付…" : "当场交付"}</button>
+                <button className="button button--outline" type="button" disabled={fulfilling} onClick={() => setPaidReceipt(null)}>稍后交付</button>
               </div>
             </div>
           </div>

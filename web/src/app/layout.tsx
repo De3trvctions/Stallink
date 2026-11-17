@@ -8,9 +8,14 @@ export const metadata: Metadata = {
   description: "以独立链接作为摊位入口",
 };
 
+const themeBootstrap = `(function(){try{var t=window.localStorage.getItem("stallink.theme");if(t!=="light"&&t!=="dark"){t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";}document.documentElement.dataset.theme=t;}catch(e){document.documentElement.dataset.theme="light";}})();`;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+      </head>
       <body>
         <a className="skip-link" href="#main-content">跳到主要内容</a>
         <Suspense fallback={null}>

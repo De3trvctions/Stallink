@@ -1,316 +1,290 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { browserJSON } from "@/lib/api";
+import { describeRequest } from "@/lib/errors";
 import { formatMoney } from "@/lib/pricing";
+import { messageClass, useMessage } from "@/lib/message";
+import SelectMenu from "@/components/select-menu";
 
-type CurrencyRow = { currency: string; orders: number; paidOrders: number; revenueMinor: number; discountMinor: number };
-type EventRow = { eventId: string; name: string; orders: number; revenueMinor: number };
-type GoodRow = { name: string; quantity: number; revenueMinor: number };
-type PayCodeRow = { name: string; orders: number; revenueMinor: number };
+type CurrencyRow = {
+  currency: string; orders: number; paidOrders: number; revenueMinor: number;
+  discountMinor: number; refundMinor: number; cashOverShortMinor: number;
+};
+type EventRow = { eventId: string; name: string; currency: string; orders: number; revenueMinor: number; discountMinor: number };
+type GoodRow = { currency: string; name: string; quantity: number; revenueMinor: number };
+type PayCodeRow = { currency: string; name: string; orders: number; revenueMinor: number };
 type Report = {
-  date: string; generatedAt: string; source: "manual" | "scheduled";
-  currency: string; orders: number; paidOrders: number; pendingOrders: number;
-  closedOrders: number; refundOrders: number; itemsSold: number;
-  revenueMinor: number; discountMinor: number; averageMinor: number;
-  currencies: CurrencyRow[]; events: EventRow[]; topGoods: GoodRow[]; payCodes: PayCodeRow[];
+  date: string; generatedAt: string; source: string; currency: string;
+  orders: number; paidOrders: number; pendingOrders: number; closedOrders: number; refundOrders: number;
+  itemsSold: number; revenueMinor: number; discountMinor: number; refundMinor: number; cashOverShortMinor: number;
+  averageMinor: number; currencies: CurrencyRow[]; events: EventRow[]; topGoods: GoodRow[]; payCodes: PayCodeRow[];
 };
 
-function todayInKualaLumpur() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kuala_Lumpur" }).format(new Date());
+function groupByCurrency<T extends { currency: string }>(rows: T[]): [string, T[]][] {
+  const map = new Map<string, T[]>();
+  rows.forEach((row) => {
+    const list = map.get(row.currency) ?? [];
+    list.push(row);
+    map.set(row.currency, list);
+  });
+  return [...map.entries()];
 }
 
-function displayDate(value: string) {
-  const [year, month, day] = value.split("-");
-  return `${year} 年 ${Number(month)} 月 ${Number(day)} 日`;
+function overShortLabel(currency: string, minor: number): string {
+  if (minor === 0) return `${formatMoney(currency, 0)} 持平`;
+  if (minor > 0) return `长款 ${formatMoney(currency, minor)}`;
+  return `短款 ${formatMoney(currency, -minor)}`;
 }
 
-function generatedTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Kuala_Lumpur", month: "numeric", day: "numeric",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  }).format(date);
-}
-
-export default function DailyReportsPage() {
-  const router = useRouter();
-  const [date, setDate] = useState(todayInKualaLumpur);
+export default function AdminReportsPage() {
+  const today = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const [date, setDate] = useState(today);
+  const [currency, setCurrency] = useState("");
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [exporting, setExporting] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [message, setMessage] = useState("");
+  const requestSequence = useRef(0);
+  const { message, setError, setSuccess } = useMessage();
 
-  const load = useCallback(async (target: string) => {
+  const load = useCallback(async () => {
+    const request = ++requestSequence.current;
     setLoading(true);
-    setMessage("");
+    setLoadError("");
+    setReport(null);
     try {
-      const res = await browserJSON(`/api/admin/daily-reports?date=${encodeURIComponent(target)}`);
-      if (res.status === 401 || res.status === 403) {
-        router.replace("/login");
-        return;
-      }
-      if (res.status === 404) {
-        setReport(null);
-        return;
-      }
-      if (!res.ok) {
-        setMessage("日报读取失败，请稍后重试。");
-        return;
-      }
-      setReport(res.data as Report);
+      const query = new URLSearchParams({ date });
+      const res = await browserJSON(`/api/admin/daily-reports?${query.toString()}`);
+      if (request !== requestSequence.current) return;
+      if (!res.ok) { setLoadError(describeRequest(res)); return; }
+      setReport(res.data as unknown as Report);
     } catch {
-      setMessage("无法连接服务，请稍后重试。");
+      if (request === requestSequence.current) setLoadError("无法连接服务，请检查网络后重试。");
     } finally {
-      setLoading(false);
+      if (request === requestSequence.current) setLoading(false);
     }
-  }, [router]);
+  }, [date]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => { void load(date); }, 0);
-    return () => window.clearTimeout(timer);
-  }, [date, load]);
+    const sequence = requestSequence;
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => { window.clearTimeout(timer); sequence.current++; };
+  }, [load]);
 
   async function generate() {
-    if (generating) return;
+    const request = ++requestSequence.current;
     setGenerating(true);
-    setMessage("");
+    setError(null);
     try {
       const res = await browserJSON("/api/admin/daily-reports", "POST", { date });
-      if (res.status === 401 || res.status === 403) {
-        router.replace("/login");
-        return;
-      }
-      if (!res.ok) {
-        setMessage("日报生成失败，请稍后重试。");
-        return;
-      }
-      setReport(res.data as Report);
-      setMessage("日报已生成。");
-    } catch {
-      setMessage("无法连接服务，请稍后重试。");
+      if (request !== requestSequence.current) return;
+      if (!res.ok) { setError(describeRequest(res)); return; }
+      setCurrency("");
+      setReport(res.data as unknown as Report);
+      setLoadError("");
+      setSuccess("日报已生成。");
     } finally {
       setGenerating(false);
     }
   }
 
-  function exportPDF() {
-    const sheet = document.querySelector<HTMLElement>(".report-sheet");
-    if (!sheet) return;
-    const filename = `销售日报-${date}`;
-    const pageStyles = Array.from(
-      document.querySelectorAll<HTMLLinkElement | HTMLStyleElement>('link[rel="stylesheet"], style'),
-    ).map((node) => node.outerHTML).join("\n");
-    const printDocument = `<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<base href="${window.location.origin}/">
-<title>${filename}</title>
-${pageStyles}
-<style>
-html, body { margin: 0; padding: 0; background: #fff; }
-.report-export-document { width: 794px; margin: 0 auto; padding: 12mm 0; }
-.report-export-document > h1 {
-  margin: 0 0 5mm;
-  font-family: var(--font-display);
-  font-size: 24pt;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-}
-.report-sheet { margin-top: 0; background: #fff; }
-@page { size: A4 portrait; margin: 12mm; }
-@media print {
-  .report-export-document { width: auto; margin: 0; padding: 0; }
-}
-</style>
-</head>
-<body>
-<main class="report-export-document">
-  <h1>销售日报</h1>
-  ${sheet.outerHTML}
-</main>
-</body>
-</html>`;
-    const frame = document.createElement("iframe");
-    frame.title = "销售日报导出";
-    frame.setAttribute("aria-hidden", "true");
-    frame.style.cssText = "position:fixed;left:-10000px;top:0;width:794px;height:1123px;border:0;opacity:0;pointer-events:none;";
-    document.body.appendChild(frame);
-    const frameDocument = frame.contentDocument;
-    if (!frameDocument) {
-      frame.remove();
-      window.print();
-      return;
-    }
-    frameDocument.open();
-    frameDocument.write(printDocument);
-    frameDocument.close();
-    window.setTimeout(() => {
-      const printWindow = frame.contentWindow;
-      if (!printWindow) {
-        frame.remove();
-        window.print();
+  async function exportCsv() {
+    if (!report || exporting) return;
+    setExporting(true);
+    setError(null);
+    try {
+      const query = new URLSearchParams({ date });
+      if (currency || report.currency) query.set("currency", currency || report.currency);
+      const res = await fetch(`/api/admin/daily-reports/export?${query.toString()}`, { credentials: "include" });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        let code = "";
+        try { code = String(JSON.parse(text).error ?? ""); } catch { /* 非 JSON 响应 */ }
+        setError(code ? describeRequest({ category: res.status >= 500 ? "server" : "client", status: res.status, errorCode: code }) : "导出失败，请稍后重试。");
         return;
       }
-      const cleanup = () => {
-        printWindow.removeEventListener("afterprint", cleanup);
-        frame.remove();
-      };
-      printWindow.addEventListener("afterprint", cleanup);
-      printWindow.focus();
-      printWindow.print();
-    }, 800);
+      const blob = await res.blob();
+      const disposition = res.headers.get("content-disposition") ?? "";
+      const match = /filename="?([^";]+)"?/.exec(disposition);
+      const filename = match?.[1] ?? `daily-report-${date}-${report.currency}.csv`;
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setSuccess("CSV 已开始下载。");
+    } catch {
+      setError("无法连接服务，导出失败，请重试。");
+    } finally {
+      setExporting(false);
+    }
   }
 
-  const topCurrency = report && report.currencies.length > 1;
-  const discountMinor = report?.discountMinor ?? 0;
-  const originalMinor = (report?.revenueMinor ?? 0) + discountMinor;
-  const discountRate = originalMinor > 0 ? (discountMinor / originalMinor) * 100 : 0;
+  const currencyOptions = report?.currencies.map((row) => ({ value: row.currency, label: row.currency })) ?? [];
 
   return (
-    <main className="report-page">
-        <p className="eyebrow">店铺经营</p>
-        <h1>销售日报</h1>
-        <p>每天 00:10 自动为每家店生成前一天的日报；也可以选日期提前生成，两边用的是同一套统计。</p>
+    <main className="workspace-page report-page">
+      <header className="workspace-page__heading">
+        <p className="eyebrow">日报</p>
+        <h1>当日经营汇总</h1>
+        <p>按币种分别统计，不同币种之间不做合计。</p>
+      </header>
 
-        <div className="report-toolbar">
-          <label className="report-date">
-            <span>日报日期</span>
-            <input type="date" value={date} max={todayInKualaLumpur()} onChange={(change) => setDate(change.target.value)} />
-          </label>
-          <button className="button button--dark" type="button" onClick={() => void generate()} disabled={generating || loading}>
-            {generating ? "正在生成…" : report ? "重新生成这天的日报" : "生成这天的日报"}
+      <div className="report-toolbar">
+        <label className="field"><span>日期</span><input type="date" value={date} disabled={generating} onChange={(event) => { requestSequence.current++; setCurrency(""); setDate(event.target.value); }} /></label>
+        <SelectMenu
+          value={currency}
+          onChange={setCurrency}
+          ariaLabel="选择导出币种"
+          placeholder="导出主币种"
+          options={[{ value: "", label: "导出主币种" }, ...currencyOptions]}
+        />
+        <div className="report-toolbar__actions">
+          <button type="button" className="button button--outline" disabled={generating} onClick={() => void load()}>刷新</button>
+          <button type="button" className="button button--outline" disabled={generating || loading} onClick={() => void generate()}>{generating ? "正在生成…" : "生成日报"}</button>
+          <button type="button" className="button button--dark" disabled={loading || !report || exporting} onClick={() => void exportCsv()}>
+            {exporting ? "正在导出…" : "导出 CSV"}
           </button>
-          <button className="button button--outline" type="button" onClick={() => void load(date)} disabled={loading || generating}>刷新</button>
-          <button className="button button--outline" type="button" onClick={exportPDF} disabled={!report || loading || generating} title="在打印窗口选择“另存为 PDF”">下载 PDF</button>
         </div>
-        {message ? <p className="form-message" role="status">{message}</p> : null}
+      </div>
 
-        {loading ? <p className="report-loading" role="status">正在读取日报…</p> : !report ? (
-          <section className="report-empty">
-            <p className="eyebrow">{date}</p>
-            <h2>{displayDate(date)} 还没有日报</h2>
-            <p>定时任务会在次日 00:10 生成；想现在看，直接生成这一天即可。</p>
-            <button className="button button--dark" type="button" onClick={() => void generate()} disabled={generating}>
-              {generating ? "正在生成…" : "生成这一天"}
-            </button>
-          </section>
-        ) : (
-          <article className="report-sheet">
-            <header className="report-sheet__head">
-              <div>
-                <p className="eyebrow">{report.date} · {report.source === "manual" ? "手动生成" : "定时生成"}</p>
-                <h2>{displayDate(report.date)}</h2>
-              </div>
-              <p className="report-sheet__stamp">{generatedTime(report.generatedAt)} 生成</p>
-            </header>
+      {message ? <p className={messageClass(message)} role="status">{message.text}</p> : null}
 
-            <section className="report-hero" aria-label="日报总览">
-              <div className="report-metric report-metric--lead">
-                <span>营业额</span>
-                <strong>{formatMoney(report.currency, report.revenueMinor)}</strong>
-                <small>{topCurrency ? `主币种 ${report.currency}，其他币种见下方明细` : "已付款与已交付订单"}</small>
-              </div>
-              <div className="report-metric"><span>已付款订单</span><strong>{report.paidOrders}</strong><small>共 {report.orders} 张单</small></div>
-              <div className="report-metric"><span>客单价</span><strong>{formatMoney(report.currency, report.averageMinor)}</strong><small>{topCurrency ? `按主币种 ${report.currency} 的已付款订单` : "按已付款订单"}</small></div>
-              <div className="report-metric"><span>售出件数</span><strong>{report.itemsSold}</strong><small>已付款订单内数量</small></div>
-            </section>
-
-            <section className="report-discount" aria-label="优惠汇总">
-              <div className="report-discount__lead">
-                <span className="report-discount__label">共优惠</span>
-                <strong className="report-discount__amount">−{formatMoney(report.currency, discountMinor)}</strong>
-                <p className="report-discount__note">
-                  {topCurrency ? `仅计主币种 ${report.currency} · 已付款订单原价与成交价差额` : "已付款订单 · 原价与成交价差额"}
-                </p>
-              </div>
-              <div className="report-discount__figures">
-                <div>
-                  <span>原价合计</span>
-                  <strong>{formatMoney(report.currency, originalMinor)}</strong>
-                </div>
-                <div>
-                  <span>优惠率</span>
-                  <strong>{discountRate.toFixed(2)}%</strong>
-                </div>
-                <div className="report-discount__meter" aria-hidden="true">
-                  <span style={{ width: `${Math.min(100, Math.max(0, discountRate))}%` }} />
-                </div>
-              </div>
-            </section>
-
-            <section className="report-status" aria-label="订单状态">
-              <p><span>待付款</span><strong>{report.pendingOrders}</strong></p>
-              <p><span>已取消 / 过期</span><strong>{report.closedOrders}</strong></p>
-              <p><span>需退款</span><strong>{report.refundOrders}</strong></p>
-            </section>
-
-            {topCurrency ? (
-              <section className="report-block">
-                <header className="report-block__head"><h3>币种</h3><span>按营业额排序</span></header>
-                <ul className="report-table report-table--four">
-                  {report.currencies.map((row) => (
-                    <li key={row.currency}>
-                      <span>{row.currency}</span>
-                      <span>{row.orders} 单 · 已付 {row.paidOrders}</span>
-                      <span className="report-table__discount">优惠 −{formatMoney(row.currency, row.discountMinor ?? 0)}</span>
-                      <strong>{formatMoney(row.currency, row.revenueMinor)}</strong>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-
-            <div className="report-columns">
-              <section className="report-block">
-                <header className="report-block__head"><h3>按活动</h3><span>{report.events.length} 场</span></header>
-                {report.events.length === 0 ? <p className="report-block__empty">这天还没有订单。</p> : (
-                  <ul className="report-table">
-                    {report.events.map((row) => (
-                      <li key={row.eventId}>
-                        <span>{row.name}</span>
-                        <span>{row.orders} 单</span>
-                        <strong>{formatMoney(report.currency, row.revenueMinor)}</strong>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-              <section className="report-block">
-                <header className="report-block__head"><h3>卖得最好</h3><span>前 5 件</span></header>
-                {report.topGoods.length === 0 ? <p className="report-block__empty">暂无已付款商品。</p> : (
-                  <ul className="report-rank">
-                    {report.topGoods.map((row, index) => (
-                      <li key={`${row.name}-${index}`}>
-                        <em>{String(index + 1).padStart(2, "0")}</em>
-                        <span>{row.name}<small>{row.quantity} 件</small></span>
-                        <strong>{formatMoney(report.currency, row.revenueMinor)}</strong>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
+      {loading ? <p className="empty-state">正在读取日报…</p> : loadError ? (
+        <p className="empty-state" role="alert">
+          <span className="empty-state__mark" aria-hidden="true">!</span>
+          <span>{loadError}</span>
+          <button type="button" className="button button--outline" onClick={() => void load()}>重试</button>
+        </p>
+      ) : !report ? (
+        <p className="empty-state"><span className="empty-state__mark" aria-hidden="true">○</span><span>这一天还没有生成日报。</span></p>
+      ) : (
+        <section className="report-sheet" aria-label="日报内容">
+          <div className="report-sheet__head">
+            <div>
+              <p className="eyebrow">{report.date} · {report.currency}</p>
+              <h2>当日订单与收款</h2>
+              <p>生成于 {new Date(report.generatedAt).toLocaleString("zh-CN")}，来源：{report.source === "live" ? "现场流水" : "历史归档"}。</p>
             </div>
+            <span className="report-sheet__stamp">{report.refundOrders > 0 ? "含退款订单" : "无退款"}</span>
+          </div>
 
-            <section className="report-block">
-              <header className="report-block__head"><h3>收款方式</h3><span>已付款订单</span></header>
-              {report.payCodes.length === 0 ? <p className="report-block__empty">暂无已付款订单。</p> : (
+          <div className="report-hero">
+            <div className="report-metric report-metric--lead">
+              <span>收款总额（{report.currency}）</span>
+              <strong>{formatMoney(report.currency, report.revenueMinor)}</strong>
+              <small>{report.paidOrders} 笔已收款 · {report.pendingOrders} 笔待付款</small>
+            </div>
+            <div className="report-metric">
+              <span>订单数</span>
+              <strong>{report.orders}</strong>
+              <small>已关闭 {report.closedOrders} · 退款 {report.refundOrders}</small>
+            </div>
+            <div className="report-metric">
+              <span>售出件数</span>
+              <strong>{report.itemsSold}</strong>
+              <small>平均每单 {formatMoney(report.currency, report.averageMinor)}</small>
+            </div>
+            <div className="report-metric">
+              <span>优惠金额（{report.currency}）</span>
+              <strong>{formatMoney(report.currency, report.discountMinor)}</strong>
+              <small>数量价与套餐优惠合计</small>
+            </div>
+            <div className="report-metric">
+              <span>待退金额（{report.currency}）</span>
+              <strong>{formatMoney(report.currency, report.refundMinor)}</strong>
+              <small>待确认退款的金额</small>
+            </div>
+            <div className="report-metric">
+              <span>现金长短款（{report.currency}）</span>
+              <strong>{overShortLabel(report.currency, report.cashOverShortMinor)}</strong>
+              <small>正数长款 · 负数短款</small>
+            </div>
+          </div>
+
+          {report.currencies.length > 1 ? (
+            <section className="report-block" aria-label="分币种汇总">
+              <div className="report-block__head"><h3>分币种汇总</h3><span>各币种独立合计，不跨币种相加</span></div>
+              <ul className="report-table">
+                {report.currencies.map((row) => (
+                  <li key={row.currency}>
+                    <span>{row.currency}</span>
+                    <span>{row.orders} 笔 · 已收款 {row.paidOrders}</span>
+                    <span>退款 {formatMoney(row.currency, row.refundMinor)}</span>
+                    <span>{overShortLabel(row.currency, row.cashOverShortMinor)}</span>
+                    <strong>{formatMoney(row.currency, row.revenueMinor)}</strong>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          <div className="report-columns">
+            <section className="report-block" aria-label="活动与场次">
+              <div className="report-block__head"><h3>活动与场次</h3><span>按币种分组</span></div>
+              {groupByCurrency(report.events).map(([currency, rows]) => (
+                <div className="report-currency-group" key={currency}>
+                  <p className="report-currency-group__label">{currency}</p>
+                  <ul className="report-table">
+                    {rows.map((event) => (
+                      <li key={event.eventId}>
+                        <span>{event.name}</span>
+                        <span>{event.orders} 笔</span>
+                        <span>优惠 {formatMoney(currency, event.discountMinor)}</span>
+                        <strong>{formatMoney(currency, event.revenueMinor)}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              {report.events.length === 0 ? <p className="report-empty">这一天没有活动成交。</p> : null}
+            </section>
+
+            <section className="report-block" aria-label="热销商品">
+              <div className="report-block__head"><h3>热销商品</h3><span>按币种分组</span></div>
+              {groupByCurrency(report.topGoods).map(([currency, rows]) => (
+                <div className="report-currency-group" key={currency}>
+                  <p className="report-currency-group__label">{currency}</p>
+                  <ul className="report-rank">
+                    {rows.map((good, index) => (
+                      <li key={`${currency}-${good.name}-${index}`}>
+                        <span>{index + 1}. {good.name}</span>
+                        <span>{good.quantity} 件</span>
+                        <strong>{formatMoney(currency, good.revenueMinor)}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+              {report.topGoods.length === 0 ? <p className="report-empty">这一天没有售出商品。</p> : null}
+            </section>
+          </div>
+
+          <section className="report-block" aria-label="收款方式">
+            <div className="report-block__head"><h3>收款方式</h3><span>按币种分组</span></div>
+            {groupByCurrency(report.payCodes).map(([currency, rows]) => (
+              <div className="report-currency-group" key={currency}>
+                <p className="report-currency-group__label">{currency}</p>
                 <ul className="report-table">
-                  {report.payCodes.map((row) => (
-                    <li key={row.name}>
-                      <span>{row.name}</span>
-                      <span>{row.orders} 单</span>
-                      <strong>{formatMoney(report.currency, row.revenueMinor)}</strong>
+                  {rows.map((code) => (
+                    <li key={`${currency}-${code.name}`}>
+                      <span>{code.name}</span>
+                      <span>{code.orders} 笔</span>
+                      <strong>{formatMoney(currency, code.revenueMinor)}</strong>
                     </li>
                   ))}
                 </ul>
-              )}
-            </section>
-          </article>
-        )}
+              </div>
+            ))}
+            {report.payCodes.length === 0 ? <p className="report-empty">这一天没有收款记录。</p> : null}
+          </section>
+        </section>
+      )}
     </main>
   );
 }

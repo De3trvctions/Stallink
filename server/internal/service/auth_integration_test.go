@@ -27,11 +27,7 @@ func TestAuthenticationAndRoleLifecycle(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := data.NewPool(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	pool := isolatedSchemaPool(t, ctx, dsn)
 	if err := data.Migrate(ctx, pool); err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +232,11 @@ func TestAuthenticationAndRoleLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.InsertSession(ctx, customer.ID, expiredHash, time.Now().Add(-time.Minute)); err != nil {
+	customerID, err := data.ParseID(customer.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.InsertSession(ctx, customerID, expiredHash, time.Now().Add(-time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	expired := &http.Cookie{Name: "stallink_session", Value: expiredToken}
