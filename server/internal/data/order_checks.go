@@ -7,19 +7,35 @@ func payCodeCurrencyMatches(codeCurrency *string, orderCurrency string) bool {
 	return codeCurrency == nil || *codeCurrency == orderCurrency
 }
 
-// cashSettlement validates cash tender against the order total and returns the
-// recorded received and change amounts. Non-cash callers pass nil and receive
-// nil amounts back. A received amount below the total is rejected.
-func cashSettlement(totalMinor int64, cashReceivedMinor *int64) (received, change *int64, err error) {
-	if cashReceivedMinor == nil {
-		return nil, nil, nil
+// cashSettlement validates tender against the pay-code kind. Cash requires a
+// received amount that covers the total. QR and every other kind reject a
+// cash amount so the drawer figures cannot be attached to the wrong method.
+func cashSettlement(kind string, totalMinor int64, cashReceivedMinor *int64) (received, change *int64, err error) {
+	if kind == "cash" {
+		if cashReceivedMinor == nil || *cashReceivedMinor < totalMinor {
+			return nil, nil, ErrInvalidCashReceived
+		}
+		receivedVal := *cashReceivedMinor
+		changeVal := receivedVal - totalMinor
+		return &receivedVal, &changeVal, nil
 	}
-	if *cashReceivedMinor < totalMinor {
+	if cashReceivedMinor != nil {
 		return nil, nil, ErrInvalidCashReceived
 	}
-	receivedVal := *cashReceivedMinor
-	changeVal := receivedVal - totalMinor
-	return &receivedVal, &changeVal, nil
+	return nil, nil, nil
+}
+
+// payStillAllowed reports whether an existing pending order may still be paid.
+// lineCount is every order line. eligibleCount is the subset whose good is
+// approved and whose listing is still listed on that order's event.
+func payStillAllowed(eventStatus string, allowScheduled bool, lineCount, eligibleCount int) error {
+	if err := validateEventOpen(eventStatus, allowScheduled); err != nil {
+		return err
+	}
+	if lineCount < 1 || eligibleCount != lineCount {
+		return ErrNotListed
+	}
+	return nil
 }
 
 // remainingSoldOut computes the sellable remainder and sold-out flag. The

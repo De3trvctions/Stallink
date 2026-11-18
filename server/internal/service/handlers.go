@@ -559,6 +559,10 @@ func (a *API) PayCodeImage(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) serveBlob(w http.ResponseWriter, r *http.Request, name string) {
 	base := filepath.Base(name)
+	if base == "." || base == ".." {
+		writeErr(w, http.StatusNotFound, "not_found")
+		return
+	}
 	full := filepath.Join(a.DataDir, "blobs", base)
 	rel, err := filepath.Rel(filepath.Join(a.DataDir, "blobs"), full)
 	if err != nil || strings.HasPrefix(rel, "..") {

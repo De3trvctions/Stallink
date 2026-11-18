@@ -185,8 +185,13 @@ func (a *API) UpdatePayCode(w http.ResponseWriter, r *http.Request) {
 		IsDefault bool    `json:"isDefault"`
 		Currency  *string `json:"currency"`
 	}
-	if err := readJSON(r, &body); err != nil || body.Name == "" {
+	if err := readJSON(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid_json")
+		return
+	}
+	body.Name = strings.TrimSpace(body.Name)
+	if body.Name == "" || !validPayCodeName(body.Name) {
+		writeErr(w, http.StatusBadRequest, "invalid_pay_code_name")
 		return
 	}
 	id, ok := pathEntityID(w, r, "id")
@@ -489,7 +494,7 @@ func (a *API) PlatformGoods(w http.ResponseWriter, r *http.Request) {
 			}
 			goods = append(goods, map[string]any{
 				"id": good.ID, "name": good.Name, "description": good.Description,
-				"reviewStatus": good.ReviewStatus, "reviewNote": good.ReviewNote,
+				"reviewStatus": good.ReviewStatus, "reviewNote": good.ReviewNote, "revision": good.Revision,
 				"totalStock": good.TotalStock, "listings": listings, "images": images, "imageURL": imageURL,
 			})
 		}
@@ -507,8 +512,9 @@ func (a *API) ReviewGood(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Status string `json:"status"`
-		Note   string `json:"note"`
+		Status           string `json:"status"`
+		Note             string `json:"note"`
+		ExpectedRevision int64  `json:"expectedRevision"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid_json")
@@ -516,7 +522,7 @@ func (a *API) ReviewGood(w http.ResponseWriter, r *http.Request) {
 	}
 	body.Status = strings.TrimSpace(body.Status)
 	body.Note = strings.TrimSpace(body.Note)
-	if (body.Status != "approved" && body.Status != "rejected") || utf8.RuneCountInString(body.Note) > 500 || (body.Status == "rejected" && body.Note == "") {
+	if (body.Status != "approved" && body.Status != "rejected") || body.ExpectedRevision <= 0 || utf8.RuneCountInString(body.Note) > 500 || (body.Status == "rejected" && body.Note == "") {
 		writeErr(w, http.StatusBadRequest, "invalid_review")
 		return
 	}
@@ -527,7 +533,7 @@ func (a *API) ReviewGood(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := a.DB.ReviewGood(r.Context(), account.ID, goodID, body.Status, body.Note); err != nil {
+	if err := a.DB.ReviewGood(r.Context(), account.ID, goodID, body.Status, body.Note, body.ExpectedRevision); err != nil {
 		writeDataErr(w, r, err)
 		return
 	}

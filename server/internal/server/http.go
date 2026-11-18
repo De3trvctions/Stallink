@@ -2,14 +2,31 @@ package server
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/De3trvctions/Stallink/internal/logging"
 	"github.com/De3trvctions/Stallink/internal/service"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 )
 
+const (
+	handlerTimeout    = 30 * time.Second
+	readHeaderTimeout = 10 * time.Second
+	readTimeout       = 60 * time.Second
+	writeTimeout      = 60 * time.Second
+	idleTimeout       = 120 * time.Second
+)
+
 func NewHTTP(addr, serviceName string, api *service.API) *khttp.Server {
-	srv := khttp.NewServer(khttp.Address(addr), khttp.Filter(logging.RequestFilter))
+	srv := khttp.NewServer(
+		khttp.Address(addr),
+		khttp.Timeout(handlerTimeout),
+		khttp.Filter(logging.RequestFilter),
+	)
+	srv.ReadHeaderTimeout = readHeaderTimeout
+	srv.ReadTimeout = readTimeout
+	srv.WriteTimeout = writeTimeout
+	srv.IdleTimeout = idleTimeout
 	health := service.NewHealth(serviceName)
 	srv.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		health.ServeHTTP(w, r)
@@ -106,6 +123,8 @@ func route(r *khttp.Router, method, path string, h http.HandlerFunc, keys ...str
 		r.POST(path, handler)
 	case http.MethodPatch:
 		r.PATCH(path, handler)
+	case http.MethodDelete:
+		r.DELETE(path, handler)
 	default:
 		r.GET(path, handler)
 	}

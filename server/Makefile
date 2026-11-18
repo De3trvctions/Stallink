@@ -27,9 +27,12 @@ nacos-publish:
 	  --data-urlencode "username=$$STALLINK_NACOS_USERNAME" \
 	  --data-urlencode "password=$$STALLINK_NACOS_PASSWORD" \
 	  | python3 -c 'import json,sys; print(json.load(sys.stdin)["accessToken"])'); \
-	curl -sS -X POST "http://127.0.0.1:8848/nacos/v1/console/namespaces?accessToken=$$token" -d 'customNamespaceId=stallink&namespaceName=stallink&namespaceDesc=Stallink'; \
+	curl -sS -X POST "http://127.0.0.1:8848/nacos/v1/console/namespaces" \
+	  -H "accessToken: $$token" \
+	  -d 'customNamespaceId=stallink&namespaceName=stallink&namespaceDesc=Stallink'; \
 	echo; \
-	curl -sS -X POST "http://127.0.0.1:8848/nacos/v1/cs/configs?accessToken=$$token" \
+	curl -sS -X POST "http://127.0.0.1:8848/nacos/v1/cs/configs" \
+	  -H "accessToken: $$token" \
 	  --data-urlencode "dataId=stallink.yaml" \
 	  --data-urlencode "group=DEFAULT_GROUP" \
 	  --data-urlencode "tenant=stallink" \

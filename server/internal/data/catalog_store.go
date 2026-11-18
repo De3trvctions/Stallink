@@ -76,6 +76,7 @@ type PlatformGood struct {
 	ImageIDs     []string
 	ReviewStatus string
 	ReviewNote   string
+	Revision     int64
 	TotalStock   int
 	Listings     []PlatformListing
 }
@@ -833,7 +834,8 @@ func (s *ShopStore) UpdateGoodStock(ctx context.Context, shopID, actorID, goodID
 			total_stock = $5,
 			review_status = CASE WHEN description IS DISTINCT FROM $4 THEN $6 ELSE review_status END,
 			review_note = CASE WHEN description IS DISTINCT FROM $4 THEN '' ELSE review_note END,
-			reviewed_at = CASE WHEN description IS DISTINCT FROM $4 THEN CASE WHEN $6 = 'approved' THEN now() ELSE NULL END ELSE reviewed_at END
+			reviewed_at = CASE WHEN description IS DISTINCT FROM $4 THEN CASE WHEN $6 = 'approved' THEN now() ELSE NULL END ELSE reviewed_at END,
+			revision = CASE WHEN name IS DISTINCT FROM $3 OR description IS DISTINCT FROM $4 THEN revision + 1 ELSE revision END
 		WHERE id = $1 AND shop_id = $2`,
 		goodID, shopID, name, description, total, reviewStatus)
 	if err != nil {
@@ -875,7 +877,7 @@ func (s *ShopStore) ListPlatformGoods(ctx context.Context) ([]PlatformShopGoods,
 
 	rows, err := s.pool.Query(ctx, `
 		SELECT s.id::text, COALESCE(g.id::text, ''), COALESCE(g.name, ''), COALESCE(g.description, ''),
-			COALESCE(g.review_status, ''), COALESCE(g.review_note, ''), COALESCE(g.total_stock, 0),
+			COALESCE(g.review_status, ''), COALESCE(g.review_note, ''), COALESCE(g.revision, 1), COALESCE(g.total_stock, 0),
 			COALESCE((SELECT array_agg(i.id::text ORDER BY i.sort_order) FROM good_images i WHERE i.good_id = g.id), ARRAY[]::text[]),
 			COALESCE(l.id::text, ''), COALESCE(e.id::text, ''), COALESCE(e.name, ''),
 			COALESCE(e.currency, ''), COALESCE(l.unit_price_minor, 0),
@@ -899,11 +901,12 @@ func (s *ShopStore) ListPlatformGoods(ctx context.Context) ([]PlatformShopGoods,
 		var shopID, goodID string
 		var goodName, description, reviewStatus, reviewNote string
 		var imageIDs []string
+		var revision int64
 		var totalStock int
 		var listing PlatformListing
 		var tiers []byte
 		if err := rows.Scan(
-			&shopID, &goodID, &goodName, &description, &reviewStatus, &reviewNote, &totalStock, &imageIDs,
+			&shopID, &goodID, &goodName, &description, &reviewStatus, &reviewNote, &revision, &totalStock, &imageIDs,
 			&listing.ListingID, &listing.EventID, &listing.EventName, &listing.Currency,
 			&listing.UnitPriceMinor, &tiers, &listing.ListedQty, &listing.SoldQty, &listing.ReservedQty, &listing.IsListed,
 		); err != nil {
@@ -921,7 +924,7 @@ func (s *ShopStore) ListPlatformGoods(ctx context.Context) ([]PlatformShopGoods,
 			shop := &out[index]
 			shop.Goods = append(shop.Goods, PlatformGood{
 				ID: goodID, Name: goodName, Description: description, ReviewStatus: reviewStatus,
-				ReviewNote: reviewNote, TotalStock: totalStock, ImageIDs: imageIDs, Listings: []PlatformListing{},
+				ReviewNote: reviewNote, Revision: revision, TotalStock: totalStock, ImageIDs: imageIDs, Listings: []PlatformListing{},
 			})
 			location = goodLocation{shopIndex: index, goodIndex: len(shop.Goods) - 1}
 			goodsByID[goodID] = location
@@ -941,8 +944,8 @@ func (s *ShopStore) ListPlatformGoods(ctx context.Context) ([]PlatformShopGoods,
 	return out, nil
 }
 
-func (s *ShopStore) ReviewGood(ctx context.Context, actorID, goodID ID, status, note string) error {
-	if status != "approved" && status != "rejected" {
+func (s *ShopStore) ReviewGood(ctx context.Context, actorID, goodID ID, status, note string, expectedRevision int64) error {
+	if status != "approved" && status != "rejected" || expectedRevision <= 0 {
 		return ErrNotFound
 	}
 	tx, err := s.pool.Begin(ctx)
@@ -972,10 +975,14 @@ func (s *ShopStore) ReviewGood(ctx context.Context, actorID, goodID ID, status, 
 	if status == "approved" {
 		note = ""
 	}
-	if _, err := tx.Exec(ctx, `
-		UPDATE goods SET review_status = $2, review_note = $3, reviewed_at = now()
-		WHERE id = $1`, goodID, status, note); err != nil {
+	tag, err := tx.Exec(ctx, `
+		UPDATE goods SET review_status = $2, review_note = $3, reviewed_at = now(), revision = revision + 1
+		WHERE id = $1 AND revision = $4`, goodID, status, note, expectedRevision)
+	if err != nil {
 		return fmt.Errorf("update good review: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrConflict
 	}
 	action := "good.approve"
 	if status == "rejected" {
@@ -1083,7 +1090,8 @@ func reviewResetStatus(autoApprove bool) string {
 func resetGoodReview(ctx context.Context, tx pgx.Tx, goodID ID, autoApprove bool) error {
 	status := reviewResetStatus(autoApprove)
 	if _, err := tx.Exec(ctx, `
-		UPDATE goods SET review_status = $2, review_note = '', reviewed_at = CASE WHEN $2 = 'approved' THEN now() ELSE NULL END
+		UPDATE goods SET review_status = $2, review_note = '', reviewed_at = CASE WHEN $2 = 'approved' THEN now() ELSE NULL END,
+			revision = revision + 1
 		WHERE id = $1`, goodID, status); err != nil {
 		return fmt.Errorf("reset good review: %w", err)
 	}

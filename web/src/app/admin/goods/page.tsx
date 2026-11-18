@@ -5,7 +5,7 @@ import Image from "next/image";
 import { SafeImage } from "@/components/safe-image";
 import { browserFormData, browserJSON } from "@/lib/api";
 import { describeRequest } from "@/lib/errors";
-import { formatMoney, type PriceTier } from "@/lib/pricing";
+import { formatMoney, majorToMinor, type PriceTier } from "@/lib/pricing";
 import ModalDialog from "@/components/modal-dialog";
 import SelectMenu from "@/components/select-menu";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -60,9 +60,9 @@ function parseTiers(drafts: TierDraft[], unitPriceMinor: number): PriceTier[] | 
   const seen = new Set<number>();
   for (const draft of drafts) {
     const quantity = Number(draft.quantity);
-    const totalPriceMinor = Math.round(Number(draft.totalPrice) * 100);
+    const totalPriceMinor = majorToMinor(draft.totalPrice);
     if (!Number.isInteger(quantity) || quantity <= 1 || quantity > 100_000 || seen.has(quantity)
-      || !Number.isSafeInteger(totalPriceMinor) || totalPriceMinor <= 0 || totalPriceMinor >= unitPriceMinor * quantity) return null;
+      || totalPriceMinor == null || totalPriceMinor <= 0 || totalPriceMinor >= unitPriceMinor * quantity) return null;
     seen.add(quantity);
     tiers.push({ quantity, totalPriceMinor });
   }
@@ -77,8 +77,8 @@ function PriceTierEditor({ drafts, currency, basePrice, onChange }: {
       <div className="tier-editor__heading"><strong>组合优惠</strong><span>设置指定件数的套装总价</span></div>
       {drafts.map((draft, index) => {
         const quantity = Number(draft.quantity);
-        const totalMinor = Math.round(Number(draft.totalPrice) * 100);
-        const savings = Number.isInteger(quantity) && quantity > 1 && Number.isSafeInteger(totalMinor)
+        const totalMinor = majorToMinor(draft.totalPrice);
+        const savings = totalMinor != null && Number.isInteger(quantity) && quantity > 1
           ? basePrice * quantity - totalMinor : 0;
         return (
           <div className="tier-editor__row" key={index}>
@@ -255,9 +255,9 @@ export default function GoodsPage() {
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
-    const amount = Number(price);
-    const priceTiers = itemKind === "bundle" ? [] : parseTiers(tiers, Math.round(amount * 100));
-    if (!Number.isSafeInteger(Math.round(amount * 100)) || amount <= 0 || priceTiers === null) {
+    const unitPriceMinor = majorToMinor(price);
+    const priceTiers = unitPriceMinor == null ? null : itemKind === "bundle" ? [] : parseTiers(tiers, unitPriceMinor);
+    if (unitPriceMinor == null || unitPriceMinor <= 0 || priceTiers === null) {
       setMessage("请填写有效的基础价格和优惠包件数、套装总价。", "error");
       return;
     }
@@ -284,10 +284,9 @@ export default function GoodsPage() {
         if (normalized) draftNames.add(normalized);
       }
       for (const item of newBundleGoods) {
-        const draftPrice = Number(item.price);
-        const unitPriceMinor = Math.round(draftPrice * 100);
-        const draftTiers = parseTiers(item.tiers, unitPriceMinor);
-        if (!item.name.trim() || !Number.isSafeInteger(unitPriceMinor) || draftPrice <= 0 || draftTiers === null
+        const draftUnitMinor = majorToMinor(item.price);
+        const draftTiers = draftUnitMinor == null ? null : parseTiers(item.tiers, draftUnitMinor);
+        if (!item.name.trim() || draftUnitMinor == null || draftUnitMinor <= 0 || draftTiers === null
           || !Number.isInteger(item.totalStock) || item.totalStock < 1 || !Number.isInteger(item.listedQty)
           || item.listedQty < item.quantity || item.listedQty > item.totalStock || item.imageFiles.length > 8) {
           setMessage(`请完成套餐内商品“${item.name || "未命名"}”的名称、库存和价格设置。`, "error");
@@ -298,7 +297,7 @@ export default function GoodsPage() {
           quantity: item.quantity,
           draft: {
             name: item.name.trim(), description: item.description, totalStock: item.totalStock,
-            listedQty: item.listedQty, unitPriceMinor, priceTiers: draftTiers, isListed: true,
+            listedQty: item.listedQty, unitPriceMinor: draftUnitMinor, priceTiers: draftTiers, isListed: true,
           },
         });
       }
@@ -314,7 +313,7 @@ export default function GoodsPage() {
       try {
         const form = new FormData();
         form.set("bundle", JSON.stringify({
-          name, description, eventId, components, unitPriceMinor: Math.round(amount * 100), priceTiers, isListed: true,
+          name, description, eventId, components, unitPriceMinor, priceTiers, isListed: true,
           ...(editingBundle ? { expectedRevision: editingBundle.revision, replaceImages: replaceBundleImages } : {}),
         }));
         imageFiles.forEach((file) => form.append("bundleImages", file));
@@ -355,7 +354,7 @@ export default function GoodsPage() {
 
     const body: Record<string, unknown> = {
       name, description, totalStock, listedQty, isListed: true,
-      unitPriceMinor: Math.round(amount * 100), priceTiers,
+      unitPriceMinor, priceTiers,
     };
     if (createEvent) body.event = fresh;
     else body.eventId = eventId;
@@ -575,10 +574,10 @@ export default function GoodsPage() {
   async function saveAll(item: Listing) {
     const draft = drafts[item.listingId];
     if (!draft) return;
-    const amount = Number(draft.price);
+    const unitPriceMinor = majorToMinor(draft.price);
     const listed = Number(draft.listedQty);
-    const priceTiers = parseTiers(draft.tiers, Math.round(amount * 100));
-    if (!Number.isSafeInteger(Math.round(amount * 100)) || amount <= 0 || priceTiers === null) { setMessage("请修正优惠包数量和价格后保存。", "error"); return; }
+    const priceTiers = unitPriceMinor == null ? null : parseTiers(draft.tiers, unitPriceMinor);
+    if (unitPriceMinor == null || unitPriceMinor <= 0 || priceTiers === null) { setMessage("请修正优惠包数量和价格后保存。", "error"); return; }
     if (!Number.isInteger(listed) || listed < item.soldQty) { setMessage("本场可售数量不能低于已售数量。", "error"); return; }
     setPending(true);
     setMessage("");
@@ -588,7 +587,7 @@ export default function GoodsPage() {
         setMessage(goodRes.data.error === "stock_exceeded" ? "商品总库存不能低于已分配库存。" : "商品资料没有保存，请检查输入。", "error");
         return;
       }
-      const listingRes = await browserJSON(`/api/staff/listings/${item.listingId}`, "PATCH", { listedQty: listed, unitPriceMinor: Math.round(amount * 100), priceTiers, isListed: draft.isListed });
+      const listingRes = await browserJSON(`/api/staff/listings/${item.listingId}`, "PATCH", { listedQty: listed, unitPriceMinor, priceTiers, isListed: draft.isListed });
       if (!listingRes.ok) {
         setMessage(listingRes.data.error === "stock_exceeded" ? "商品资料已保存，但本场数量超出库存；请调小数量后重新保存。"
           : listingRes.data.error === "invalid_price_tiers" ? "优惠包总价必须低于对应数量的单买价格。"
@@ -607,7 +606,7 @@ export default function GoodsPage() {
 
   const editingItem = editingListing ? eventGroups.flatMap((group) => group.listings).find((row) => row.listingId === editingListing) ?? null : null;
   const editingDraft = editingItem ? drafts[editingItem.listingId] ?? null : null;
-  const editingPriceMinor = editingDraft ? Math.round(Number(editingDraft.price) * 100) : 0;
+  const editingPriceMinor = editingDraft ? majorToMinor(editingDraft.price) ?? 0 : 0;
   const editingStock = editingItem ? stockPool(editingItem.goodId, editingItem.totalStock) : { total: 0, listed: 0, sold: 0, allocated: 0, remain: 0 };
   const editingLive = (() => {
     if (!editingItem || !editingDraft) return editingStock;
@@ -628,7 +627,7 @@ export default function GoodsPage() {
   const currency = createEvent ? fresh.currency : selectedEvent?.currency ?? "MYR";
   const selectedComponentSubtotal = (selectedGroup?.listings ?? []).reduce((sum, item) =>
     sum + item.unitPriceMinor * (componentQuantities[item.goodId] ?? 0), 0)
-    + newBundleGoods.reduce((sum, item) => sum + Math.round(Number(item.price) * 100) * item.quantity, 0);
+    + newBundleGoods.reduce((sum, item) => sum + (majorToMinor(item.price) ?? 0) * item.quantity, 0);
   const bundleUploadBytes = imageFiles.reduce((sum, file) => sum + file.size, 0)
     + newBundleGoods.reduce((sum, item) => sum + item.imageFiles.reduce((total, file) => total + file.size, 0), 0);
   const normalizedSearch = search.trim().toLocaleLowerCase();
@@ -852,7 +851,7 @@ export default function GoodsPage() {
                     <label className="field"><span>总库存</span><input type="number" min="1" step="1" value={item.totalStock} onChange={(change) => setNewBundleGoods((current) => current.map((draft) => draft.draftKey === item.draftKey ? { ...draft, totalStock: Number(change.target.value) } : draft))} /></label>
                     <label className="field"><span>本场可售数</span><input type="number" min={item.quantity} step="1" value={item.listedQty} onChange={(change) => setNewBundleGoods((current) => current.map((draft) => draft.draftKey === item.draftKey ? { ...draft, listedQty: Number(change.target.value) } : draft))} /></label>
                   </div>
-                  <PriceTierEditor drafts={item.tiers} currency={currency} basePrice={Math.round(Number(item.price) * 100)} onChange={(next) => setNewBundleGoods((current) => current.map((draft) => draft.draftKey === item.draftKey ? { ...draft, tiers: next } : draft))} />
+                  <PriceTierEditor drafts={item.tiers} currency={currency} basePrice={majorToMinor(item.price) ?? 0} onChange={(next) => setNewBundleGoods((current) => current.map((draft) => draft.draftKey === item.draftKey ? { ...draft, tiers: next } : draft))} />
                   <div className="draft-gallery">
                     <div className="draft-gallery__heading"><strong>单品图片</strong><span>{item.imageFiles.length} / 8 张{item.imageFiles.length > 0 ? " · 待保存上传" : ""}</span></div>
                     <p>图片属于这个单品，第一张为封面。选择后先预览，保存套餐时上传。</p>
@@ -883,7 +882,7 @@ export default function GoodsPage() {
         ) : null}
         <label className="field" htmlFor="goods-price"><span>{itemKind === "bundle" ? "整套价格" : "单件价格"} <small>{currency}</small></span><input id="goods-price" type="number" inputMode="decimal" min="0.01" step="0.01" required value={price} onChange={(event) => setPrice(event.target.value)} /></label>
         <p className="field-hint">{itemKind === "bundle" ? "这是完整套餐价格。服务端只会在组件商品和库存足够时应用此优惠。" : "可添加同一商品的数量优惠，例如买 2 件 RM15。"}</p>
-        {itemKind === "good" ? <PriceTierEditor drafts={tiers} currency={currency} basePrice={Math.round(Number(price) * 100)} onChange={setTiers} /> : null}
+        {itemKind === "good" ? <PriceTierEditor drafts={tiers} currency={currency} basePrice={majorToMinor(price) ?? 0} onChange={setTiers} /> : null}
         {itemKind === "good" ? <div className="goods-form__dates">
           <label className="field" htmlFor="goods-total-stock"><span>商品总库存</span><input id="goods-total-stock" type="number" min="0" step="1" required value={totalStock} onChange={(event) => setTotalStock(Number(event.target.value))} /></label>
           <label className="field" htmlFor="goods-listed-qty"><span>本场可售数量</span><input id="goods-listed-qty" type="number" min="0" step="1" required value={listedQty} onChange={(event) => setListedQty(Number(event.target.value))} /></label>

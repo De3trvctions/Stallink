@@ -13,7 +13,8 @@ const errorCodeText: Record<string, string> = {
   invalid_date: "所选日期无效，请重新选择。",
   invalid_json: "提交内容格式有误，请刷新后重试。",
   // 收款与库存
-  invalid_cash_received: "实收金额不能少于订单总额，请核对现金。",
+  invalid_cash_received: "现金收款需要实收不少于订单总额；二维码收款不要填写现金金额。",
+  not_listed: "商品已下架或未通过审核，不能继续收款。请取消这张订单后重新开单。",
   pay_code_currency_mismatch: "该收款码币种与订单币种不一致，请更换收款方式。",
   pay_code_required: "这家店还没有可用的收款方式，请先在后台配置。",
   event_not_open: "活动尚未开始或已结束，暂时不能开单。",

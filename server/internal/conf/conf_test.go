@@ -1,6 +1,9 @@
 package conf
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestValidateStartupRequiresNacosLocator(t *testing.T) {
 	t.Parallel()
@@ -41,6 +44,40 @@ func TestValidateBootstrapRequiresRuntimeSettings(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLocalStartupExpandsNacosCredentials(t *testing.T) {
+	t.Setenv("STALLINK_NACOS_USERNAME", "nacos")
+	t.Setenv("STALLINK_NACOS_PASSWORD", "nacos")
+	startup, err := LoadStartup("../../configs/local/stallink.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if startup.Nacos.Username != "nacos" || startup.Nacos.Password != "nacos" {
+		t.Fatalf("nacos credentials were not expanded: %#v", startup.Nacos)
+	}
+}
+
+func TestPublishedNacosConfigBindsRuntimeSettings(t *testing.T) {
+	t.Setenv("STALLINK_DATABASE_SOURCE", "postgres://stallink:stallink@127.0.0.1:5432/stallink?sslmode=disable")
+	t.Setenv("STALLINK_PLATFORM_ADMIN_PASSWORD", "local-admin-password")
+	bc, err := LoadFile("../../configs/nacos/stallink.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bc.ResolveEnvironment()
+	if err := ValidateBootstrap(bc); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(bc.Data.Database.Source, "127.0.0.1:5432/stallink") {
+		t.Fatalf("database source = %q", bc.Data.Database.Source)
+	}
+	if bc.Redis.Addr != "127.0.0.1:6379" {
+		t.Fatalf("redis addr = %q", bc.Redis.Addr)
+	}
+	if bc.Auth.SecureCookies {
+		t.Fatal("local template must keep secure cookies off for plain HTTP")
 	}
 }
 

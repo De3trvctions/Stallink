@@ -7,8 +7,9 @@ nacos:
   port: 8848
   namespace: stallink
   group_name: DEFAULT_GROUP
-  username: ${STALLINK_NACOS_USERNAME}
-  password: ${STALLINK_NACOS_PASSWORD}
+  # 用 $NAME。${NAME} 会被 Kratos 当成缺失的配置引用并清空。
+  username: "$STALLINK_NACOS_USERNAME"
+  password: "$STALLINK_NACOS_PASSWORD"
   log_dir: ./logs/nacos/stallink/config
   cache_dir: ./logs/nacos/stallink/config-cache
   log_level: error

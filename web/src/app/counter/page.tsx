@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { browserJSON, type RequestResult } from "@/lib/api";
 import { describeRequest } from "@/lib/errors";
-import { formatMoney, type PriceTier } from "@/lib/pricing";
+import { formatMoney, majorToMinor, type PriceTier } from "@/lib/pricing";
 import { clearCounterDraft, clearPendingCounterOrder, loadCounterDraft, loadPendingCounterOrder, saveCounterDraft, savePendingCounterOrder, type CounterDraftScope } from "@/lib/counter-draft";
 import { clearPendingOrderCommand, newClientOrderId, pendingOrderCommand, sendOrderCommand } from "@/lib/order-command";
 import { messageClass, useMessage } from "@/lib/message";
@@ -92,9 +92,7 @@ function bundleGroup(kind: string) {
 }
 
 function toMinor(amount: string): number | null {
-  const value = Number(amount);
-  if (!Number.isFinite(value) || value < 0) return null;
-  return Math.round(value * 100);
+  return majorToMinor(amount);
 }
 
 export default function CounterPage() {

@@ -69,6 +69,28 @@ func TestRenderDailyReportCSVHeaderAndGroups(t *testing.T) {
 	}
 }
 
+func TestRenderDailyReportCSVNeutralizesFormulas(t *testing.T) {
+	report := sampleReport()
+	report.TopGoods[0].Name = `=HYPERLINK("https://evil.example","明细")`
+	report.Events[0].Name = "+1 小卡"
+	rows := parseCSV(t, renderDailyReportCSV(report, "MYR"))
+	var sawFormula, sawPlus bool
+	for _, row := range rows[1:] {
+		if row[0] == "按商品" && strings.HasPrefix(row[2], "'=") {
+			sawFormula = true
+		}
+		if row[0] == "按活动" && row[2] == "'+1 小卡" {
+			sawPlus = true
+		}
+		if row[4] != "" && (row[4][0] == '=' || row[4][0] == '\'') {
+			t.Fatalf("amount column should stay numeric, got %q", row[4])
+		}
+	}
+	if !sawFormula || !sawPlus {
+		t.Fatalf("formula names were not neutralized: %v", rows)
+	}
+}
+
 func TestRenderDailyReportCSVCurrencyFilter(t *testing.T) {
 	detailGroups := map[string]bool{"按活动": true, "按商品": true, "按收款方式": true, "退款待处理": true}
 	filtered := parseCSV(t, renderDailyReportCSV(sampleReport(), "MYR"))

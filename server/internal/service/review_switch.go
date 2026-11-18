@@ -26,19 +26,21 @@ func (a *API) SetAutoApproveSetting(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_json")
 		return
 	}
-	if a.ReviewSwitch != nil {
-		if err := a.ReviewSwitch.Set(r.Context(), *body.Enabled); err != nil {
-			logging.ErrorContext(r.Context(), "save auto approve switch", zap.Error(err))
-			writeErr(w, http.StatusInternalServerError, "internal")
-			return
-		}
+	if a.ReviewSwitch == nil {
+		writeErr(w, http.StatusServiceUnavailable, "review_switch_unavailable")
+		return
+	}
+	if err := a.ReviewSwitch.Set(r.Context(), *body.Enabled); err != nil {
+		logging.ErrorContext(r.Context(), "save auto approve switch", zap.Error(err))
+		writeErr(w, http.StatusServiceUnavailable, "review_switch_unavailable")
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"enabled": *body.Enabled})
 }
 
 func (a *API) autoApprove(ctx context.Context) bool {
-	if a.ReviewSwitch == nil {
-		return true
+	if a == nil || a.ReviewSwitch == nil {
+		return false
 	}
 	return a.ReviewSwitch.Enabled(ctx)
 }

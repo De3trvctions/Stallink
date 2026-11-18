@@ -6,6 +6,18 @@ const currencyPrefix: Record<string, string> = {
   CNY: "¥ ",
 };
 
+// majorToMinor parses a major-unit amount into integer minor units.
+// More than two decimal places is rejected so binary floating point cannot
+// turn 1.015 into 101.
+export function majorToMinor(amount: string | number): number | null {
+  const text = String(amount).trim();
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(text);
+  if (!match) return null;
+  const minor = Number(match[1]) * 100 + Number((match[2] ?? "").padEnd(2, "0"));
+  if (!Number.isSafeInteger(minor)) return null;
+  return minor;
+}
+
 export function formatMoney(currency: string, minor: number) {
   return `${currencyPrefix[currency] ?? `${currency} `}${(minor / 100).toFixed(2)}`;
 }

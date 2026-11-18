@@ -275,13 +275,13 @@ func insertOrderHeader(ctx context.Context, tx pgx.Tx, identity CommandIdentity,
 	return 0, false, fmt.Errorf("could not allocate order number")
 }
 
-func (s *ShopStore) PayOrderCommand(ctx context.Context, identity CommandIdentity, orderID, payCodeID ID, cashReceivedMinor *int64) (OrderCommandResult, error) {
+func (s *ShopStore) PayOrderCommand(ctx context.Context, identity CommandIdentity, orderID, payCodeID ID, cashReceivedMinor *int64, allowScheduled bool) (OrderCommandResult, error) {
 	return s.runOrderCommand(ctx, identity, 200, func(tx pgx.Tx) (Order, error) {
-		return payOrderTx(ctx, tx, identity.ShopID, identity.ActorID, orderID, payCodeID, cashReceivedMinor)
+		return payOrderTx(ctx, tx, identity.ShopID, identity.ActorID, orderID, payCodeID, cashReceivedMinor, allowScheduled)
 	})
 }
 
-func payOrderTx(ctx context.Context, tx pgx.Tx, shopID, actorID, orderID, payCodeID ID, cashReceivedMinor *int64) (Order, error) {
+func payOrderTx(ctx context.Context, tx pgx.Tx, shopID, actorID, orderID, payCodeID ID, cashReceivedMinor *int64, allowScheduled bool) (Order, error) {
 	if payCodeID == 0 {
 		return Order{}, ErrPayCode
 	}
@@ -307,6 +307,25 @@ func payOrderTx(ctx context.Context, tx pgx.Tx, shopID, actorID, orderID, payCod
 	if !catalog.CanTransit(status, "paid") {
 		return Order{}, ErrStatus
 	}
+	var eventStatus string
+	var lineCount, eligibleCount int64
+	err = tx.QueryRow(ctx, `
+		SELECT e.status,
+			(SELECT count(*) FROM order_lines WHERE order_id = o.id),
+			(SELECT count(*) FROM order_lines ol
+				JOIN goods g ON g.id = ol.good_id AND g.shop_id = o.shop_id AND g.review_status = 'approved'
+				JOIN event_listings l ON l.id = ol.listing_id AND l.good_id = ol.good_id AND l.shop_id = o.shop_id
+					AND l.event_id = o.event_id AND l.is_listed
+				WHERE ol.order_id = o.id)
+		FROM orders o
+		JOIN events e ON e.id = o.event_id AND e.shop_id = o.shop_id
+		WHERE o.id = $1 AND o.shop_id = $2`, orderID, shopID).Scan(&eventStatus, &lineCount, &eligibleCount)
+	if err != nil {
+		return Order{}, fmt.Errorf("check order still sellable: %w", err)
+	}
+	if err := payStillAllowed(eventStatus, allowScheduled, int(lineCount), int(eligibleCount)); err != nil {
+		return Order{}, err
+	}
 	var payName, payKind string
 	var payCurrency *string
 	err = tx.QueryRow(ctx, `SELECT name, kind, currency FROM pay_codes WHERE id = $1 AND shop_id = $2 AND is_enabled`, payCodeID, shopID).Scan(&payName, &payKind, &payCurrency)
@@ -319,7 +338,7 @@ func payOrderTx(ctx context.Context, tx pgx.Tx, shopID, actorID, orderID, payCod
 	if !payCodeCurrencyMatches(payCurrency, orderCurrency) {
 		return Order{}, ErrPayCodeCurrencyMismatch
 	}
-	cashReceived, cashChange, err := cashSettlement(totalMinor, cashReceivedMinor)
+	cashReceived, cashChange, err := cashSettlement(payKind, totalMinor, cashReceivedMinor)
 	if err != nil {
 		return Order{}, err
 	}
@@ -539,26 +558,44 @@ func applyStock(ctx context.Context, tx pgx.Tx, orderID ID, sell bool) error {
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("order lines: %w", err)
 	}
-	seenGoods := map[ID]struct{}{}
+	lockLines := make([]reservationLine, 0, len(lines))
 	for _, item := range lines {
-		var total, listed, sold, reserved int
-		err := tx.QueryRow(ctx, `SELECT total_stock FROM goods WHERE id = $1 FOR UPDATE`, item.goodID).Scan(&total)
-		if err != nil {
+		lockLines = append(lockLines, reservationLine{listingID: item.listingID, goodID: item.goodID, qty: item.qty})
+	}
+	goodIDs, listingIDs := inventoryLockOrder(lockLines)
+	totals := make(map[ID]int, len(goodIDs))
+	for _, goodID := range goodIDs {
+		var total int
+		if err := tx.QueryRow(ctx, `SELECT total_stock FROM goods WHERE id = $1 FOR UPDATE`, goodID).Scan(&total); err != nil {
 			return fmt.Errorf("lock good: %w", err)
 		}
-		err = tx.QueryRow(ctx, `SELECT listed_qty, sold_qty, reserved_qty FROM event_listings WHERE id = $1 FOR UPDATE`, item.listingID).Scan(&listed, &sold, &reserved)
-		if err != nil {
+		totals[goodID] = total
+	}
+	type listingState struct {
+		listed, sold, reserved int
+	}
+	states := make(map[ID]listingState, len(listingIDs))
+	for _, listingID := range listingIDs {
+		var state listingState
+		if err := tx.QueryRow(ctx, `SELECT listed_qty, sold_qty, reserved_qty FROM event_listings WHERE id = $1 FOR UPDATE`, listingID).Scan(&state.listed, &state.sold, &state.reserved); err != nil {
 			return fmt.Errorf("lock listing: %w", err)
 		}
+		states[listingID] = state
+	}
+	seenGoods := map[ID]struct{}{}
+	for _, item := range lines {
+		total := totals[item.goodID]
+		state := states[item.listingID]
 		var nextTotal int
 		var next catalog.ListingQty
+		var err error
 		if sell {
-			if listed-sold-reserved < item.qty {
+			if state.listed-state.sold-state.reserved < item.qty {
 				return catalog.ErrNotEnough
 			}
-			nextTotal, next, err = catalog.ConfirmSale(total, catalog.ListingQty{Listed: listed, Sold: sold}, item.qty)
+			nextTotal, next, err = catalog.ConfirmSale(total, catalog.ListingQty{Listed: state.listed, Sold: state.sold}, item.qty)
 		} else {
-			nextTotal, next, err = catalog.RestoreSale(total, catalog.ListingQty{Listed: listed, Sold: sold}, item.qty)
+			nextTotal, next, err = catalog.RestoreSale(total, catalog.ListingQty{Listed: state.listed, Sold: state.sold}, item.qty)
 		}
 		if err != nil {
 			return err
@@ -569,6 +606,9 @@ func applyStock(ctx context.Context, tx pgx.Tx, orderID ID, sell bool) error {
 		if _, err := tx.Exec(ctx, `UPDATE event_listings SET sold_qty = $2 WHERE id = $1`, item.listingID, next.Sold); err != nil {
 			return fmt.Errorf("write sold: %w", err)
 		}
+		totals[item.goodID] = nextTotal
+		state.sold = next.Sold
+		states[item.listingID] = state
 		seenGoods[item.goodID] = struct{}{}
 	}
 	for goodID := range seenGoods {
@@ -913,7 +953,13 @@ func (s *ShopStore) GoodImagePath(ctx context.Context, id ID) (string, error) {
 		FROM good_images i
 		JOIN goods g ON g.id = i.good_id
 		JOIN shops s ON s.id = g.shop_id
-		WHERE i.id = $1 AND s.is_enabled AND g.review_status = 'approved'`, id).Scan(&path)
+		WHERE i.id = $1 AND s.is_enabled AND g.review_status = 'approved'
+			AND EXISTS (
+				SELECT 1 FROM event_listings l
+				JOIN events e ON e.id = l.event_id AND e.shop_id = l.shop_id
+				WHERE l.good_id = g.id AND l.shop_id = g.shop_id AND l.is_listed
+					AND e.status IN ('live', 'scheduled') AND e.ends_on >= CURRENT_DATE
+			)`, id).Scan(&path)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrNotFound
 	}

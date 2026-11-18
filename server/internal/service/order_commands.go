@@ -117,6 +117,16 @@ func orderCommandErrorCode(err error) string {
 		return "quote_invalid"
 	case errors.Is(err, data.ErrStatus):
 		return "invalid_status"
+	case errors.Is(err, data.ErrNotListed):
+		return "not_listed"
+	case errors.Is(err, data.ErrEventNotOpen):
+		return "event_not_open"
+	case errors.Is(err, data.ErrInvalidCashReceived):
+		return "invalid_cash_received"
+	case errors.Is(err, data.ErrPayCode):
+		return "pay_code_required"
+	case errors.Is(err, data.ErrPayCodeCurrencyMismatch):
+		return "pay_code_currency_mismatch"
 	default:
 		return "internal"
 	}

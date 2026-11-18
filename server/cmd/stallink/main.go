@@ -148,6 +148,14 @@ func resetLocal(configPath, confirmation, backupPath, blobsBackupPath string) er
 	return nil
 }
 
+func localSeedPassword() (string, error) {
+	password := strings.TrimSpace(os.Getenv("STALLINK_LOCAL_SEED_PASSWORD"))
+	if len(password) < 8 {
+		return "", fmt.Errorf("STALLINK_LOCAL_SEED_PASSWORD must contain at least 8 characters")
+	}
+	return password, nil
+}
+
 func seedLocal(configPath string) error {
 	remote, err := localBootstrap(configPath)
 	if err != nil {
@@ -167,9 +175,9 @@ func seedLocal(configPath string) error {
 	if err := data.Migrate(ctx, pool); err != nil {
 		return err
 	}
-	password := os.Getenv("STALLINK_LOCAL_SEED_PASSWORD")
-	if password == "" {
-		password = "12345678"
+	password, err := localSeedPassword()
+	if err != nil {
+		return err
 	}
 	if err := data.SeedLocalDemo(ctx, data.NewShopStore(pool), password); err != nil {
 		return err
@@ -346,10 +354,7 @@ func sweepUnreferencedBlobs(ctx context.Context, store *data.ShopStore, dataDir 
 	if err != nil {
 		return 0, err
 	}
-	referenced := make(map[string]struct{}, len(references))
-	for _, path := range references {
-		referenced[filepath.Clean(path)] = struct{}{}
-	}
+	referenced := data.ReferencedBlobNames(references)
 	blobDir := filepath.Join(dataDir, "blobs")
 	entries, err := os.ReadDir(blobDir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -365,7 +370,7 @@ func sweepUnreferencedBlobs(ctx context.Context, store *data.ShopStore, dataDir 
 			continue
 		}
 		fullPath := filepath.Join(blobDir, entry.Name())
-		if _, ok := referenced[filepath.Clean(fullPath)]; ok {
+		if _, ok := referenced[entry.Name()]; ok {
 			continue
 		}
 		info, err := entry.Info()

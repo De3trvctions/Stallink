@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,7 +22,27 @@ var csvBOM = []byte{0xEF, 0xBB, 0xBF}
 
 // minorToMajor renders minor currency units as a two-decimal major-unit amount.
 func minorToMajor(minor int64) string {
-	return strconv.FormatFloat(float64(minor)/100, 'f', 2, 64)
+	sign := ""
+	if minor < 0 {
+		sign = "-"
+		minor = -minor
+	}
+	return fmt.Sprintf("%s%d.%02d", sign, minor/100, minor%100)
+}
+
+// spreadsheetText keeps a catalog name from being executed as a formula when
+// the daily report is opened in a spreadsheet.
+func spreadsheetText(value string) string {
+	trimmed := strings.TrimLeft(value, " \t\r\n")
+	if trimmed == "" {
+		return value
+	}
+	switch trimmed[0] {
+	case '=', '+', '-', '@':
+		return "'" + value
+	default:
+		return value
+	}
 }
 
 // renderDailyReportCSV turns a built report into the export CSV. currency
@@ -46,7 +67,7 @@ func renderDailyReportCSV(report data.DailyReport, currency string) []byte {
 
 	var rows [][]string
 	add := func(group, curr, item string, orders int, amountMinor int64) {
-		rows = append(rows, []string{group, curr, item, strconv.Itoa(orders), minorToMajor(amountMinor)})
+		rows = append(rows, []string{group, curr, spreadsheetText(item), strconv.Itoa(orders), minorToMajor(amountMinor)})
 	}
 
 	add("总览", headline.Currency, "已付款订单", headline.PaidOrders, headline.RevenueMinor)

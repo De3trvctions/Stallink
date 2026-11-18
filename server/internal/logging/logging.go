@@ -198,6 +198,9 @@ func RequestFilter(next http.Handler) http.Handler {
 			requestID = newRequestID()
 		}
 		w.Header().Set("X-Request-ID", requestID)
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
 		ctx := WithFields(r.Context(), zap.String("request_id", requestID))
 		r = r.WithContext(ctx)
 		started := time.Now()

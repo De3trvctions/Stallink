@@ -1,0 +1,84 @@
+# 本地依赖。API 和 Next 仍在宿主机用 make dev / make web 启动，这样和现有调试方式一致。
+# 数据库、Redis、Nacos 的端口开在 127.0.0.1。运行配置的正文在 server/configs/nacos/stallink.yaml，
+# nacos-publish 会把它上传到 namespace stallink、dataId stallink.yaml。
+# 改完那份 yaml 后可以再跑 make nacos-publish，用户名和密码用下面的本地 Nacos 账号。
+# Nacos 容器使用上游单机示例口令 nacos/nacos，只给这台机器的本地开发用。
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: stallink
+      POSTGRES_DB: stallink
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - stallink-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d stallink"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  nacos:
+    image: nacos/nacos-server:v2.4.3
+    environment:
+      MODE: standalone
+      NACOS_AUTH_ENABLE: "true"
+      NACOS_AUTH_TOKEN: SecretKey012345678901234567890123456789012345678901234567890123456789
+      NACOS_AUTH_IDENTITY_KEY: serverIdentity
+      NACOS_AUTH_IDENTITY_VALUE: security
+    ports:
+      - "127.0.0.1:8848:8848"
+      - "127.0.0.1:9848:9848"
+    volumes:
+      - stallink-nacos:/home/nacos/data
+
+  nacos-publish:
+    image: curlimages/curl:8.11.1
+    depends_on:
+      nacos:
+        condition: service_started
+    volumes:
+      - ./server/configs/nacos/stallink.yaml:/config/stallink.yaml:ro
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        i=0
+        until curl -fsS http://nacos:8848/nacos/v1/console/health/readiness >/dev/null; do
+          i=$$((i+1))
+          if [ "$$i" -gt 60 ]; then
+            echo "nacos did not become ready" >&2
+            exit 1
+          fi
+          sleep 2
+        done
+        token=$$(curl -fsS -X POST http://nacos:8848/nacos/v1/auth/login --data-urlencode username=nacos --data-urlencode password=nacos | sed -n 's/.*"accessToken":"\([^"]*\)".*/\1/p')
+        test -n "$$token"
+        curl -fsS -X POST http://nacos:8848/nacos/v1/console/namespaces -H "accessToken: $$token" -d 'customNamespaceId=stallink&namespaceName=stallink&namespaceDesc=Stallink' || true
+        curl -fsS -X POST http://nacos:8848/nacos/v1/cs/configs \
+          -H "accessToken: $$token" \
+          --data-urlencode dataId=stallink.yaml \
+          --data-urlencode group=DEFAULT_GROUP \
+          --data-urlencode tenant=stallink \
+          --data-urlencode type=yaml \
+          --data-urlencode content@/config/stallink.yaml
+        echo
+        echo "published configs/nacos/stallink.yaml"
+
+volumes:
+  stallink-postgres:
+  stallink-nacos:

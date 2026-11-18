@@ -46,7 +46,7 @@ func (a *API) StaffEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) CreateEvent(w http.ResponseWriter, r *http.Request) {
-	account, ok := a.staff(w, r)
+	account, ok := a.shopAdmin(w, r)
 	if !ok {
 		return
 	}
@@ -63,7 +63,7 @@ func (a *API) CreateEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) UpdateEvent(w http.ResponseWriter, r *http.Request) {
-	account, ok := a.staff(w, r)
+	account, ok := a.shopAdmin(w, r)
 	if !ok {
 		return
 	}
@@ -606,7 +606,7 @@ func (a *API) Pay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.orderActionCommand(w, r, account, "order.pay:"+orderID.String(), body, func(identity data.CommandIdentity) (data.OrderCommandResult, error) {
-		return a.DB.PayOrderCommand(r.Context(), identity, orderID, body.PayCodeID, body.CashReceivedMinor)
+		return a.DB.PayOrderCommand(r.Context(), identity, orderID, body.PayCodeID, body.CashReceivedMinor, a.AllowScheduledOrders)
 	})
 }
 

@@ -14,7 +14,7 @@ type Listing = {
   priceTiers: PriceTier[]; remaining: number; reservedQty: number; isListed: boolean;
 };
 type ProductImage = { id: string; url: string; sortOrder: number };
-type Good = { id: string; name: string; description: string; reviewStatus: string; reviewNote: string; totalStock: number; listings: Listing[]; images: ProductImage[] };
+type Good = { id: string; name: string; description: string; reviewStatus: string; reviewNote: string; revision: number; totalStock: number; listings: Listing[]; images: ProductImage[] };
 type Bundle = {
   bundleId: string; bundleListingId: string; name: string; description: string; reviewStatus: string; reviewNote: string;
   revision: number;
@@ -39,7 +39,7 @@ export default function PlatformGoodsPage() {
   const [loadError, setLoadError] = useState("");
   const { message, setError, setSuccess } = useMessage();
   const [saving, setSaving] = useState(false);
-  const [autoApprove, setAutoApprove] = useState(true);
+  const [autoApprove, setAutoApprove] = useState(false);
   const [switchSaving, setSwitchSaving] = useState(false);
 
   const load = useCallback(async () => {
@@ -74,7 +74,7 @@ export default function PlatformGoodsPage() {
         setAutoApprove(Boolean((res.data as { enabled: boolean }).enabled));
       }
     } catch {
-      // Keep the default (on) when the flag cannot be read.
+      // Keep the default (off) when the flag cannot be read.
     }
   }, []);
 
@@ -109,11 +109,11 @@ export default function PlatformGoodsPage() {
   })), [shops, filter, kindFilter]);
   const pendingCount = shops.reduce((count, shop) => count + shop.goods.filter((good) => good.reviewStatus === "pending").length + shop.bundles.filter((bundle) => bundle.reviewStatus === "pending").length, 0);
 
-  async function review(goodID: string, status: "approved" | "rejected", reason = "") {
+  async function review(good: Good, status: "approved" | "rejected", reason = "") {
     setSaving(true);
     setError(null);
     try {
-      const res = await browserJSON(`/api/platform/goods/${goodID}/review`, "PATCH", { status, note: reason });
+      const res = await browserJSON(`/api/platform/goods/${good.id}/review`, "PATCH", { status, note: reason, expectedRevision: good.revision });
       if (!res.ok) {
         setError(describeRequest(res));
         return;
@@ -233,11 +233,11 @@ export default function PlatformGoodsPage() {
                           {good.listings.length === 0 ? <p className="review-listings__empty">尚未创建活动上架。</p> : null}
                         </div>
                         <div className="review-actions">
-                          <button type="button" className="button button--dark" disabled={saving || good.reviewStatus === "approved"} onClick={() => void review(good.id, "approved")}>通过商品</button>
+                          <button type="button" className="button button--dark" disabled={saving || good.reviewStatus === "approved"} onClick={() => void review(good, "approved")}>通过商品</button>
                           {rejectID === good.id ? (
                             <div className="review-reject-form">
                               <label className="field"><span>拒绝原因 <small>{note.length}/500</small></span><textarea rows={3} maxLength={500} required value={note} onChange={(event) => setNote(event.target.value)} placeholder="说明需要调整的商品信息或定价" /></label>
-                              <button type="button" className="button button--outline" disabled={saving || !note.trim()} onClick={() => void review(good.id, "rejected", note.trim())}>确认拒绝</button>
+                              <button type="button" className="button button--outline" disabled={saving || !note.trim()} onClick={() => void review(good, "rejected", note.trim())}>确认拒绝</button>
                               <button type="button" className="review-cancel" onClick={() => { setRejectID(""); setNote(""); }}>取消</button>
                             </div>
                           ) : (

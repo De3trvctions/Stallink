@@ -67,6 +67,7 @@ var schema = []string{
 		review_status text NOT NULL DEFAULT 'pending' CHECK (review_status IN ('pending', 'approved', 'rejected')),
 		review_note text NOT NULL DEFAULT '' CHECK (char_length(review_note) <= 500),
 		reviewed_at timestamptz,
+		revision bigint NOT NULL DEFAULT 1 CHECK (revision > 0),
 		created_at timestamptz NOT NULL DEFAULT now()
 	)`,
 	`CREATE TABLE IF NOT EXISTS good_images (
