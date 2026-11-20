@@ -99,6 +99,60 @@ func (a *API) StaffListings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, staffGoodsJSON(goods))
 }
 
+// StaffGoods returns the good-centric catalog: one entry per good with its
+// shared stock and every event listing, so the management page can edit a good
+// once instead of once per event.
+func (a *API) StaffGoods(w http.ResponseWriter, r *http.Request) {
+	account, ok := a.staff(w, r)
+	if !ok {
+		return
+	}
+	goods, err := a.DB.ShopGoods(r.Context(), *account.ShopID)
+	if err != nil {
+		logging.ErrorContext(r.Context(), "staff goods", zap.Error(err))
+		writeErr(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	out := make([]any, 0, len(goods))
+	for _, good := range goods {
+		listings := make([]any, 0, len(good.Listings))
+		sold, reserved := 0, 0
+		for _, listing := range good.Listings {
+			sold += listing.SoldQty
+			reserved += listing.ReservedQty
+		}
+		available := good.TotalStock - reserved
+		if available < 0 {
+			available = 0
+		}
+		for _, listing := range good.Listings {
+			listings = append(listings, map[string]any{
+				"listingId": listing.ListingID, "eventId": listing.EventID, "eventName": listing.EventName,
+				"currency": listing.Currency, "unitPriceMinor": listing.UnitPriceMinor,
+				"priceLabel": priceLabel(listing.Currency, listing.UnitPriceMinor), "priceTiers": listing.PriceTiers,
+				"listedQty": listing.ListedQty, "soldQty": listing.SoldQty, "reservedQty": listing.ReservedQty,
+				"remaining": available, "isListed": listing.IsListed,
+			})
+		}
+		images := make([]any, 0, len(good.ImageIDs))
+		for sortOrder, imageID := range good.ImageIDs {
+			url := "/api/staff/goods/" + good.ID + "/images/" + imageID
+			images = append(images, map[string]any{"id": imageID, "url": url, "sortOrder": sortOrder})
+		}
+		var imageURL any
+		if len(images) > 0 {
+			imageURL = images[0].(map[string]any)["url"]
+		}
+		out = append(out, map[string]any{
+			"id": good.ID, "name": good.Name, "description": good.Description,
+			"reviewStatus": good.ReviewStatus, "reviewNote": good.ReviewNote, "revision": good.Revision,
+			"totalStock": good.TotalStock, "soldQty": sold, "reservedQty": reserved, "availableQty": available,
+			"listings": listings, "images": images, "imageURL": imageURL,
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (a *API) CreateGood(w http.ResponseWriter, r *http.Request) {
 	account, ok := a.shopAdmin(w, r)
 	if !ok {
@@ -152,7 +206,7 @@ func (a *API) CreateGood(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_event")
 		return
 	}
-	if body.UnitPriceMinor <= 0 || body.TotalStock < 0 || body.ListedQty < 0 || body.Name == "" {
+	if body.UnitPriceMinor <= 0 || body.TotalStock < 0 || body.Name == "" {
 		writeErr(w, http.StatusBadRequest, "invalid_good")
 		return
 	}
@@ -171,7 +225,7 @@ func (a *API) CreateGood(w http.ResponseWriter, r *http.Request) {
 	}
 	goodID, listingID, eventID, err := a.DB.CreateListedGood(r.Context(), *account.ShopID, account.ID, data.ListedGood{
 		Name: body.Name, Description: body.Description, TotalStock: body.TotalStock,
-		EventID: body.EventID, NewEvent: body.Event, ListedQty: body.ListedQty,
+		EventID: body.EventID, NewEvent: body.Event,
 		UnitPriceMinor: body.UnitPriceMinor, PriceTiers: body.PriceTiers, IsListed: body.IsListed,
 		ImagePaths: imagePaths, Approved: a.autoApprove(r.Context()),
 	})
@@ -334,7 +388,6 @@ func (a *API) AddListing(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		EventID        data.ID             `json:"eventId"`
-		ListedQty      int                 `json:"listedQty"`
 		UnitPriceMinor int64               `json:"unitPriceMinor"`
 		PriceTiers     []catalog.PriceTier `json:"priceTiers"`
 		IsListed       bool                `json:"isListed"`
@@ -343,7 +396,7 @@ func (a *API) AddListing(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_json")
 		return
 	}
-	if body.EventID == 0 || body.ListedQty < 0 || body.UnitPriceMinor <= 0 {
+	if body.EventID == 0 || body.UnitPriceMinor <= 0 {
 		writeErr(w, http.StatusBadRequest, "invalid_listing")
 		return
 	}
@@ -356,7 +409,7 @@ func (a *API) AddListing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, err := a.DB.AddListing(r.Context(), *account.ShopID, account.ID, goodID, data.ListedGood{
-		EventID: body.EventID, ListedQty: body.ListedQty, UnitPriceMinor: body.UnitPriceMinor, PriceTiers: body.PriceTiers, IsListed: body.IsListed,
+		EventID: body.EventID, UnitPriceMinor: body.UnitPriceMinor, PriceTiers: body.PriceTiers, IsListed: body.IsListed,
 	}, a.autoApprove(r.Context()))
 	if err != nil {
 		writeDataErr(w, r, err)
@@ -371,7 +424,6 @@ func (a *API) UpdateListing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		ListedQty      int                 `json:"listedQty"`
 		UnitPriceMinor int64               `json:"unitPriceMinor"`
 		PriceTiers     []catalog.PriceTier `json:"priceTiers"`
 		IsListed       bool                `json:"isListed"`
@@ -380,7 +432,7 @@ func (a *API) UpdateListing(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_json")
 		return
 	}
-	if body.ListedQty < 0 || body.UnitPriceMinor <= 0 {
+	if body.UnitPriceMinor <= 0 {
 		writeErr(w, http.StatusBadRequest, "invalid_listing")
 		return
 	}
@@ -392,7 +444,7 @@ func (a *API) UpdateListing(w http.ResponseWriter, r *http.Request) {
 	if !valid {
 		return
 	}
-	if err := a.DB.UpdateListing(r.Context(), *account.ShopID, account.ID, listingID, body.ListedQty, body.UnitPriceMinor, body.PriceTiers, body.IsListed); err != nil {
+	if err := a.DB.UpdateListing(r.Context(), *account.ShopID, account.ID, listingID, body.UnitPriceMinor, body.PriceTiers, body.IsListed); err != nil {
 		writeDataErr(w, r, err)
 		return
 	}
@@ -408,6 +460,12 @@ func (a *API) UpdateGood(w http.ResponseWriter, r *http.Request) {
 		Name        string `json:"name"`
 		Description string `json:"description"`
 		TotalStock  int    `json:"totalStock"`
+		Listings    []struct {
+			ListingID      data.ID             `json:"listingId"`
+			UnitPriceMinor int64               `json:"unitPriceMinor"`
+			PriceTiers     []catalog.PriceTier `json:"priceTiers"`
+			IsListed       bool                `json:"isListed"`
+		} `json:"listings"`
 	}
 	if err := readJSON(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid_json")
@@ -417,11 +475,40 @@ func (a *API) UpdateGood(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_good")
 		return
 	}
+	if len(body.Listings) > 100 {
+		writeErr(w, http.StatusBadRequest, "invalid_listing")
+		return
+	}
+	for _, listing := range body.Listings {
+		if listing.ListingID == 0 || listing.UnitPriceMinor <= 0 {
+			writeErr(w, http.StatusBadRequest, "invalid_listing")
+			return
+		}
+		if err := catalog.ValidatePriceTiers(listing.UnitPriceMinor, listing.PriceTiers); err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid_price_tiers")
+			return
+		}
+	}
 	goodID, valid := pathEntityID(w, r, "goodID")
 	if !valid {
 		return
 	}
-	if err := a.DB.UpdateGoodStock(r.Context(), *account.ShopID, account.ID, goodID, body.Name, body.Description, body.TotalStock, a.autoApprove(r.Context())); err != nil {
+	if len(body.Listings) == 0 {
+		if err := a.DB.UpdateGoodStock(r.Context(), *account.ShopID, account.ID, goodID, body.Name, body.Description, body.TotalStock, a.autoApprove(r.Context())); err != nil {
+			writeDataErr(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		return
+	}
+	edits := make([]data.ListingEdit, 0, len(body.Listings))
+	for _, listing := range body.Listings {
+		edits = append(edits, data.ListingEdit{
+			ListingID: listing.ListingID, UnitPriceMinor: listing.UnitPriceMinor,
+			PriceTiers: listing.PriceTiers, IsListed: listing.IsListed,
+		})
+	}
+	if err := a.DB.UpdateGoodCatalog(r.Context(), *account.ShopID, account.ID, goodID, body.Name, body.Description, body.TotalStock, edits, a.autoApprove(r.Context())); err != nil {
 		writeDataErr(w, r, err)
 		return
 	}

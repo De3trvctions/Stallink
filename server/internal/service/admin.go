@@ -474,12 +474,20 @@ func (a *API) PlatformGoods(w http.ResponseWriter, r *http.Request) {
 		goods := make([]any, 0, len(shop.Goods))
 		for _, good := range shop.Goods {
 			listings := make([]any, 0, len(good.Listings))
+			reserved := 0
+			for _, listing := range good.Listings {
+				reserved += listing.ReservedQty
+			}
+			available := good.TotalStock - reserved
+			if available < 0 {
+				available = 0
+			}
 			for _, listing := range good.Listings {
 				listings = append(listings, map[string]any{
 					"listingId": listing.ListingID, "eventId": listing.EventID, "eventName": listing.EventName,
 					"currency": listing.Currency, "unitPriceMinor": listing.UnitPriceMinor,
 					"priceLabel": priceLabel(listing.Currency, listing.UnitPriceMinor), "priceTiers": listing.PriceTiers,
-					"remaining":   listing.ListedQty - listing.SoldQty - listing.ReservedQty,
+					"remaining":   available,
 					"reservedQty": listing.ReservedQty, "isListed": listing.IsListed,
 				})
 			}

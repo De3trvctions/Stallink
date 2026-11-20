@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	"github.com/De3trvctions/Stallink/internal/catalog"
@@ -156,6 +157,15 @@ func createOrderFromQuoteTx(ctx context.Context, tx pgx.Tx, identity CommandIden
 	if !created {
 		return getOrderTx(ctx, tx, identity.ShopID, orderID)
 	}
+	// Lock every good and listing referenced by the checkout in a stable order
+	// before inserting any order_line. A child-row INSERT takes a KEY SHARE lock
+	// on the referenced goods/listings rows; if two concurrent transactions each
+	// hold that KEY SHARE and then fight over a FOR UPDATE on the same row they
+	// deadlock. Taking the exclusive locks first serializes on the good/listing
+	// rows in one direction, so the later KEY SHARE locks never cross.
+	if err := lockCheckoutTargets(ctx, tx, identity.ShopID, quote.Snapshot.Groups); err != nil {
+		return Order{}, err
+	}
 	var computedTotal int64
 	for _, group := range quote.Snapshot.Groups {
 		groupSnapshot, err := json.Marshal(group)
@@ -220,6 +230,58 @@ func createOrderFromQuoteTx(ctx context.Context, tx pgx.Tx, identity CommandIden
 		return Order{}, err
 	}
 	return getOrderTx(ctx, tx, identity.ShopID, orderID)
+}
+
+// lockCheckoutTargets takes FOR UPDATE locks on every good and listing the
+// quote lines reference, in ascending ID order, before any child row is written.
+// Inserting order_lines would otherwise leave a KEY SHARE lock on those parent
+// rows; concurrent transactions holding the same KEY SHARE then block each other
+// while requesting FOR UPDATE, which deadlocks.
+func lockCheckoutTargets(ctx context.Context, tx pgx.Tx, shopID ID, groups []catalog.PricingGroup) error {
+	goodSet := make(map[ID]struct{})
+	listingSet := make(map[ID]struct{})
+	for _, group := range groups {
+		for _, line := range group.Lines {
+			goodID, err := ParseID(line.GoodID)
+			if err != nil {
+				return fmt.Errorf("lock checkout: invalid good id %q: %w", line.GoodID, err)
+			}
+			listingID, err := ParseID(line.ListingID)
+			if err != nil {
+				return fmt.Errorf("lock checkout: invalid listing id %q: %w", line.ListingID, err)
+			}
+			goodSet[goodID] = struct{}{}
+			listingSet[listingID] = struct{}{}
+		}
+	}
+	for _, goodID := range sortedIDSet(goodSet) {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT true FROM goods WHERE id = $1 AND shop_id = $2 FOR UPDATE`, goodID, shopID).Scan(&exists); err != nil {
+			return fmt.Errorf("lock checkout good: %w", err)
+		}
+		if !exists {
+			return ErrNotFound
+		}
+	}
+	for _, listingID := range sortedIDSet(listingSet) {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT true FROM event_listings WHERE id = $1 AND shop_id = $2 FOR UPDATE`, listingID, shopID).Scan(&exists); err != nil {
+			return fmt.Errorf("lock checkout listing: %w", err)
+		}
+		if !exists {
+			return ErrNotFound
+		}
+	}
+	return nil
+}
+
+func sortedIDSet(set map[ID]struct{}) []ID {
+	out := make([]ID, 0, len(set))
+	for id := range set {
+		out = append(out, id)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }
 
 func insertOrderHeader(ctx context.Context, tx pgx.Tx, identity CommandIdentity, clientOrderID string, checkoutHash [32]byte, eventID ID, boothName string, total int64, currency string, reservationsEnabled bool, reservationTTL time.Duration) (ID, bool, error) {
@@ -563,56 +625,60 @@ func applyStock(ctx context.Context, tx pgx.Tx, orderID ID, sell bool) error {
 		lockLines = append(lockLines, reservationLine{listingID: item.listingID, goodID: item.goodID, qty: item.qty})
 	}
 	goodIDs, listingIDs := inventoryLockOrder(lockLines)
-	totals := make(map[ID]int, len(goodIDs))
+	pools := make(map[ID]catalog.Pool, len(goodIDs))
 	for _, goodID := range goodIDs {
-		var total int
-		if err := tx.QueryRow(ctx, `SELECT total_stock FROM goods WHERE id = $1 FOR UPDATE`, goodID).Scan(&total); err != nil {
-			return fmt.Errorf("lock good: %w", err)
-		}
-		totals[goodID] = total
-	}
-	type listingState struct {
-		listed, sold, reserved int
-	}
-	states := make(map[ID]listingState, len(listingIDs))
-	for _, listingID := range listingIDs {
-		var state listingState
-		if err := tx.QueryRow(ctx, `SELECT listed_qty, sold_qty, reserved_qty FROM event_listings WHERE id = $1 FOR UPDATE`, listingID).Scan(&state.listed, &state.sold, &state.reserved); err != nil {
-			return fmt.Errorf("lock listing: %w", err)
-		}
-		states[listingID] = state
-	}
-	seenGoods := map[ID]struct{}{}
-	for _, item := range lines {
-		total := totals[item.goodID]
-		state := states[item.listingID]
-		var nextTotal int
-		var next catalog.ListingQty
-		var err error
-		if sell {
-			if state.listed-state.sold-state.reserved < item.qty {
-				return catalog.ErrNotEnough
-			}
-			nextTotal, next, err = catalog.ConfirmSale(total, catalog.ListingQty{Listed: state.listed, Sold: state.sold}, item.qty)
-		} else {
-			nextTotal, next, err = catalog.RestoreSale(total, catalog.ListingQty{Listed: state.listed, Sold: state.sold}, item.qty)
-		}
+		pool, err := readGoodPool(ctx, tx, 0, goodID)
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE goods SET total_stock = $2 WHERE id = $1`, item.goodID, nextTotal); err != nil {
+		pools[goodID] = pool
+	}
+	soldByListing := make(map[ID]int, len(listingIDs))
+	for _, listingID := range listingIDs {
+		var sold int
+		if err := tx.QueryRow(ctx, `SELECT sold_qty FROM event_listings WHERE id = $1 FOR UPDATE`, listingID).Scan(&sold); err != nil {
+			return fmt.Errorf("lock listing: %w", err)
+		}
+		soldByListing[listingID] = sold
+	}
+	needByGood := make(map[ID]int, len(goodIDs))
+	for _, item := range lines {
+		needByGood[item.goodID] += item.qty
+	}
+	if sell {
+		for goodID, need := range needByGood {
+			if !pools[goodID].CanAlloc(need) {
+				return catalog.ErrNotEnough
+			}
+		}
+	}
+	for _, item := range lines {
+		pool := pools[item.goodID]
+		sold := soldByListing[item.listingID]
+		if sell {
+			if pool.Total < item.qty {
+				return catalog.ErrNotEnough
+			}
+			pool.Total -= item.qty
+			sold += item.qty
+		} else {
+			if sold < item.qty {
+				return catalog.ErrNotEnough
+			}
+			pool.Total += item.qty
+			sold -= item.qty
+		}
+		if _, err := tx.Exec(ctx, `UPDATE goods SET total_stock = $2 WHERE id = $1`, item.goodID, pool.Total); err != nil {
 			return fmt.Errorf("write stock: %w", err)
 		}
-		if _, err := tx.Exec(ctx, `UPDATE event_listings SET sold_qty = $2 WHERE id = $1`, item.listingID, next.Sold); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE event_listings SET sold_qty = $2 WHERE id = $1`, item.listingID, sold); err != nil {
 			return fmt.Errorf("write sold: %w", err)
 		}
-		totals[item.goodID] = nextTotal
-		state.sold = next.Sold
-		states[item.listingID] = state
-		seenGoods[item.goodID] = struct{}{}
+		pools[item.goodID] = pool
+		soldByListing[item.listingID] = sold
 	}
-	for goodID := range seenGoods {
-		if err := assertAllocation(ctx, tx, goodID); err != nil {
+	for goodID := range needByGood {
+		if err := assertPool(ctx, tx, 0, goodID); err != nil {
 			return err
 		}
 	}

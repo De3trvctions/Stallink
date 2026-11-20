@@ -340,7 +340,7 @@ func (s *ShopStore) UpdateBundle(ctx context.Context, shopID, actorID, bundleID 
 
 func createBundleGoodDraft(ctx context.Context, tx pgx.Tx, shopID, eventID ID, draft BundleGoodDraft, approved bool) (ID, error) {
 	if draft.Name == "" || len([]rune(draft.Name)) > 120 || len([]rune(draft.Description)) > 4000 || draft.TotalStock < 0 ||
-		draft.ListedQty < 1 || draft.ListedQty > draft.TotalStock || !draft.IsListed || len(draft.ImagePaths) > 8 ||
+		!draft.IsListed || len(draft.ImagePaths) > 8 ||
 		catalog.ValidatePriceTiers(draft.UnitPriceMinor, draft.PriceTiers) != nil {
 		return 0, ErrInvalidBundle
 	}
@@ -362,10 +362,10 @@ func createBundleGoodDraft(ctx context.Context, tx pgx.Tx, shopID, eventID ID, d
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO event_listings(shop_id, event_id, good_id, listed_qty, unit_price_minor, price_tiers, is_listed)
-		VALUES ($1,$2,$3,$4,$5,$6,true)`, shopID, eventID, goodID, draft.ListedQty, draft.UnitPriceMinor, tiers); err != nil {
+		VALUES ($1,$2,$3,0,$4,$5,true)`, shopID, eventID, goodID, draft.UnitPriceMinor, tiers); err != nil {
 		return 0, fmt.Errorf("insert bundle component listing: %w", err)
 	}
-	if err := assertAllocation(ctx, tx, goodID); err != nil {
+	if err := assertPool(ctx, tx, shopID, goodID); err != nil {
 		return 0, err
 	}
 	return goodID, nil
@@ -402,7 +402,7 @@ func listBundlesFrom(ctx context.Context, queryer rowQuerier, shopID, eventID ID
 			COALESCE((SELECT array_agg(bi.id::text ORDER BY bi.sort_order) FROM bundle_images bi WHERE bi.bundle_id = b.id), ARRAY[]::text[]),
 			COALESCE(bc.good_id::text, ''), COALESCE(g.name, ''), COALESCE(bc.quantity, 0),
 			COALESCE(l.id::text, ''), COALESCE(l.unit_price_minor, 0), COALESCE(g.review_status, ''),
-			COALESCE(l.is_listed, false), COALESCE(GREATEST(l.listed_qty - l.sold_qty - l.reserved_qty, 0), 0),
+			COALESCE(l.is_listed, false), COALESCE(GREATEST(g.total_stock - COALESCE((SELECT SUM(l2.reserved_qty) FROM event_listings l2 WHERE l2.good_id = g.id AND l2.shop_id = g.shop_id), 0), 0), 0),
 			COALESCE((SELECT array_agg(gi.id::text ORDER BY gi.sort_order) FROM good_images gi WHERE gi.good_id = g.id), ARRAY[]::text[])
 		FROM event_bundle_listings eb
 		JOIN bundles b ON b.id = eb.bundle_id AND b.shop_id = eb.shop_id
@@ -412,7 +412,7 @@ func listBundlesFrom(ctx context.Context, queryer rowQuerier, shopID, eventID ID
 		LEFT JOIN goods g ON g.id = bc.good_id AND g.shop_id = bc.shop_id
 		LEFT JOIN event_listings l ON l.good_id = g.id AND l.event_id = e.id AND l.shop_id = e.shop_id
 		LEFT JOIN LATERAL (
-			SELECT min(GREATEST(cl.listed_qty - cl.sold_qty - cl.reserved_qty, 0) / c.quantity) AS remaining,
+			SELECT min(GREATEST(cg.total_stock - COALESCE((SELECT SUM(l2.reserved_qty) FROM event_listings l2 WHERE l2.good_id = cg.id AND l2.shop_id = cg.shop_id), 0), 0) / c.quantity) AS remaining,
 				count(*) AS components,
 				count(*) FILTER (WHERE cg.review_status = 'approved' AND cl.is_listed) AS eligible
 			FROM bundle_components c

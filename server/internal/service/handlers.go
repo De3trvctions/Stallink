@@ -276,6 +276,20 @@ func (a *API) Landing(w http.ResponseWriter, r *http.Request) {
 	a.writeShop(w, r, shop)
 }
 
+// PublicCatalog serves the cross-shop public storefront catalog for the home
+// page: listed, approved goods from every enabled booth, with free-text search.
+func (a *API) PublicCatalog(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	sort := r.URL.Query().Get("sort")
+	goods, err := a.DB.PublicCatalogSearch(r.Context(), query, sort)
+	if err != nil {
+		logging.ErrorContext(r.Context(), "load public catalog failed", zap.Error(err))
+		writeErr(w, http.StatusInternalServerError, "internal")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"goods": goodsJSON(goods), "total": len(goods)})
+}
+
 func (a *API) Shop(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	if !slugPattern.MatchString(slug) {
@@ -654,6 +668,7 @@ func goodJSON(good data.GoodCard) map[string]any {
 		"unitPriceMinor": good.UnitPriceMinor, "priceLabel": priceLabel(good.Currency, good.UnitPriceMinor),
 		"priceTiers": good.PriceTiers, "remaining": good.Remaining, "soldOut": good.SoldOut,
 		"isListed": good.IsListed, "imageURL": image, "images": images,
+		"shopSlug": good.ShopSlug, "shopName": good.ShopName,
 	}
 }
 

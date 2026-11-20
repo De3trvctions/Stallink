@@ -2,28 +2,20 @@ package catalog
 
 import "testing"
 
-func TestAllocationAndConfirm(t *testing.T) {
-	listings := []ListingQty{{Listed: 6, Sold: 0}, {Listed: 4, Sold: 0}}
-	if err := ValidateAllocation(10, listings); err != nil {
-		t.Fatal(err)
+func TestSharedPoolAvailable(t *testing.T) {
+	pool := Pool{Total: 10, Reserved: 3}
+	if avail := pool.Available(); avail != 7 {
+		t.Fatalf("expected 7 available, got %d", avail)
 	}
-	if err := ValidateAllocation(9, listings); err == nil {
-		t.Fatal("expected 6+4 to exceed 9")
+	if !pool.CanAlloc(7) || pool.CanAlloc(8) {
+		t.Fatal("pool should allocate up to 7")
 	}
-	total, listing, err := ConfirmSale(10, ListingQty{Listed: 6, Sold: 0}, 1)
-	if err != nil || total != 9 || listing.Sold != 1 {
-		t.Fatalf("%d %+v %v", total, listing, err)
+	negative := Pool{Total: 2, Reserved: 5}
+	if avail := negative.Available(); avail != 0 {
+		t.Fatalf("expected clamped 0, got %d", avail)
 	}
-	after := []ListingQty{listing, {Listed: 4, Sold: 0}}
-	if err := ValidateAllocation(total, after); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := ConfirmSale(total, listing, 6); err == nil {
-		t.Fatal("expected remaining 5 to reject 6")
-	}
-	restoredTotal, restored, err := RestoreSale(total, listing, 1)
-	if err != nil || restoredTotal != 10 || restored.Sold != 0 {
-		t.Fatalf("restore %d %+v %v", restoredTotal, restored, err)
+	if negative.CanAlloc(1) {
+		t.Fatal("empty pool must reject allocation")
 	}
 }
 

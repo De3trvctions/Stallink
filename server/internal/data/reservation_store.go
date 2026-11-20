@@ -75,11 +75,28 @@ func reserveOrderInventory(ctx context.Context, tx pgx.Tx, shopID, orderID ID, t
 	if err != nil {
 		return err
 	}
+	// The pool is shared across every listing of a good: aggregate the order's
+	// demand per good, lock the good rows, and check the shared pool once per
+	// good instead of against each listing's old per-event quota.
+	needByGood := make(map[ID]int, len(lines))
+	for _, line := range lines {
+		needByGood[line.goodID] += line.qty
+	}
+	goodIDs, _ := inventoryLockOrder(lines)
+	for _, goodID := range goodIDs {
+		pool, err := readGoodPool(ctx, tx, shopID, goodID)
+		if err != nil {
+			return err
+		}
+		if !pool.CanAlloc(needByGood[goodID]) {
+			return catalog.ErrNotEnough
+		}
+	}
 	expiresAt := ttl.Microseconds()
 	for _, line := range lines {
 		tag, err := tx.Exec(ctx, `
 			UPDATE event_listings SET reserved_qty = reserved_qty + $3
-			WHERE id = $1 AND shop_id = $2 AND listed_qty - sold_qty - reserved_qty >= $3`,
+			WHERE id = $1 AND shop_id = $2 AND reserved_qty >= 0`,
 			line.listingID, shopID, line.qty)
 		if err != nil {
 			return fmt.Errorf("reserve order listing: %w", err)
@@ -193,7 +210,7 @@ func consumeOrderReservations(ctx context.Context, tx pgx.Tx, shopID, orderID ID
 		if tag.RowsAffected() != 1 {
 			return catalog.ErrNotEnough
 		}
-		tag, err = tx.Exec(ctx, `UPDATE event_listings SET reserved_qty = reserved_qty - $2, sold_qty = sold_qty + $2 WHERE id = $1 AND reserved_qty >= $2 AND sold_qty + $2 <= listed_qty`, item.listingID, item.qty)
+		tag, err = tx.Exec(ctx, `UPDATE event_listings SET reserved_qty = reserved_qty - $2, sold_qty = sold_qty + $2 WHERE id = $1 AND reserved_qty >= $2`, item.listingID, item.qty)
 		if err != nil {
 			return fmt.Errorf("consume listing reservation: %w", err)
 		}
@@ -208,7 +225,7 @@ func consumeOrderReservations(ctx context.Context, tx pgx.Tx, shopID, orderID ID
 		}
 	}
 	for _, goodID := range goodIDs {
-		if err := assertAllocation(ctx, tx, goodID); err != nil {
+		if err := assertPool(ctx, tx, shopID, goodID); err != nil {
 			return err
 		}
 	}

@@ -3,46 +3,31 @@ package catalog
 import "errors"
 
 var (
-	ErrStockExceeded = errors.New("catalog: listed quantity exceeds stock")
+	ErrStockExceeded = errors.New("catalog: stock exceeds available pool")
 	ErrNotEnough     = errors.New("catalog: not enough remaining")
 )
 
-type ListingQty struct {
-	Listed int
-	Sold   int
+// Pool is the good-level shared stock across every event listing of one good.
+// Total is the unsold physical stock; Reserved is stock held by active pending
+// orders. Sold units already left Total and are tracked per listing as a sales
+// ledger, so they must not be subtracted again here.
+type Pool struct {
+	Total    int
+	Reserved int
 }
 
-func ValidateAllocation(totalStock int, listings []ListingQty) error {
-	if totalStock < 0 {
-		return ErrStockExceeded
+// Available returns how many units may be reserved or sold from the shared
+// pool right now, clamped at zero for display.
+func (p Pool) Available() int {
+	if v := p.Total - p.Reserved; v > 0 {
+		return v
 	}
-	sum := 0
-	for _, listing := range listings {
-		if listing.Listed < 0 || listing.Sold < 0 || listing.Sold > listing.Listed {
-			return ErrStockExceeded
-		}
-		sum += listing.Listed - listing.Sold
-	}
-	if sum > totalStock {
-		return ErrStockExceeded
-	}
-	return nil
+	return 0
 }
 
-func ConfirmSale(totalStock int, listing ListingQty, qty int) (int, ListingQty, error) {
-	if qty <= 0 || listing.Listed-listing.Sold < qty || totalStock < qty {
-		return totalStock, listing, ErrNotEnough
-	}
-	listing.Sold += qty
-	return totalStock - qty, listing, nil
-}
-
-func RestoreSale(totalStock int, listing ListingQty, qty int) (int, ListingQty, error) {
-	if qty <= 0 || listing.Sold < qty {
-		return totalStock, listing, ErrNotEnough
-	}
-	listing.Sold -= qty
-	return totalStock + qty, listing, nil
+// CanAlloc reports whether qty can be taken from the shared pool.
+func (p Pool) CanAlloc(qty int) bool {
+	return qty > 0 && p.Total-p.Reserved >= qty
 }
 
 func CanTransit(from, to string) bool {

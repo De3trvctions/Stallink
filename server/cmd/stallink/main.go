@@ -182,7 +182,16 @@ func seedLocal(configPath string) error {
 	if err := data.SeedLocalDemo(ctx, data.NewShopStore(pool), password); err != nil {
 		return err
 	}
-	logging.InfoContext(ctx, "local stallink demo data seeded", zap.Int("stores", 2), zap.Int("accounts", 6), zap.Int("products", 8), zap.Int("bundles", 2))
+	count := func(table string) int {
+		var n int
+		if err := pool.QueryRow(ctx, "SELECT count(*) FROM "+table).Scan(&n); err != nil {
+			return 0
+		}
+		return n
+	}
+	logging.InfoContext(ctx, "local stallink demo data seeded",
+		zap.Int("stores", count("shops")), zap.Int("accounts", count("users")),
+		zap.Int("products", count("goods")), zap.Int("bundles", count("bundles")))
 	return nil
 }
 

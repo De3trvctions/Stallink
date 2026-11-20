@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/De3trvctions/Stallink/internal/catalog"
@@ -43,6 +44,8 @@ type GoodCard struct {
 	ReviewStatus   string
 	ReviewNote     string
 	ImageIDs       []string
+	ShopSlug       string
+	ShopName       string
 }
 
 type EventInput struct {
@@ -91,6 +94,16 @@ type PlatformListing struct {
 	ListedQty      int
 	SoldQty        int
 	ReservedQty    int
+	IsListed       bool
+}
+
+// ListingEdit is one per-event shelf update applied together with a good
+// profile update inside a single catalog transaction.
+type ListingEdit struct {
+	ListingID      ID
+	ListedQty      int
+	UnitPriceMinor int64
+	PriceTiers     []catalog.PriceTier
 	IsListed       bool
 }
 
@@ -338,8 +351,9 @@ func (s *ShopStore) PublicListing(ctx context.Context, shopID, listingID ID) (Go
 func (s *ShopStore) publicGoods(ctx context.Context, shopID, eventID ID) ([]GoodCard, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT l.id::text, l.good_id::text, e.id::text, e.name, g.name, g.description, e.currency,
-			l.unit_price_minor, l.price_tiers, l.listed_qty, l.sold_qty, l.reserved_qty, l.is_listed,
-			g.review_status, g.review_note, g.total_stock,
+			l.unit_price_minor, l.price_tiers, l.listed_qty, l.sold_qty,
+			COALESCE((SELECT SUM(l2.reserved_qty) FROM event_listings l2 WHERE l2.good_id = g.id AND l2.shop_id = g.shop_id), 0),
+			l.is_listed, g.review_status, g.review_note, g.total_stock,
 			COALESCE((SELECT array_agg(i.id::text ORDER BY i.sort_order) FROM good_images i WHERE i.good_id = g.id), ARRAY[]::text[])
 		FROM event_listings l
 		JOIN goods g ON g.id = l.good_id
@@ -355,6 +369,60 @@ func (s *ShopStore) publicGoods(ctx context.Context, shopID, eventID ID) ([]Good
 	return collectGoods(rows)
 }
 
+// PublicCatalogSearch returns listed, approved goods across every enabled shop,
+// optionally filtered by a free-text keyword and ordered for the public storefront.
+func (s *ShopStore) PublicCatalogSearch(ctx context.Context, query, sort string) ([]GoodCard, error) {
+	order := `ORDER BY e.starts_on DESC, g.name`
+	switch sort {
+	case "price_asc":
+		order = `ORDER BY l.unit_price_minor ASC, g.name`
+	case "price_desc":
+		order = `ORDER BY l.unit_price_minor DESC, g.name`
+	case "newest":
+		order = `ORDER BY g.created_at DESC, g.name`
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT l.id::text, l.good_id::text, e.id::text, e.name, g.name, g.description, e.currency,
+			l.unit_price_minor, l.price_tiers, l.listed_qty, l.sold_qty,
+			COALESCE((SELECT SUM(l2.reserved_qty) FROM event_listings l2 WHERE l2.good_id = g.id AND l2.shop_id = g.shop_id), 0),
+			l.is_listed, g.review_status, g.review_note, g.total_stock,
+			COALESCE((SELECT array_agg(i.id::text ORDER BY i.sort_order) FROM good_images i WHERE i.good_id = g.id), ARRAY[]::text[]),
+			s.slug, s.name
+		FROM event_listings l
+		JOIN goods g ON g.id = l.good_id
+		JOIN events e ON e.id = l.event_id
+		JOIN shops s ON s.id = e.shop_id AND s.is_enabled
+		WHERE l.is_listed AND g.review_status = 'approved'
+			AND e.status IN ('live','scheduled') AND e.ends_on >= CURRENT_DATE
+			AND ($1 = '' OR g.name ILIKE '%' || $1 || '%' OR g.description ILIKE '%' || $1 || '%')
+		`+order, strings.TrimSpace(query))
+	if err != nil {
+		return nil, fmt.Errorf("search public catalog: %w", err)
+	}
+	defer rows.Close()
+	return collectCatalogGoods(rows)
+}
+
+func collectCatalogGoods(rows pgx.Rows) ([]GoodCard, error) {
+	var out []GoodCard
+	for rows.Next() {
+		var good GoodCard
+		var tiers []byte
+		if err := rows.Scan(&good.ListingID, &good.GoodID, &good.EventID, &good.EventName, &good.Name, &good.Description, &good.Currency, &good.UnitPriceMinor, &tiers, &good.ListedQty, &good.SoldQty, &good.ReservedQty, &good.IsListed, &good.ReviewStatus, &good.ReviewNote, &good.TotalStock, &good.ImageIDs, &good.ShopSlug, &good.ShopName); err != nil {
+			return nil, fmt.Errorf("scan catalog good: %w", err)
+		}
+		good.Remaining, good.SoldOut = poolRemaining(good.TotalStock, good.ReservedQty)
+		if err := json.Unmarshal(tiers, &good.PriceTiers); err != nil {
+			return nil, fmt.Errorf("decode price tiers: %w", err)
+		}
+		out = append(out, good)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("search catalog goods: %w", err)
+	}
+	return out, nil
+}
+
 func (s *ShopStore) StaffListings(ctx context.Context, shopID, eventID ID) ([]GoodCard, error) {
 	var exists bool
 	err := s.pool.QueryRow(ctx, `SELECT true FROM events WHERE id = $1 AND shop_id = $2`, eventID, shopID).Scan(&exists)
@@ -366,8 +434,9 @@ func (s *ShopStore) StaffListings(ctx context.Context, shopID, eventID ID) ([]Go
 	}
 	rows, err := s.pool.Query(ctx, `
 		SELECT l.id::text, l.good_id::text, e.id::text, e.name, g.name, g.description, e.currency,
-			l.unit_price_minor, l.price_tiers, l.listed_qty, l.sold_qty, l.reserved_qty, l.is_listed,
-			g.review_status, g.review_note, g.total_stock,
+			l.unit_price_minor, l.price_tiers, l.listed_qty, l.sold_qty,
+			COALESCE((SELECT SUM(l2.reserved_qty) FROM event_listings l2 WHERE l2.good_id = g.id AND l2.shop_id = g.shop_id), 0),
+			l.is_listed, g.review_status, g.review_note, g.total_stock,
 			COALESCE((SELECT array_agg(i.id::text ORDER BY i.sort_order) FROM good_images i WHERE i.good_id = g.id), ARRAY[]::text[])
 		FROM event_listings l
 		JOIN goods g ON g.id = l.good_id
@@ -437,12 +506,12 @@ func (s *ShopStore) CreateListedGood(ctx context.Context, shopID, actorID ID, in
 	}
 	err = tx.QueryRow(ctx, `
 		INSERT INTO event_listings (shop_id, event_id, good_id, listed_qty, unit_price_minor, price_tiers, is_listed)
-		VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id::text`,
-		shopID, eventID, goodID, in.ListedQty, in.UnitPriceMinor, tiers, in.IsListed).Scan(&listingID)
+		VALUES ($1,$2,$3,0,$4,$5,$6) RETURNING id::text`,
+		shopID, eventID, goodID, in.UnitPriceMinor, tiers, in.IsListed).Scan(&listingID)
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("insert listing: %w", err)
 	}
-	if err := assertAllocation(ctx, tx, goodID); err != nil {
+	if err := assertPool(ctx, tx, shopID, goodID); err != nil {
 		return 0, 0, 0, err
 	}
 	if err := insertAudit(ctx, tx, shopID, actorID, "listing.create", "listing", listingID); err != nil {
@@ -686,8 +755,8 @@ func (s *ShopStore) AddListing(ctx context.Context, shopID, actorID, goodID ID, 
 	var listingID ID
 	err = tx.QueryRow(ctx, `
 		INSERT INTO event_listings (shop_id, event_id, good_id, listed_qty, unit_price_minor, price_tiers, is_listed)
-		VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id::text`,
-		shopID, eventID, goodID, in.ListedQty, in.UnitPriceMinor, tiers, in.IsListed).Scan(&listingID)
+		VALUES ($1,$2,$3,0,$4,$5,$6) RETURNING id::text`,
+		shopID, eventID, goodID, in.UnitPriceMinor, tiers, in.IsListed).Scan(&listingID)
 	if isUnique(err) {
 		return 0, ErrConflict
 	}
@@ -700,7 +769,7 @@ func (s *ShopStore) AddListing(ctx context.Context, shopID, actorID, goodID ID, 
 	if err := invalidateBundlesForGood(ctx, tx, shopID, goodID); err != nil {
 		return 0, err
 	}
-	if err := assertAllocation(ctx, tx, goodID); err != nil {
+	if err := assertPool(ctx, tx, shopID, goodID); err != nil {
 		return 0, err
 	}
 	if err := insertAudit(ctx, tx, shopID, actorID, "listing.create", "listing", listingID); err != nil {
@@ -715,7 +784,7 @@ func (s *ShopStore) AddListing(ctx context.Context, shopID, actorID, goodID ID, 
 	return listingID, nil
 }
 
-func (s *ShopStore) UpdateListing(ctx context.Context, shopID, actorID, listingID ID, listedQty int, price int64, tiers []catalog.PriceTier, isListed bool) error {
+func (s *ShopStore) UpdateListing(ctx context.Context, shopID, actorID, listingID ID, price int64, tiers []catalog.PriceTier, isListed bool) error {
 	if err := catalog.ValidatePriceTiers(price, tiers); err != nil {
 		return err
 	}
@@ -752,49 +821,20 @@ func (s *ShopStore) UpdateListing(ctx context.Context, shopID, actorID, listingI
 	if lockedGood != expectedGoodID {
 		return ErrConflict
 	}
-	var sold int
-	var reserved int
-	var oldListed bool
-	var oldPrice int64
-	var oldTiers []byte
-	var lockedListingGoodID ID
-	err = tx.QueryRow(ctx, `
-		SELECT l.good_id::text, l.sold_qty, l.reserved_qty, l.is_listed, l.unit_price_minor, l.price_tiers
-		FROM event_listings l
-		JOIN events e ON e.id = l.event_id
-		WHERE l.id = $1 AND e.shop_id = $2
-		FOR UPDATE OF l`, listingID, shopID).Scan(&lockedListingGoodID, &sold, &reserved, &oldListed, &oldPrice, &oldTiers)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrNotFound
-	}
+	shelfChanged, err := updateListingLocked(ctx, tx, shopID, expectedGoodID, listingID, price, encodedTiers, isListed)
 	if err != nil {
-		return fmt.Errorf("lock listing: %w", err)
-	}
-	if expectedGoodID != lockedListingGoodID {
-		return ErrConflict
-	}
-	goodID := expectedGoodID
-	if listedQty < sold+reserved {
-		return catalog.ErrStockExceeded
-	}
-	priceChanged := oldPrice != price || string(oldTiers) != string(encodedTiers)
-	eligibilityChanged := oldListed != isListed
-	_, err = tx.Exec(ctx, `
-		UPDATE event_listings SET listed_qty = $2, unit_price_minor = $3, price_tiers = $4, is_listed = $5, revision = revision + 1 WHERE id = $1`,
-		listingID, listedQty, price, encodedTiers, isListed)
-	if err != nil {
-		return fmt.Errorf("update listing: %w", err)
+		return err
 	}
 	// Price, tier, listed quantity and listing-visibility edits are shelf
 	// operations: they do not send the good back to review and must not pull it
 	// off the counter mid-event. Only description/image edits (UpdateGoodStock,
 	// the image endpoints) reset review status.
-	if priceChanged || eligibilityChanged {
-		if err := invalidateBundlesForGood(ctx, tx, shopID, goodID); err != nil {
+	if shelfChanged {
+		if err := invalidateBundlesForGood(ctx, tx, shopID, expectedGoodID); err != nil {
 			return err
 		}
 	}
-	if err := assertAllocation(ctx, tx, goodID); err != nil {
+	if err := assertPool(ctx, tx, shopID, expectedGoodID); err != nil {
 		return err
 	}
 	if err := insertAudit(ctx, tx, shopID, actorID, "listing.update", "listing", listingID); err != nil {
@@ -806,6 +846,40 @@ func (s *ShopStore) UpdateListing(ctx context.Context, shopID, actorID, listingI
 	return tx.Commit(ctx)
 }
 
+// updateListingLocked applies one shelf edit inside a catalog-write transaction.
+// The caller must already hold the shop catalog lock and the parent good row
+// lock (inventory writers lock goods before listings). It reports whether the
+// edit changed price, tiers or visibility so the caller can invalidate bundles.
+func updateListingLocked(ctx context.Context, tx pgx.Tx, shopID, goodID, listingID ID, price int64, encodedTiers []byte, isListed bool) (bool, error) {
+	var oldPrice int64
+	var oldTiers []byte
+	var oldListed bool
+	var lockedListingGoodID ID
+	err := tx.QueryRow(ctx, `
+		SELECT l.good_id::text, l.is_listed, l.unit_price_minor, l.price_tiers
+		FROM event_listings l
+		JOIN events e ON e.id = l.event_id
+		WHERE l.id = $1 AND e.shop_id = $2
+		FOR UPDATE OF l`, listingID, shopID).Scan(&lockedListingGoodID, &oldListed, &oldPrice, &oldTiers)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, ErrNotFound
+	}
+	if err != nil {
+		return false, fmt.Errorf("lock listing: %w", err)
+	}
+	if goodID != lockedListingGoodID {
+		return false, ErrConflict
+	}
+	shelfChanged := oldPrice != price || string(oldTiers) != string(encodedTiers) || oldListed != isListed
+	_, err = tx.Exec(ctx, `
+		UPDATE event_listings SET unit_price_minor = $2, price_tiers = $3, is_listed = $4, revision = revision + 1 WHERE id = $1`,
+		listingID, price, encodedTiers, isListed)
+	if err != nil {
+		return false, fmt.Errorf("update listing: %w", err)
+	}
+	return shelfChanged, nil
+}
+
 func (s *ShopStore) UpdateGoodStock(ctx context.Context, shopID, actorID, goodID ID, name, description string, total int, autoApprove bool) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -815,13 +889,37 @@ func (s *ShopStore) UpdateGoodStock(ctx context.Context, shopID, actorID, goodID
 	if err := lockShopForCatalogWrite(ctx, tx, shopID); err != nil {
 		return err
 	}
+	metadataChanged, err := updateGoodLocked(ctx, tx, shopID, goodID, name, description, total, autoApprove)
+	if err != nil {
+		return err
+	}
+	if metadataChanged {
+		if err := invalidateBundlesForGood(ctx, tx, shopID, goodID); err != nil {
+			return err
+		}
+	}
+	if err := assertPool(ctx, tx, shopID, goodID); err != nil {
+		return err
+	}
+	if err := insertAudit(ctx, tx, shopID, actorID, "stock.update", "good", goodID); err != nil {
+		return err
+	}
+	if err := bumpCatalogRevision(ctx, tx, shopID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// updateGoodLocked locks and updates the shared good profile inside a
+// catalog-write transaction, returning whether name or description changed.
+func updateGoodLocked(ctx context.Context, tx pgx.Tx, shopID, goodID ID, name, description string, total int, autoApprove bool) (bool, error) {
 	var oldName, oldDescription string
-	err = tx.QueryRow(ctx, `SELECT name, description FROM goods WHERE id = $1 AND shop_id = $2 FOR UPDATE`, goodID, shopID).Scan(&oldName, &oldDescription)
+	err := tx.QueryRow(ctx, `SELECT name, description FROM goods WHERE id = $1 AND shop_id = $2 FOR UPDATE`, goodID, shopID).Scan(&oldName, &oldDescription)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrNotFound
+		return false, ErrNotFound
 	}
 	if err != nil {
-		return fmt.Errorf("lock good: %w", err)
+		return false, fmt.Errorf("lock good: %w", err)
 	}
 	// Only a description change sends the good back through review; renaming,
 	// stock adjustments and listing edits keep the current review status.
@@ -839,21 +937,69 @@ func (s *ShopStore) UpdateGoodStock(ctx context.Context, shopID, actorID, goodID
 		WHERE id = $1 AND shop_id = $2`,
 		goodID, shopID, name, description, total, reviewStatus)
 	if err != nil {
-		return fmt.Errorf("update good: %w", err)
+		return false, fmt.Errorf("update good: %w", err)
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrNotFound
+		return false, ErrNotFound
 	}
-	if metadataChanged {
+	return metadataChanged, nil
+}
+
+// UpdateGoodCatalog saves the shared good profile and any number of its event
+// listings in one transaction, so a multi-event edit can never half-apply.
+// Allocation is validated once against the final state of every listing.
+func (s *ShopStore) UpdateGoodCatalog(ctx context.Context, shopID, actorID, goodID ID, name, description string, total int, listings []ListingEdit, autoApprove bool) error {
+	encoded := make([][]byte, len(listings))
+	seen := make(map[ID]bool, len(listings))
+	for i, edit := range listings {
+		if edit.ListingID == 0 || seen[edit.ListingID] {
+			return ErrConflict
+		}
+		seen[edit.ListingID] = true
+		if err := catalog.ValidatePriceTiers(edit.UnitPriceMinor, edit.PriceTiers); err != nil {
+			return err
+		}
+		tiers, err := marshalPriceTiers(edit.PriceTiers)
+		if err != nil {
+			return err
+		}
+		encoded[i] = tiers
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin good catalog: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := lockShopForCatalogWrite(ctx, tx, shopID); err != nil {
+		return err
+	}
+	metadataChanged, err := updateGoodLocked(ctx, tx, shopID, goodID, name, description, total, autoApprove)
+	if err != nil {
+		return err
+	}
+	shelfChanged := false
+	for i, edit := range listings {
+		changed, err := updateListingLocked(ctx, tx, shopID, goodID, edit.ListingID, edit.UnitPriceMinor, encoded[i], edit.IsListed)
+		if err != nil {
+			return err
+		}
+		shelfChanged = shelfChanged || changed
+	}
+	if metadataChanged || shelfChanged {
 		if err := invalidateBundlesForGood(ctx, tx, shopID, goodID); err != nil {
 			return err
 		}
 	}
-	if err := assertAllocation(ctx, tx, goodID); err != nil {
+	if err := assertPool(ctx, tx, shopID, goodID); err != nil {
 		return err
 	}
 	if err := insertAudit(ctx, tx, shopID, actorID, "stock.update", "good", goodID); err != nil {
 		return err
+	}
+	for _, edit := range listings {
+		if err := insertAudit(ctx, tx, shopID, actorID, "listing.update", "listing", edit.ListingID); err != nil {
+			return err
+		}
 	}
 	if err := bumpCatalogRevision(ctx, tx, shopID); err != nil {
 		return err
@@ -944,6 +1090,65 @@ func (s *ShopStore) ListPlatformGoods(ctx context.Context) ([]PlatformShopGoods,
 	return out, nil
 }
 
+// ShopGoods lists every good in one shop with its shared stock and all event
+// listings, including goods currently unlisted from every event. It backs the
+// good-centric management page, so it must not hide goods without listings.
+func (s *ShopStore) ShopGoods(ctx context.Context, shopID ID) ([]PlatformGood, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT g.id::text, g.name, g.description, g.review_status, g.review_note, g.revision, g.total_stock,
+			COALESCE((SELECT array_agg(i.id::text ORDER BY i.sort_order) FROM good_images i WHERE i.good_id = g.id), ARRAY[]::text[]),
+			COALESCE(l.id::text, ''), COALESCE(e.id::text, ''), COALESCE(e.name, ''),
+			COALESCE(e.currency, ''), COALESCE(l.unit_price_minor, 0),
+			COALESCE(l.price_tiers, '[]'::jsonb), COALESCE(l.listed_qty, 0), COALESCE(l.sold_qty, 0), COALESCE(l.reserved_qty, 0),
+			COALESCE(l.is_listed, false)
+		FROM goods g
+		LEFT JOIN event_listings l ON l.good_id = g.id AND l.shop_id = g.shop_id
+		LEFT JOIN events e ON e.id = l.event_id
+		WHERE g.shop_id = $1
+		ORDER BY g.created_at, g.id, e.starts_on, e.id`, shopID)
+	if err != nil {
+		return nil, fmt.Errorf("list shop goods: %w", err)
+	}
+	defer rows.Close()
+	out := make([]PlatformGood, 0)
+	goodIndex := make(map[string]int)
+	for rows.Next() {
+		var goodID, name, description, reviewStatus, reviewNote string
+		var imageIDs []string
+		var revision int64
+		var totalStock int
+		var listing PlatformListing
+		var tiers []byte
+		if err := rows.Scan(
+			&goodID, &name, &description, &reviewStatus, &reviewNote, &revision, &totalStock, &imageIDs,
+			&listing.ListingID, &listing.EventID, &listing.EventName, &listing.Currency,
+			&listing.UnitPriceMinor, &tiers, &listing.ListedQty, &listing.SoldQty, &listing.ReservedQty, &listing.IsListed,
+		); err != nil {
+			return nil, fmt.Errorf("scan shop good: %w", err)
+		}
+		index, exists := goodIndex[goodID]
+		if !exists {
+			out = append(out, PlatformGood{
+				ID: goodID, Name: name, Description: description, ReviewStatus: reviewStatus,
+				ReviewNote: reviewNote, Revision: revision, TotalStock: totalStock, ImageIDs: imageIDs, Listings: []PlatformListing{},
+			})
+			index = len(out) - 1
+			goodIndex[goodID] = index
+		}
+		if listing.ListingID == "" {
+			continue
+		}
+		if err := json.Unmarshal(tiers, &listing.PriceTiers); err != nil {
+			return nil, fmt.Errorf("decode shop price tiers: %w", err)
+		}
+		out[index].Listings = append(out[index].Listings, listing)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list shop goods: %w", err)
+	}
+	return out, nil
+}
+
 func (s *ShopStore) ReviewGood(ctx context.Context, actorID, goodID ID, status, note string, expectedRevision int64) error {
 	if status != "approved" && status != "rejected" || expectedRevision <= 0 {
 		return ErrNotFound
@@ -1003,29 +1208,31 @@ func (s *ShopStore) ReviewGood(ctx context.Context, actorID, goodID ID, status, 
 	return nil
 }
 
-func assertAllocation(ctx context.Context, tx pgx.Tx, goodID ID) error {
+// readGoodPool locks the good row and returns its shared pool: unsold physical
+// stock and stock held by active pending orders. shopID may be 0 to skip the
+// shop filter (good IDs are globally unique).
+func readGoodPool(ctx context.Context, tx pgx.Tx, shopID, goodID ID) (catalog.Pool, error) {
 	var total int
-	if err := tx.QueryRow(ctx, `SELECT total_stock FROM goods WHERE id = $1`, goodID).Scan(&total); err != nil {
-		return fmt.Errorf("read stock: %w", err)
-	}
-	rows, err := tx.Query(ctx, `SELECT listed_qty, sold_qty FROM event_listings WHERE good_id = $1`, goodID)
+	err := tx.QueryRow(ctx, `SELECT total_stock FROM goods WHERE id = $1 AND ($2 = 0 OR shop_id = $2) FOR UPDATE`, goodID, shopID).Scan(&total)
 	if err != nil {
-		return fmt.Errorf("read listings: %w", err)
+		return catalog.Pool{}, fmt.Errorf("lock good pool: %w", err)
 	}
-	defer rows.Close()
-	var listings []catalog.ListingQty
-	for rows.Next() {
-		var item catalog.ListingQty
-		if err := rows.Scan(&item.Listed, &item.Sold); err != nil {
-			return fmt.Errorf("scan listing qty: %w", err)
-		}
-		listings = append(listings, item)
+	var reserved int
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(SUM(reserved_qty), 0) FROM event_listings WHERE good_id = $1 AND ($2 = 0 OR shop_id = $2)`, goodID, shopID).Scan(&reserved); err != nil {
+		return catalog.Pool{}, fmt.Errorf("read good reserved: %w", err)
 	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("read listings: %w", err)
-	}
-	if err := catalog.ValidateAllocation(total, listings); err != nil {
+	return catalog.Pool{Total: total, Reserved: reserved}, nil
+}
+
+// assertPool checks the shared-pool invariant: unsold stock must never fall
+// below what active pending orders hold.
+func assertPool(ctx context.Context, tx pgx.Tx, shopID, goodID ID) error {
+	pool, err := readGoodPool(ctx, tx, shopID, goodID)
+	if err != nil {
 		return err
+	}
+	if pool.Total < pool.Reserved {
+		return catalog.ErrStockExceeded
 	}
 	return nil
 }
@@ -1053,7 +1260,7 @@ func collectGoods(rows pgx.Rows) ([]GoodCard, error) {
 		if err := rows.Scan(&good.ListingID, &good.GoodID, &good.EventID, &good.EventName, &good.Name, &good.Description, &good.Currency, &good.UnitPriceMinor, &tiers, &good.ListedQty, &good.SoldQty, &good.ReservedQty, &good.IsListed, &good.ReviewStatus, &good.ReviewNote, &good.TotalStock, &good.ImageIDs); err != nil {
 			return nil, fmt.Errorf("scan good: %w", err)
 		}
-		good.Remaining, good.SoldOut = remainingSoldOut(good.ListedQty, good.SoldQty, good.ReservedQty)
+		good.Remaining, good.SoldOut = poolRemaining(good.TotalStock, good.ReservedQty)
 		if err := json.Unmarshal(tiers, &good.PriceTiers); err != nil {
 			return nil, fmt.Errorf("decode price tiers: %w", err)
 		}

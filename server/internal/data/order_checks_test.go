@@ -87,23 +87,23 @@ func TestPayStillAllowed(t *testing.T) {
 	}
 }
 
-func TestRemainingSoldOut(t *testing.T) {
+func TestPoolRemainingSoldOut(t *testing.T) {
 	cases := []struct {
-		name                   string
-		listed, sold, reserved int
-		wantRemaining          int
-		wantSoldOut            bool
+		name          string
+		total, reserved int
+		wantRemaining int
+		wantSoldOut   bool
 	}{
-		{"in stock", 10, 3, 2, 5, false},
-		{"exactly zero", 10, 5, 5, 0, true},
-		{"over sold clamps to zero", 10, 12, 3, 0, true},
+		{"in stock", 10, 2, 8, false},
+		{"exactly zero", 5, 5, 0, true},
+		{"over reserved clamps to zero", 3, 12, 0, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			remaining, soldOut := remainingSoldOut(tc.listed, tc.sold, tc.reserved)
+			remaining, soldOut := poolRemaining(tc.total, tc.reserved)
 			if remaining != tc.wantRemaining || soldOut != tc.wantSoldOut {
-				t.Fatalf("remainingSoldOut(%d,%d,%d) = %d,%v; want %d,%v",
-					tc.listed, tc.sold, tc.reserved, remaining, soldOut, tc.wantRemaining, tc.wantSoldOut)
+				t.Fatalf("poolRemaining(%d,%d) = %d,%v; want %d,%v",
+					tc.total, tc.reserved, remaining, soldOut, tc.wantRemaining, tc.wantSoldOut)
 			}
 		})
 	}

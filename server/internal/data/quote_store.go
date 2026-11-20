@@ -88,11 +88,12 @@ func (s *ShopStore) CreateOrderQuote(
 	}
 	listingRows, err := tx.Query(ctx, `
 		SELECT l.id::text, g.id::text, g.name, l.unit_price_minor, l.price_tiers,
-			l.revision, l.listed_qty - l.sold_qty - l.reserved_qty
+			l.revision,
+			g.total_stock - COALESCE((SELECT SUM(l2.reserved_qty) FROM event_listings l2 WHERE l2.good_id = g.id AND l2.shop_id = g.shop_id), 0)
 		FROM event_listings l
 		JOIN goods g ON g.id = l.good_id AND g.shop_id = l.shop_id
 		WHERE l.shop_id = $1 AND l.event_id = $2 AND l.is_listed AND g.review_status = 'approved'
-			AND l.listed_qty > l.sold_qty + l.reserved_qty`, shopID, eventID)
+			AND g.total_stock > COALESCE((SELECT SUM(l2.reserved_qty) FROM event_listings l2 WHERE l2.good_id = g.id AND l2.shop_id = g.shop_id), 0)`, shopID, eventID)
 	if err != nil {
 		return OrderQuote{}, fmt.Errorf("read quote listings: %w", err)
 	}

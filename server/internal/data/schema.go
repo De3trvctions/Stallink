@@ -82,7 +82,7 @@ var schema = []string{
 		event_id bigint NOT NULL REFERENCES events (id),
 		good_id bigint NOT NULL REFERENCES goods (id),
 		listed_qty int NOT NULL CHECK (listed_qty >= 0),
-		sold_qty int NOT NULL DEFAULT 0 CHECK (sold_qty >= 0 AND sold_qty <= listed_qty),
+		sold_qty int NOT NULL DEFAULT 0 CHECK (sold_qty >= 0),
 		unit_price_minor bigint NOT NULL CHECK (unit_price_minor > 0),
 		price_tiers jsonb NOT NULL DEFAULT '[]'::jsonb,
 		is_listed boolean NOT NULL DEFAULT true,

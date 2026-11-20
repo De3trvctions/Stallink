@@ -37,33 +37,63 @@ func SeedLocalDemo(ctx context.Context, store *ShopStore, password string) error
 		price             int64
 		tiers             []catalog.PriceTier
 	}
+	type seedEvent struct {
+		name, starts, ends, venue, booth string
+		goods                            []seedGood
+		bundleName                       string
+		bundleGoods                      []int
+		bundlePrice                      int64
+	}
 	type seedShop struct {
-		slug, name, eventName, starts, ends, venue, booth string
-		goods                                             []seedGood
-		bundleName                                        string
-		bundleGoods                                       []int
-		bundlePrice                                       int64
+		slug, name string
+		events     []seedEvent
 	}
 	shops := []seedShop{
 		{
-			slug: "alpha", name: "甲店", eventName: "Comic Fiesta 2026", starts: "2026-12-19", ends: "2026-12-20", venue: "KLCC", booth: "A-12",
-			goods: []seedGood{
-				{name: "闪膜明信片", description: "一套四张，覆闪膜。", stock: 30, listed: 12, price: 1990},
-				{name: "亚克力立牌", description: "本场限定立牌。", stock: 20, listed: 8, price: 3900},
-				{name: "马口铁徽章", description: "三枚一组。", stock: 40, listed: 20, price: 1500},
-				{name: "拍立得小卡", description: "随机一张。", stock: 16, listed: 10, price: 2500},
+			slug: "alpha", name: "甲店",
+			events: []seedEvent{
+				{
+					name: "Comic Fiesta 2026", starts: "2026-12-19", ends: "2026-12-20", venue: "KLCC", booth: "A-12",
+					goods: []seedGood{
+						{name: "闪膜明信片", description: "一套四张，覆闪膜。", stock: 30, listed: 12, price: 1990},
+						{name: "亚克力立牌", description: "本场限定立牌。", stock: 20, listed: 8, price: 3900},
+						{name: "马口铁徽章", description: "三枚一组。", stock: 40, listed: 20, price: 1500},
+						{name: "拍立得小卡", description: "随机一张。", stock: 16, listed: 10, price: 2500},
+					},
+					bundleName: "会场双件套", bundleGoods: []int{1, 2}, bundlePrice: 4900,
+				},
+				{
+					name: "AniComi Gathering 2027", starts: "2027-01-10", ends: "2027-01-11", venue: "PWTC", booth: "C-03",
+					goods: []seedGood{
+						{name: "手绘签名板", description: "现场手绘签名留念。", stock: 25, listed: 25, price: 4500},
+						{name: "角色吧唧盲盒", description: "单枚 RM12；三枚套装 RM30。", stock: 48, listed: 48, price: 1200, tiers: []catalog.PriceTier{{Quantity: 3, TotalPriceMinor: 3000}}},
+						{name: "联名钥匙扣", description: "亚克力双面印花钥匙扣。", stock: 35, listed: 35, price: 1800},
+					},
+					bundleName: "签名板钥匙扣套装", bundleGoods: []int{0, 2}, bundlePrice: 5800,
+				},
+				{
+					name: "Winter Comiket Mini", starts: "2027-02-14", ends: "2027-02-14", venue: "Kl East Mall", booth: "D-08",
+					goods: []seedGood{
+						{name: "贺岁明信片套装", description: "冬季限定六张套组。", stock: 22, listed: 22, price: 2800},
+						{name: "毛绒挂件", description: "短绒团子造型挂件。", stock: 28, listed: 28, price: 3200},
+					},
+				},
 			},
-			bundleName: "会场双件套", bundleGoods: []int{1, 2}, bundlePrice: 4900,
 		},
 		{
-			slug: "beta", name: "Stallink Beta", eventName: "Kuala Lumpur Art Market", starts: "2026-12-05", ends: "2026-12-06", venue: "MITEC", booth: "B-06",
-			goods: []seedGood{
-				{name: "纪念徽章六件套", description: "单枚 RM40；集齐 6 枚套装价 RM150。", stock: 36, listed: 36, price: 4000, tiers: []catalog.PriceTier{{Quantity: 6, TotalPriceMinor: 15000}}},
-				{name: "角色贴纸单张", description: "单张 RM10；任意两张 RM15。", stock: 60, listed: 60, price: 1000, tiers: []catalog.PriceTier{{Quantity: 2, TotalPriceMinor: 1500}}},
-				{name: "限定帆布袋", description: "厚磅棉布，活动限定印花。", stock: 24, listed: 24, price: 3500},
-				{name: "透明收藏卡", description: "PET 透明材质，单张出售。", stock: 50, listed: 50, price: 1200},
+			slug: "beta", name: "Stallink Beta",
+			events: []seedEvent{
+				{
+					name: "Kuala Lumpur Art Market", starts: "2026-12-05", ends: "2026-12-06", venue: "MITEC", booth: "B-06",
+					goods: []seedGood{
+						{name: "纪念徽章六件套", description: "单枚 RM40；集齐 6 枚套装价 RM150。", stock: 36, listed: 36, price: 4000, tiers: []catalog.PriceTier{{Quantity: 6, TotalPriceMinor: 15000}}},
+						{name: "角色贴纸单张", description: "单张 RM10；任意两张 RM15。", stock: 60, listed: 60, price: 1000, tiers: []catalog.PriceTier{{Quantity: 2, TotalPriceMinor: 1500}}},
+						{name: "限定帆布袋", description: "厚磅棉布，活动限定印花。", stock: 24, listed: 24, price: 3500},
+						{name: "透明收藏卡", description: "PET 透明材质，单张出售。", stock: 50, listed: 50, price: 1200},
+					},
+					bundleName: "精选双件套", bundleGoods: []int{2, 3}, bundlePrice: 4200,
+				},
 			},
-			bundleName: "精选双件套", bundleGoods: []int{2, 3}, bundlePrice: 4200,
 		},
 	}
 	users := []struct {
@@ -131,48 +161,52 @@ func SeedLocalDemo(ctx context.Context, store *ShopStore, password string) error
 	}
 	for _, shop := range shops {
 		shopID := shopIDs[shop.slug]
-		var eventID ID
-		if err := tx.QueryRow(ctx, `INSERT INTO events(shop_id,name,starts_on,ends_on,city,venue,booth_number,currency,status)
-			VALUES ($1,$2,$3,$4,'Kuala Lumpur',$5,$6,'MYR','scheduled') RETURNING id`, shopID, shop.eventName, shop.starts, shop.ends, shop.venue, shop.booth).Scan(&eventID); err != nil {
-			return fmt.Errorf("create local event %s: %w", shop.slug, err)
-		}
-		goodIDs := make([]ID, len(shop.goods))
-		for i, good := range shop.goods {
-			if good.stock < 0 || good.listed < 0 || good.listed > good.stock || catalog.ValidatePriceTiers(good.price, good.tiers) != nil {
-				return fmt.Errorf("invalid local product fixture %s/%s", shop.slug, good.name)
+		for _, ev := range shop.events {
+			var eventID ID
+			if err := tx.QueryRow(ctx, `INSERT INTO events(shop_id,name,starts_on,ends_on,city,venue,booth_number,currency,status)
+				VALUES ($1,$2,$3,$4,'Kuala Lumpur',$5,$6,'MYR','scheduled') RETURNING id`, shopID, ev.name, ev.starts, ev.ends, ev.venue, ev.booth).Scan(&eventID); err != nil {
+				return fmt.Errorf("create local event %s/%s: %w", shop.slug, ev.name, err)
 			}
-			if good.tiers == nil {
-				good.tiers = []catalog.PriceTier{}
+			goodIDs := make([]ID, len(ev.goods))
+			for i, good := range ev.goods {
+				if good.stock < 0 || good.listed < 0 || good.listed > good.stock || catalog.ValidatePriceTiers(good.price, good.tiers) != nil {
+					return fmt.Errorf("invalid local product fixture %s/%s", shop.slug, good.name)
+				}
+				if good.tiers == nil {
+					good.tiers = []catalog.PriceTier{}
+				}
+				tiers, err := json.Marshal(good.tiers)
+				if err != nil {
+					return fmt.Errorf("encode local price tiers: %w", err)
+				}
+				if err := tx.QueryRow(ctx, `INSERT INTO goods(shop_id,name,description,total_stock,review_status,reviewed_at)
+					VALUES ($1,$2,$3,$4,'approved',now()) RETURNING id`, shopID, good.name, good.description, good.stock).Scan(&goodIDs[i]); err != nil {
+					return fmt.Errorf("create local product %s/%s: %w", shop.slug, good.name, err)
+				}
+				if _, err := tx.Exec(ctx, `INSERT INTO event_listings(shop_id,event_id,good_id,listed_qty,unit_price_minor,price_tiers,is_listed)
+					VALUES ($1,$2,$3,$4,$5,$6,true)`, shopID, eventID, goodIDs[i], good.listed, good.price, tiers); err != nil {
+					return fmt.Errorf("list local product %s/%s: %w", shop.slug, good.name, err)
+				}
 			}
-			tiers, err := json.Marshal(good.tiers)
-			if err != nil {
-				return fmt.Errorf("encode local price tiers: %w", err)
+			if ev.bundleName != "" {
+				var bundleID ID
+				if err := tx.QueryRow(ctx, `INSERT INTO bundles(shop_id,name,description,review_status,reviewed_at)
+					VALUES ($1,$2,'固定商品组合优惠','approved',now()) RETURNING id`, shopID, ev.bundleName).Scan(&bundleID); err != nil {
+					return fmt.Errorf("create local bundle %s: %w", shop.slug, err)
+				}
+				for sortOrder, goodIndex := range ev.bundleGoods {
+					if goodIndex < 0 || goodIndex >= len(goodIDs) {
+						return fmt.Errorf("invalid product index in local bundle %s", shop.slug)
+					}
+					if _, err := tx.Exec(ctx, `INSERT INTO bundle_components(bundle_id,shop_id,good_id,quantity,sort_order) VALUES ($1,$2,$3,1,$4)`, bundleID, shopID, goodIDs[goodIndex], sortOrder); err != nil {
+						return fmt.Errorf("add local bundle component %s: %w", shop.slug, err)
+					}
+				}
+				if _, err := tx.Exec(ctx, `INSERT INTO event_bundle_listings(shop_id,event_id,bundle_id,unit_price_minor,price_tiers,is_listed)
+					VALUES ($1,$2,$3,$4,'[]'::jsonb,true)`, shopID, eventID, bundleID, ev.bundlePrice); err != nil {
+					return fmt.Errorf("list local bundle %s: %w", shop.slug, err)
+				}
 			}
-			if err := tx.QueryRow(ctx, `INSERT INTO goods(shop_id,name,description,total_stock,review_status,reviewed_at)
-				VALUES ($1,$2,$3,$4,'approved',now()) RETURNING id`, shopID, good.name, good.description, good.stock).Scan(&goodIDs[i]); err != nil {
-				return fmt.Errorf("create local product %s/%s: %w", shop.slug, good.name, err)
-			}
-			if _, err := tx.Exec(ctx, `INSERT INTO event_listings(shop_id,event_id,good_id,listed_qty,unit_price_minor,price_tiers,is_listed)
-				VALUES ($1,$2,$3,$4,$5,$6,true)`, shopID, eventID, goodIDs[i], good.listed, good.price, tiers); err != nil {
-				return fmt.Errorf("list local product %s/%s: %w", shop.slug, good.name, err)
-			}
-		}
-		var bundleID ID
-		if err := tx.QueryRow(ctx, `INSERT INTO bundles(shop_id,name,description,review_status,reviewed_at)
-			VALUES ($1,$2,'固定商品组合优惠','approved',now()) RETURNING id`, shopID, shop.bundleName).Scan(&bundleID); err != nil {
-			return fmt.Errorf("create local bundle %s: %w", shop.slug, err)
-		}
-		for sortOrder, goodIndex := range shop.bundleGoods {
-			if goodIndex < 0 || goodIndex >= len(goodIDs) {
-				return fmt.Errorf("invalid product index in local bundle %s", shop.slug)
-			}
-			if _, err := tx.Exec(ctx, `INSERT INTO bundle_components(bundle_id,shop_id,good_id,quantity,sort_order) VALUES ($1,$2,$3,1,$4)`, bundleID, shopID, goodIDs[goodIndex], sortOrder); err != nil {
-				return fmt.Errorf("add local bundle component %s: %w", shop.slug, err)
-			}
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO event_bundle_listings(shop_id,event_id,bundle_id,unit_price_minor,price_tiers,is_listed)
-			VALUES ($1,$2,$3,$4,'[]'::jsonb,true)`, shopID, eventID, bundleID, shop.bundlePrice); err != nil {
-			return fmt.Errorf("list local bundle %s: %w", shop.slug, err)
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {

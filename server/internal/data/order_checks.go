@@ -38,11 +38,12 @@ func payStillAllowed(eventStatus string, allowScheduled bool, lineCount, eligibl
 	return nil
 }
 
-// remainingSoldOut computes the sellable remainder and sold-out flag. The
-// remainder is clamped at zero so the public view never exposes a negative
-// stock figure.
-func remainingSoldOut(listedQty, soldQty, reservedQty int) (remaining int, soldOut bool) {
-	remaining = listedQty - soldQty - reservedQty
+// poolRemaining computes the shared-pool sellable remainder and sold-out
+// flag. Total is the unsold physical stock; Reserved is stock held by active
+// pending orders. The remainder is clamped at zero so the public view never
+// exposes a negative stock figure.
+func poolRemaining(totalStock, reserved int) (remaining int, soldOut bool) {
+	remaining = totalStock - reserved
 	if remaining < 0 {
 		remaining = 0
 	}

@@ -81,7 +81,7 @@ func (s *ShopStore) PublicBundleImagePath(ctx context.Context, imageID ID) (stri
 				JOIN goods g ON g.id = bc.good_id AND g.shop_id = bc.shop_id
 				LEFT JOIN event_listings l ON l.good_id = g.id AND l.event_id = eb.event_id AND l.shop_id = eb.shop_id
 				WHERE bc.bundle_id = b.id AND (g.review_status <> 'approved' OR l.id IS NULL OR NOT l.is_listed
-					OR l.listed_qty - l.sold_qty - l.reserved_qty < bc.quantity)
+					OR g.total_stock - COALESCE((SELECT SUM(l2.reserved_qty) FROM event_listings l2 WHERE l2.good_id = g.id AND l2.shop_id = g.shop_id), 0) < bc.quantity)
 			)
 		)
 		LIMIT 1`, imageID).Scan(&imagePath)
