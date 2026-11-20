@@ -100,6 +100,7 @@ export function AppNav() {
           {theme ? <button type="button" className="theme-toggle" onClick={toggleTheme} aria-label={theme === "dark" ? "切换至浅色模式" : "切换至深色模式"}>{theme === "dark" ? "浅色" : "深色"}</button> : null}
           {account === undefined ? <><span className="header-loading" aria-hidden="true" /><span className="sr-only" role="status">正在加载账号…</span></> : account ? (
             <>
+              <Link href="/about" className="header-link">关于</Link>
               {account.shopSlug ? <Link href={`/c/${account.shopSlug}`} className="header-link">查看店铺</Link> : null}
               {destination ? <Link href={destination.href} className="header-account">{destination.label}<span aria-hidden="true">↗</span></Link> : null}
               <button type="button" className="header-logout" onClick={logout} disabled={loading}>
@@ -108,6 +109,7 @@ export function AppNav() {
             </>
           ) : (
             <>
+              <Link href="/about" className="header-link">关于</Link>
               <Link href="/login" className="header-link">登录</Link>
               <Link href="/register" className="header-account">创建账号<span aria-hidden="true">↗</span></Link>
             </>

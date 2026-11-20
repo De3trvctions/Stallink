@@ -37,9 +37,14 @@ function overShortLabel(currency: string, minor: number): string {
   return `短款 ${formatMoney(currency, -minor)}`;
 }
 
+function todayString() {
+  return new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+
 export default function AdminReportsPage() {
-  const today = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-  const [date, setDate] = useState(today);
+  // 默认取客户端本地当天；服务端与客户端若跨时区/午夜边界出现差异，
+  // 由下方日期输入框的 suppressHydrationWarning 单独容忍这一属性，不影响其余树。
+  const [date, setDate] = useState(() => todayString());
   const [currency, setCurrency] = useState("");
   const [report, setReport] = useState<Report | null>(null);
   const [loading, setLoading] = useState(true);
@@ -136,7 +141,7 @@ export default function AdminReportsPage() {
       </header>
 
       <div className="report-toolbar">
-        <label className="field"><span>日期</span><input type="date" value={date} disabled={generating} onChange={(event) => { requestSequence.current++; setCurrency(""); setDate(event.target.value); }} /></label>
+        <label className="field"><span>日期</span><input type="date" value={date} suppressHydrationWarning disabled={generating} onChange={(event) => { requestSequence.current++; setCurrency(""); setDate(event.target.value); }} /></label>
         <SelectMenu
           value={currency}
           onChange={setCurrency}

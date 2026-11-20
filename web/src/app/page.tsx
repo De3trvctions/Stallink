@@ -1,29 +1,37 @@
 import { Suspense } from "react";
-import { BoothView } from "@/components/booth-view";
-import { MarketingLanding } from "@/components/marketing-landing";
-import { getLanding } from "@/lib/api";
+import { CatalogExplorer } from "@/components/catalog-explorer";
+import { getCatalog, type Good } from "@/lib/api";
 
-async function Landing() {
+async function CatalogData() {
+  let goods: Good[] = [];
   try {
-    const booth = await getLanding();
-    if (booth) return <BoothView booth={booth} />;
-  } catch (error) {
-    console.error(error);
-    return (
-      <main className="ed-frame empty-page">
-        <p className="eyebrow">首页</p>
-        <h1>摊位暂时打不开</h1>
-        <p>首页没有拿到摊位数据。再打开一次即可；如果还是这样，稍后再来。</p>
-      </main>
-    );
+    const result = await getCatalog();
+    goods = result.goods;
+  } catch {
+    goods = [];
   }
-  return <MarketingLanding />;
+  return <CatalogExplorer initialGoods={goods} />;
 }
 
-export default function Home() {
+export default function HomePage() {
   return (
-    <Suspense fallback={<div className="ed-frame page-loading"><span className="loading-mark" />正在开门…</div>}>
-      <Landing />
-    </Suspense>
+    <main className="ed-frame">
+      <section className="ed-hero ed-hero--compact">
+        <div>
+          <div className="ed-kicker">
+            <span className="ed-dash" aria-hidden="true" />
+            <span className="ed-mono">独立摊位 / 一场一会</span>
+          </div>
+          <h1 className="ed-title">逛遍这场展的摊位好货。</h1>
+          <p className="ed-desc">搜索商品、按价格排序，先在线上看图和价，再走到摊位现场相见。</p>
+        </div>
+        <div className="ed-hero__aside">
+          <a className="ed-link" href="/about">了解 Stallink ↗</a>
+        </div>
+      </section>
+      <Suspense fallback={<div className="empty-state"><span className="empty-state__mark" aria-hidden="true">✳</span><p>正在加载商品…</p></div>}>
+        <CatalogData />
+      </Suspense>
+    </main>
   );
 }

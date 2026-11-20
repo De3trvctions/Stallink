@@ -170,6 +170,8 @@ export type Good = {
   soldOut: boolean;
   imageURL: string | null;
   images: GoodImage[];
+  shopSlug?: string;
+  shopName?: string;
 };
 
 export type GoodImage = { id: string; url: string; sortOrder: number };
@@ -238,6 +240,21 @@ async function readBooth(path: string): Promise<Booth | null> {
 
 export function getLanding() {
   return readBooth("/api/public/landing");
+}
+
+export type CatalogResult = { goods: Good[]; total: number };
+
+export async function getCatalog(query = "", sort = ""): Promise<CatalogResult> {
+  const params = new URLSearchParams();
+  if (query.trim()) params.set("q", query.trim());
+  if (sort) params.set("sort", sort);
+  const qs = params.toString();
+  const res = await fetch(`${apiOrigin()}/api/public/catalog${qs ? `?${qs}` : ""}`, { cache: "no-store" });
+  if (res.status === 404) return { goods: [], total: 0 };
+  if (!res.ok) throw new Error("catalog request failed");
+  const data: unknown = await res.json();
+  if (!hasValidEntityIds(data)) throw new Error("catalog response contains an invalid entity ID");
+  return data as CatalogResult;
 }
 
 export function getShop(slug: string) {
