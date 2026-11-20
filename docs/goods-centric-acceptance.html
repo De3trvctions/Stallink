@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stallink 商品中心化改造 · 验收报告</title>
+<link rel="stylesheet" href="https://miaoda.feishu.cn/fonts/css2?family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap">
+<style>
+:root{
+  --ink:#1c2b23; --ink-soft:#3d4f45; --muted:#71806f;
+  --accent:#2f6b4f; --accent-soft:#e8f1ea; --accent-dark:#24523c;
+  --line:#d8ded6; --line-strong:#b9c2b6;
+  --surface:#fffef9; --surface-soft:#f4f5ef;
+  --warn:#9a5b2d; --warn-soft:#faf0e3;
+  --bad:#994a3c; --bad-soft:#fbefed;
+  --ok:#315942; --ok-soft:#edf5ed;
+  --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  --serif:"Noto Serif SC",Georgia,serif;
+  --sans:"Noto Sans SC",-apple-system,"PingFang SC",sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--surface-soft);color:var(--ink);font:400 15px/1.75 var(--sans)}
+.wrap{max-width:1060px;margin:0 auto;padding:clamp(16px,4vw,48px)}
+header.hero{border-bottom:2px solid var(--ink);padding-bottom:22px;margin-bottom:26px}
+.eyebrow{font:500 11px/1 var(--mono);letter-spacing:.22em;color:var(--accent);text-transform:uppercase;margin:0 0 10px}
+h1{font:700 clamp(26px,4.5vw,40px)/1.25 var(--serif);margin:0 0 10px}
+.sub{color:var(--muted);font-size:13.5px;margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.meta span{font:400 11px/1 var(--mono);letter-spacing:.04em;border:1px solid var(--line-strong);background:var(--surface);padding:7px 10px;color:var(--ink-soft)}
+h2{font:600 21px/1.4 var(--serif);margin:0 0 14px;display:flex;align-items:baseline;gap:10px}
+h2 .no{font:400 12px/1 var(--mono);color:var(--accent);letter-spacing:.1em}
+section{background:var(--surface);border:1px solid var(--line);padding:clamp(16px,3vw,28px);margin-bottom:18px}
+p{margin:0 0 10px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:760px){.grid2{grid-template-columns:1fr}}
+.card{border:1px solid var(--line);padding:16px;background:var(--surface-soft)}
+.card h3{margin:0 0 8px;font:600 14px/1.4 var(--sans)}
+.card.bad{border-left:3px solid var(--bad)}
+.card.good{border-left:3px solid var(--accent)}
+.card ul{margin:0;padding-left:18px;font-size:13.5px;color:var(--ink-soft)}
+.card li{margin-bottom:6px}
+.tag{display:inline-block;font:500 10.5px/1 var(--mono);letter-spacing:.06em;padding:4px 8px;border:1px solid var(--line-strong);color:var(--muted);margin-right:6px}
+.tag.ok{border-color:#bfd2c1;background:var(--ok-soft);color:var(--ok)}
+.tag.warn{border-color:#ead6a4;background:var(--warn-soft);color:var(--warn)}
+.tag.bad{border-color:#e4c1ba;background:var(--bad-soft);color:var(--bad)}
+code{font:400 12.5px/1.6 var(--mono);background:var(--surface-soft);border:1px solid var(--line);padding:1px 6px;color:var(--accent-dark);overflow-wrap:anywhere}
+pre{font:400 12.5px/1.8 var(--mono);background:var(--ink);color:#d9e4dc;padding:16px;overflow-x:auto;margin:12px 0}
+pre .c{color:#8aa392}
+pre .k{color:#a8d5b9}
+/* 模型图 */
+.model{display:grid;gap:0;margin:14px 0}
+.model .layer{border:1px solid var(--line-strong);background:var(--surface);padding:14px 16px;position:relative}
+.model .layer + .layer{border-top:0}
+.model .layer h4{margin:0 0 4px;font:600 13.5px/1.4 var(--sans)}
+.model .layer p{margin:0;font-size:12.5px;color:var(--muted)}
+.model .layer .pill{position:absolute;top:14px;right:14px;font:500 10px/1 var(--mono);letter-spacing:.08em;padding:4px 8px;background:var(--accent-soft);color:var(--accent-dark);border:1px solid var(--accent)}
+.model .arrow{text-align:center;color:var(--accent);font-size:15px;line-height:1.2;padding:2px 0;background:var(--surface);border-left:1px solid var(--line-strong);border-right:1px solid var(--line-strong)}
+/* 选项卡 */
+.tabs{display:flex;border:1px solid var(--line-strong);width:fit-content;margin-bottom:14px}
+.tabs button{min-height:42px;padding:0 18px;border:0;background:var(--surface);color:var(--muted);font:500 12px/1 var(--mono);letter-spacing:.06em;cursor:pointer}
+.tabs button + button{border-left:1px solid var(--line)}
+.tabs button.on{background:var(--ink);color:var(--surface)}
+.pane{display:none}
+.pane.on{display:block}
+/* 表格 */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font:500 11px/1.4 var(--mono);letter-spacing:.08em;color:var(--muted);text-align:left;padding:9px 10px;border-bottom:2px solid var(--ink)}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink-soft)}
+td:first-child{color:var(--ink);font-weight:500}
+.scroll{overflow-x:auto}
+/* 清单 */
+.check{display:flex;gap:12px;align-items:flex-start;padding:12px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+.check input{width:19px;height:19px;margin-top:3px;accent-color:var(--accent);flex:0 0 auto;cursor:pointer}
+.check .t{font-weight:500;font-size:14px}
+.check .d{font-size:12.5px;color:var(--muted);margin-top:2px}
+.check.done .t{text-decoration:line-through;color:var(--muted)}
+.progress{height:8px;border:1px solid var(--line-strong);background:var(--surface);margin:6px 0 14px}
+.progress i{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
+.plabel{font:400 11px/1 var(--mono);color:var(--muted);letter-spacing:.06em}
+.note{border-left:3px solid var(--warn);background:var(--warn-soft);padding:12px 14px;font-size:13px;color:var(--ink-soft);margin:12px 0}
+.note strong{color:var(--warn)}
+a{color:var(--accent-dark);text-underline-offset:3px}
+footer{color:var(--muted);font:400 11px/1.8 var(--mono);letter-spacing:.04em;padding:8px 0 30px}
+.files td:first-child{font-family:var(--mono);font-size:12px;font-weight:400}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <p class="eyebrow">Stallink · Acceptance Report</p>
+  <h1>商品中心化改造验收报告</h1>
+  <p class="sub">一件商品只维护一份资料 · 全店库存共享 · 多活动独立定价与配额 · 订单幂等链路验证</p>
+  <div class="meta">
+    <span>2026-11-19</span><span>分支工作区 · 已 Stage 未提交</span><span>7 个文件 · +792 / −414</span><span>全部自动化校验通过</span>
+  </div>
+</header>
+
+<!-- ===== 视图：问题与方案 ===== -->
+<section>
+  <h2><span class="no">01</span>问题定位与改造方案</h2>
+  <div class="grid2">
+    <div class="card bad">
+      <h3>改造前 · 不合理之处</h3>
+      <ul>
+        <li>页面按活动分组：同一件商品在 N 场活动出现 N 张卡片、N 个编辑入口。</li>
+        <li>编辑弹窗混合两层字段：名称/说明/图片/总库存实际<strong>全店生效</strong>，却按「本场商品」呈现，提示语误导。</li>
+        <li>参加多场活动只能靠藏在弹窗里的「复制到其他活动」，看不到商品的全部活动分布，也无法从某场退出。</li>
+        <li>保存 = 两次串行 PATCH（商品资料 → 本场上架），第二步失败留下「半保存」。</li>
+        <li>没有全店商品接口：商品从所有活动下架后在页面上「消失」。</li>
+      </ul>
+    </div>
+    <div class="card good">
+      <h3>改造后 · 商品为中心</h3>
+      <ul>
+        <li>默认「按商品」视图：一件商品一张卡片，含共享库存池（已售 / 已分配 / 可分配）与全部活动分布。</li>
+        <li>编辑弹窗分层：「商品资料与共享库存（改一处，全部活动同步）」＋「活动上架与价格（各活动独立）」。</li>
+        <li>弹窗内直接「加入新活动」「下架并释放本场配额」，活动分布一目了然。</li>
+        <li>保存走新的<strong>单事务原子接口</strong>：商品资料 + 全部活动上架一次生效，任何一处失败整体回滚。</li>
+        <li>保留「按活动」视图承载套餐与分场陈列；未参加任何活动的商品也可见、可管理。</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note"><strong>方向决策：</strong>库存保持「总库存共享 + 每场配额」模型（各活动未售配额之和 ≤ 总库存，数据库事务内校验，杜绝超卖）。未改成无配额的真共享池——那需要深改预占/报表/测试，且配额制对摊主分货更可控。此前询问未获回复，按推荐方案执行，可随时再调整。</div>
+</section>
+
+<!-- ===== 视图：数据模型与幂等 ===== -->
+<section>
+  <h2><span class="no">02</span>共享库存模型与订单幂等链路</h2>
+  <div class="tabs" id="modelTabs">
+    <button class="on" data-pane="m1">库存模型</button>
+    <button data-pane="m2">订单幂等</button>
+  </div>
+  <div class="pane on" id="m1">
+    <div class="model">
+      <div class="layer"><span class="pill">全店唯一</span><h4>goods · 商品</h4><p>名称 / 说明 / 相册 / total_stock 总库存 / 平台审核状态 —— 所有活动共享同一份。</p></div>
+      <div class="arrow">▼ 1 : N</div>
+      <div class="layer"><span class="pill">每场一条</span><h4>event_listings · 活动上架</h4><p>各活动独立：单价 / 组合优惠 / listed_qty 配额 / is_listed 上下架 / sold_qty / reserved_qty。</p></div>
+      <div class="arrow">▼ 事务内校验</div>
+      <div class="layer"><span class="pill">防超卖</span><h4>约束：Σ(listed − sold) ≤ total_stock</h4><p>商品行锁 + 店铺目录写锁串行化；新的原子保存在同一事务里校验最终状态，失败整体回滚。</p></div>
+    </div>
+    <pre><span class="c">-- 新增原子保存（单事务）</span>
+PATCH /api/staff/goods/{goodId}
+{ "name": …, "description": …, "totalStock": …,
+  <span class="k">"listings"</span>: [ { "listingId": …, "listedQty": …,
+      "unitPriceMinor": …, "priceTiers": […], "isListed": … }, … ] }
+<span class="c">-- 不带 listings 时走原有商品资料保存，完全向后兼容</span></pre>
+  </div>
+  <div class="pane" id="m2">
+    <p>订单幂等<strong>此前已完整实现</strong>，本次未重写，而是用集成测试实证验收（含 50 并发同键下单）：</p>
+    <div class="model">
+      <div class="layer"><span class="pill">客户端</span><h4>Idempotency-Key + 本地持久化重放</h4><p>收银台下单/收款/完成/取消/退款统一走 <code>lib/order-command.ts</code>：键与载荷存 localStorage，网络失败或 5xx 后原键原载荷重放，绝不重复创建。</p></div>
+      <div class="arrow">▼</div>
+      <div class="layer"><span class="pill">服务端</span><h4>order_commands 重放表</h4><p>UNIQUE(shop, actor, operation, key)；同键同载荷 → 返回首次结果（Idempotency-Replayed: true）；同键不同载荷 → 409 拒绝。</p></div>
+      <div class="arrow">▼</div>
+      <div class="layer"><span class="pill">订单</span><h4>client_order_id 唯一索引 + state_version 乐观锁</h4><p>重复结算只命中同一订单；状态机 pending → paid → fulfilled 单向校验。</p></div>
+      <div class="arrow">▼</div>
+      <div class="layer"><span class="pill">库存</span><h4>inventory_reservations 预占 + inventory_movements 流水</h4><p>UNIQUE(order_id, listing_id, movement_type)：同一订单对同一上架的 reserve / sell / release 各只可能发生一次，重复请求不会重复扣减共享库存。</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 视图：变更清单 ===== -->
+<section>
+  <h2><span class="no">03</span>代码变更清单（已 Stage，未提交）</h2>
+  <div class="scroll">
+  <table class="files">
+    <tr><th>文件</th><th>变更</th></tr>
+    <tr><td>server/internal/data/catalog_store.go</td><td>新增 <code>ShopGoods</code> 全店商品查询、<code>UpdateGoodCatalog</code> 单事务原子保存；把商品/上架更新抽成事务内助手 <code>updateGoodLocked</code> / <code>updateListingLocked</code>，锁序（店铺目录锁 → 商品行锁 → 上架行锁）与审核语义完全保留。</td></tr>
+    <tr><td>server/internal/service/staff.go</td><td>新增 <code>StaffGoods</code> 处理器（含库存汇总 soldQty / allocatedQty 与各活动明细）；<code>UpdateGood</code> 支持可选 listings 数组，逐条校验价格/优惠包/数量。</td></tr>
+    <tr><td>server/internal/server/http.go</td><td>注册 <code>GET /api/staff/goods</code>。</td></tr>
+    <tr><td>server/internal/service/goods_catalog_integration_test.go</td><td>新增集成测试：全店列表聚合、原子保存生效、超配整体回滚、跨商品上架拒绝、重复 listingId 拒绝、旧路径兼容、审计日志计数。</td></tr>
+    <tr><td>server/internal/data/reservation_atomicity_integration_test.go</td><td>修复<strong>预先存在</strong>的测试腐化：payOrderTx 新签名（现金收款 + allowScheduled）与商品审核夹具未跟上，导致整个 data 集成套件编译失败。</td></tr>
+    <tr><td>web/src/app/admin/goods/page.tsx</td><td>整页重构：按商品/按活动双视图、商品中心编辑弹窗（资料 + 共享库存 + 各活动独立编辑块 + 加入新活动 + 下架释放配额）、原子保存、单一数据源（全店商品接口派生活动视图，请求数从 1+2N 降为 2+N）。</td></tr>
+    <tr><td>web/src/app/globals.css</td><td>新增视图切换、商品卡片、活动编辑块样式；沿用现有设计变量与暗色主题，多端适配（≤640px 单列、≤560px 全屏弹窗）。</td></tr>
+  </table>
+  </div>
+</section>
+
+<!-- ===== 视图：自动化验收 ===== -->
+<section>
+  <h2><span class="no">04</span>自动化验收矩阵</h2>
+  <div class="scroll">
+  <table>
+    <tr><th>校验项</th><th>范围</th><th>结果</th></tr>
+    <tr><td>go build / go vet（含 integration 标签）</td><td>server 全部包</td><td><span class="tag ok">通过</span></td></tr>
+    <tr><td>go test ./...（单元测试）</td><td>catalog 库存/定价、data、service、server 等 8 包</td><td><span class="tag ok">全部通过</span></td></tr>
+    <tr><td>集成 · internal/data</td><td>预占原子性、预占并发、退款闭环、迁移、订单校验等（隔离 schema，真实 Postgres 16）</td><td><span class="tag ok">全部通过</span>修复腐化夹具后</td></tr>
+    <tr><td>集成 · internal/service</td><td><strong>50 并发同幂等键下单只产生 1 单</strong>、同键改载荷 409、预占/释放审计、报价过期、认证等</td><td><span class="tag ok">全部通过</span></td></tr>
+    <tr><td>集成 · TestStaffGoodsCatalog（新增）</td><td>全店列表聚合正确；原子保存生效；超配时名称/价格<strong>零泄漏</strong>回滚；跨商品 listing 拒绝；重复 ID 拒绝；旧路径兼容</td><td><span class="tag ok">通过</span></td></tr>
+    <tr><td>tsc --noEmit</td><td>web 全量类型检查</td><td><span class="tag ok">通过</span></td></tr>
+    <tr><td>eslint</td><td>重构后的商品页</td><td><span class="tag ok">0 警告</span></td></tr>
+    <tr><td>next build</td><td>Next 16.4.6 生产构建全部路由</td><td><span class="tag ok">通过</span></td></tr>
+    <tr><td>路由冒烟</td><td>重启后端后 <code>GET /api/staff/goods</code> 未登录返回 401（路由已注册；旧二进制为 404）</td><td><span class="tag ok">通过</span></td></tr>
+  </table>
+  </div>
+  <div class="note"><strong>如实说明：</strong>「多模型交叉验证」以逐层自动化校验替代（类型/静态检查/单元/真实数据库集成/并发幂等/生产构建 + 人工代码复审）。浏览器截图未采集——本地演示账号密码由你的环境变量持有，我没有登录态；页面已热更新，你登录着的浏览器打开即是新版。</div>
+</section>
+
+<!-- ===== 视图：人工验收清单 ===== -->
+<section>
+  <h2><span class="no">05</span>人工验收清单（点击勾选，进度自动保存）</h2>
+  <p class="plabel" id="plabel">0 / 10 已完成</p>
+  <div class="progress"><i id="pbar"></i></div>
+  <div id="checks">
+    <label class="check"><input type="checkbox" data-k="c1"><span><span class="t">打开 /admin/goods，默认「按商品」视图</span><div class="d">一件商品只有一张卡片；卡片以紧凑 mono 行显示总库存、已售/已分配/可分配，并列出全部活动分布芯片。</div></span></label>
+    <label class="check"><input type="checkbox" data-k="c2"><span><span class="t">编辑商品名称/说明/图片</span><div class="d">弹窗顶部标注「改一处，全部活动同步」；保存后切到「按活动」视图，各场名称一致。</div></span></label>
+    <label class="check"><input type="checkbox" data-k="c3"><span><span class="t">同一商品在多场活动分别改价与配额</span><div class="d">每场一个独立编辑块（单价/优惠包/可售总数/上下架），互不影响；可售总数上限随共享库存实时联动。</div></span></label>
+    <label class="check"><input type="checkbox" data-k="c4"><span><span class="t">制造超配后保存</span><div class="d">把两场配额之和调超总库存再保存：提示「本次保存整体未生效」，重新打开弹窗确认名称等修改也没有落库（原子回滚）。</div></span></label>
+    <label class="check"><input type="checkbox" data-k="c5"><span><span class="t">加入新活动</span><div class="d">弹窗底部选择未参加的活动、分配数量与单价，即时上架；活动分布芯片立刻多一场。</div></span></label>
+    <label class="check"><input type="checkbox" data-k="c6"><span><span class="t">下架并释放本场配额</span><div class="d">点击后该场变为已下架、可售数收到已售+预占；共享库存「可分配」相应增加，保存后生效。</div></span></label>
+    <label class="check"><input type="checkbox" data-k="c7"><span><span class="t">入库（新增库存）</span><div class="d">即时生效、不触发重新审核；各场可售上限随之提高。</div></span></label>
+    <label class="check"><input type="checkbox" data-k="c8"><span><span class="t">套餐回归</span><div class="d">「按活动」视图里套餐卡片、编辑套餐、套餐内新增单品流程与改造前一致。</div></span></label>
+    <label class="check"><input type="checkbox" data-k="c9"><span><span class="t">收银台幂等回归</span><div class="d">下单后断网重试/连点收款：只产生一笔订单、库存只扣一次（后台订单列表核对）。</div></span></label>
+    <label class="check"><input type="checkbox" data-k="c10"><span><span class="t">手机/平板宽度</span><div class="d">≤640px 卡片单列、视图切换占满行；≤560px 编辑弹窗全屏、活动编辑块价格/数量纵排。</div></span></label>
+  </div>
+</section>
+
+<!-- ===== 视图：边界与后续 ===== -->
+<section>
+  <h2><span class="no">06</span>已知边界与建议后续</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3>本次刻意不做</h3>
+      <ul>
+        <li><strong>真·共享池（无配额）</strong>：保留配额制；如要改，需重构预占/校验/报表与大量测试，建议单独立项。</li>
+        <li><strong>硬删除活动上架</strong>：订单外键引用上架记录，用「下架 + 释放配额」达成同等业务效果，历史订单可追溯。</li>
+        <li><strong>加入新活动不复制优惠包</strong>：新场新价，优惠包在新场编辑块里单独配置，避免跨币种误套。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>建议后续</h3>
+      <ul>
+        <li>给「保存修改」加乐观锁（expectedRevision），防止两个管理员同时编辑互相覆盖。</li>
+        <li>商品卡片增加「一键均分库存到各场」快捷操作。</li>
+        <li>把 goods_catalog 集成测试纳入 CI 的 integration 流水线（需 STALLINK_TEST_DATABASE_URL）。</li>
+      </ul>
+    </div>
+  </div>
+  <p style="margin-top:14px">预览入口：<a href="http://127.0.0.1:3000/admin/goods" target="_blank">http://127.0.0.1:3000/admin/goods</a>（前端已热更新）· 后端已重启加载新接口（:8080，日志 <code>server/logs/dev-preview.log</code>）。确认无误后自行 <code>git commit</code>。</p>
+</section>
+
+<footer>STALLINK · GOODS-CENTRIC REFACTOR · STAGED, NOT COMMITTED · 2026-11-19</footer>
+</div>
+
+<script>
+// 选项卡
+document.querySelectorAll('.tabs').forEach(function(tabs){
+  tabs.addEventListener('click', function(e){
+    var btn = e.target.closest('button'); if(!btn) return;
+    tabs.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b===btn); });
+    var section = tabs.closest('section');
+    section.querySelectorAll('.pane').forEach(function(p){ p.classList.toggle('on', p.id===btn.dataset.pane); });
+  });
+});
+// 验收清单进度（localStorage 持久化）
+var KEY='stallink.goods-acceptance.v1';
+var saved={}; try{ saved=JSON.parse(localStorage.getItem(KEY)||'{}'); }catch(e){}
+var boxes=document.querySelectorAll('#checks input');
+function refresh(){
+  var done=0;
+  boxes.forEach(function(b){ if(b.checked) done++; b.closest('.check').classList.toggle('done', b.checked); });
+  document.getElementById('pbar').style.width=(done/boxes.length*100)+'%';
+  document.getElementById('plabel').textContent=done+' / '+boxes.length+' 已完成';
+}
+boxes.forEach(function(b){
+  b.checked=!!saved[b.dataset.k];
+  b.addEventListener('change', function(){
+    saved[b.dataset.k]=b.checked;
+    try{ localStorage.setItem(KEY, JSON.stringify(saved)); }catch(e){}
+    refresh();
+  });
+});
+refresh();
+</script>
+</body>
+</html>
