@@ -7,7 +7,7 @@ data:
     driver: postgres
     source: postgres://postgres:123456@127.0.0.1:5432/stallink?sslmode=disable
 storage:
-  dir: ./data
+  drive_root_folder_id: test-folder
 auth:
   platform_admin_login: platform
   platform_admin_password: change-me-please

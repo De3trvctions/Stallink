@@ -5,20 +5,26 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/De3trvctions/Stallink/internal/conf"
 	"github.com/De3trvctions/Stallink/internal/data"
+	"github.com/De3trvctions/Stallink/internal/imagestore"
 	"github.com/De3trvctions/Stallink/internal/logging"
 	"github.com/De3trvctions/Stallink/internal/nacos"
 	"github.com/De3trvctions/Stallink/internal/reviewswitch"
 	"github.com/De3trvctions/Stallink/internal/server"
 	"github.com/De3trvctions/Stallink/internal/service"
-	"github.com/go-kratos/kratos/v2"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 )
@@ -36,7 +42,6 @@ func mainExitCode() int {
 	configPath := flags.String("conf", "configs/local/stallink.yaml", "local file that only locates Nacos")
 	confirmation := flags.String("confirm", "", "type stallink to confirm local database reset")
 	backupPath := flags.String("backup", "", "non-empty database backup required by reset-local")
-	blobsBackupPath := flags.String("blobs-backup", "", "non-empty blob backup required by reset-local")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -45,7 +50,7 @@ func mainExitCode() int {
 	case "serve":
 		err = run(*configPath)
 	case "reset-local":
-		err = resetLocal(*configPath, *confirmation, *backupPath, *blobsBackupPath)
+		err = resetLocal(*configPath, *confirmation, *backupPath)
 	case "seed-local":
 		err = seedLocal(*configPath)
 	default:
@@ -112,15 +117,13 @@ func localBootstrap(configPath string) (*nacos.Remote, error) {
 	return remote, nil
 }
 
-func resetLocal(configPath, confirmation, backupPath, blobsBackupPath string) error {
+func resetLocal(configPath, confirmation, backupPath string) error {
 	if confirmation != "stallink" {
 		return fmt.Errorf("reset-local requires -confirm stallink")
 	}
-	for _, path := range []string{backupPath, blobsBackupPath} {
-		info, err := os.Stat(path)
-		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
-			return fmt.Errorf("reset-local requires non-empty database and blob backups")
-		}
+	info, err := os.Stat(backupPath)
+	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+		return fmt.Errorf("reset-local requires a non-empty database backup")
 	}
 	remote, err := localBootstrap(configPath)
 	if err != nil {
@@ -196,21 +199,126 @@ func seedLocal(configPath string) error {
 }
 
 func run(configPath string) error {
-	startup, remote, err := loadRemote(configPath)
+	_, remote, err := loadRemote(configPath)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := remote.Close(); err != nil {
-			logging.Error("close nacos config", zap.Error(err))
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer remote.Close()
+	updates := make(chan conf.Bootstrap)
+	go func() {
+		for {
+			bc, err := remote.Next()
+			if ctx.Err() != nil {
+				return
+			}
+			if err != nil {
+				logging.Error("Nacos publication rejected", zap.Error(err))
+				continue
+			}
+			select {
+			case updates <- bc:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
-	bc := remote.Bootstrap
+	defer cancel() // stop the update consumer before closing its watcher
+	var mu sync.RWMutex
+	var active *runtimeConfig
+	var listener *http.Server
+	var addr string
+	failures := make(chan error, 1)
+	defer func() {
+		if listener != nil {
+			_ = listener.Shutdown(context.Background())
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if active != nil {
+			active.close()
+		}
+	}()
+	apply := func(bc conf.Bootstrap) error {
+		next, err := prepareRuntime(ctx, bc, active)
+		if err != nil {
+			return err
+		}
+		if addr != bc.Server.HTTP.Addr {
+			ln, err := net.Listen("tcp", bc.Server.HTTP.Addr)
+			if err != nil {
+				next.close()
+				return err
+			}
+			previous := listener
+			listener = next.transport
+			listener.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.RLock()
+				defer mu.RUnlock()
+				active.handler.ServeHTTP(w, r)
+			})
+			addr = bc.Server.HTTP.Addr
+			defer func() {
+				go func(srv *http.Server) {
+					if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+						failures <- err
+					}
+				}(listener)
+				if previous != nil {
+					_ = previous.Shutdown(ctx)
+				}
+			}()
+		}
+		mu.Lock()
+		if active != nil {
+			active.close()
+		}
+		active = next
+		next.start()
+		mu.Unlock()
+		logging.InfoContext(ctx, "applied Nacos configuration", zap.String("addr", addr), zap.Bool("drive_ready", next.drive != nil))
+		return nil
+	}
+	current := remote.Bootstrap
+	if err := apply(current); err != nil {
+		return err
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-failures:
+			return err
+		case bc := <-updates:
+			if reflect.DeepEqual(current, bc) {
+				continue
+			}
+			if err := apply(bc); err != nil {
+				logging.Error("Nacos publication rejected; previous configuration still active")
+				continue
+			}
+			current = bc
+		}
+	}
+}
+
+type runtimeConfig struct {
+	handler   http.Handler
+	transport *http.Server
+	drive     *imagestore.Drive
+	database  conf.Database
+	storage   conf.Storage
+	start     func()
+	close     func()
+}
+
+func prepareRuntime(ctx context.Context, bc conf.Bootstrap, previous *runtimeConfig) (*runtimeConfig, error) {
+	var err error
 	quoteTTL := 60 * time.Second
 	if configured := bc.Orders.QuoteTTL; configured != "" {
 		quoteTTL, err = time.ParseDuration(configured)
 		if err != nil || quoteTTL <= 0 {
-			return fmt.Errorf("orders.quote_ttl must be a positive duration")
+			return nil, fmt.Errorf("orders.quote_ttl must be a positive duration")
 		}
 	}
 	maxPricingStates := bc.Pricing.MaxStates
@@ -221,93 +329,104 @@ func run(configPath string) error {
 	if configured := bc.Orders.ReservationTTL; configured != "" {
 		reservationTTL, err = time.ParseDuration(configured)
 		if err != nil || reservationTTL <= 0 {
-			return fmt.Errorf("orders.reservation_ttl must be a positive duration")
+			return nil, fmt.Errorf("orders.reservation_ttl must be a positive duration")
 		}
 	}
 	sweepInterval := 30 * time.Second
 	if configured := bc.Orders.SweepInterval; configured != "" {
 		sweepInterval, err = time.ParseDuration(configured)
 		if err != nil || sweepInterval <= 0 {
-			return fmt.Errorf("orders.sweep_interval must be a positive duration")
+			return nil, fmt.Errorf("orders.sweep_interval must be a positive duration")
 		}
 	}
 	logger, err := logging.New(bc.Logging, bc.Server.ID, bc.Server.Version)
 	if err != nil {
-		return fmt.Errorf("initialize logger: %w", err)
+		return nil, fmt.Errorf("initialize logger: %w", err)
 	}
-	logging.Set(logger)
-	if err := os.MkdirAll(bc.Storage.Dir, 0o755); err != nil {
-		return err
+	var drive *imagestore.Drive
+	if previous != nil && previous.storage == bc.Storage {
+		drive = previous.drive
+	} else {
+		oauth := bc.Storage.DriveOAuthWeb
+		token := oauth.RefreshToken
+		if token == "" {
+			token = os.Getenv("STALLINK_DRIVE_OAUTH_WEB_REFRESH_TOKEN")
+		}
+		path := os.Getenv("STALLINK_DRIVE_CREDENTIALS_FILE")
+		if path != "" || token != "" {
+			client, err := imagestore.GoogleClient(ctx, path, imagestore.WebOAuthCredentials{ClientID: oauth.ClientID, ClientSecret: oauth.ClientSecret, RefreshToken: token})
+			if err != nil {
+				return nil, err
+			}
+			drive, err = imagestore.NewDrive(ctx, client, bc.Storage.DriveRootFolderID)
+			if err != nil {
+				return nil, err
+			}
+		} else if previous != nil && previous.drive != nil {
+			return nil, fmt.Errorf("Drive credentials missing")
+		}
 	}
-	ctx := context.Background()
 	pool, err := data.NewPool(ctx, bc.Data.Database.Source)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer pool.Close()
-	if err := data.Migrate(ctx, pool); err != nil {
-		return err
+
+	if previous == nil || previous.database != bc.Data.Database {
+		if err := data.Migrate(ctx, pool); err != nil {
+			pool.Close()
+			return nil, err
+		}
 	}
 	store := data.NewShopStore(pool)
 	sweepCtx, stopSweep := context.WithCancel(context.Background())
 	var workers sync.WaitGroup
-	defer func() {
-		stopSweep()
-		workers.Wait()
-	}()
-	if bc.Orders.ReservationsEnabled {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			runReservationSweeper(sweepCtx, store, sweepInterval)
-		}()
-	}
-	workers.Add(1)
-	go func() {
-		defer workers.Done()
-		runBlobSweeper(sweepCtx, store, bc.Storage.Dir)
-	}()
 	dailyAt := bc.Reports.DailyAt
 	if dailyAt == "" {
 		dailyAt = "00:10"
 	}
 	if _, err := time.Parse("15:04", dailyAt); err != nil {
-		return fmt.Errorf("reports.daily_at must be HH:MM")
+		stopSweep()
+		pool.Close()
+		return nil, fmt.Errorf("reports.daily_at must be HH:MM")
 	}
 	reportTZ := bc.Reports.Timezone
 	reportLocation := data.ReportLocation(reportTZ)
-	service.ConfigureReportLocation(reportTZ)
-	workers.Add(1)
-	go func() {
-		defer workers.Done()
-		runDailyReportScheduler(sweepCtx, store, dailyAt, reportLocation, reportTZ)
-	}()
 	reviewSwitch := reviewswitch.New(bc.Redis.Addr, bc.Redis.Password, bc.Redis.DB, bc.Redis.Key)
-	defer func() {
-		if err := reviewSwitch.Close(); err != nil {
-			logging.ErrorContext(ctx, "close review switch redis", zap.Error(err))
-		}
-	}()
+	var images service.ImageStore
+	if drive != nil {
+		images = drive
+	}
 	httpSrv := server.NewHTTP(bc.Server.HTTP.Addr, bc.Server.Name, &service.API{
-		DB: store, SecureCookies: bc.Auth.SecureCookies, DataDir: bc.Storage.Dir,
+		DB: store, SecureCookies: bc.Auth.SecureCookies, Images: images,
 		RequireIdempotency: bc.Orders.RequireIdempotency, BundlesEnabled: bc.Catalog.BundlesEnabled,
 		QuoteTTL: quoteTTL, MaxPricingStates: maxPricingStates,
 		ReservationsEnabled: bc.Orders.ReservationsEnabled, ReservationTTL: reservationTTL,
 		ReviewSwitch: reviewSwitch, AllowScheduledOrders: bc.Orders.ScheduledAllowed(),
 		ReportTimezone: reportTZ,
 	})
-	app := kratos.New(
-		kratos.Name(bc.Server.Name),
-		kratos.Version(bc.Server.Version),
-		kratos.Logger(logging.KratosLogger()),
-		kratos.Server(httpSrv),
-	)
-	logging.InfoContext(ctx, "stallink listening",
-		zap.String("name", bc.Server.Name),
-		zap.String("addr", bc.Server.HTTP.Addr),
-		zap.String("nacos_data_id", startup.Nacos.Remote.DataID),
-	)
-	return app.Run()
+	return &runtimeConfig{handler: httpSrv.Handler, transport: httpSrv.Server, storage: bc.Storage, database: bc.Data.Database, drive: drive, start: func() {
+		zap.ReplaceGlobals(logger)
+		if bc.Orders.ReservationsEnabled {
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				runReservationSweeper(sweepCtx, store, sweepInterval)
+			}()
+		}
+		if drive != nil {
+			workers.Add(1)
+			go func() {
+				defer workers.Done()
+				runBlobSweeper(sweepCtx, store, drive)
+			}()
+		}
+		service.ConfigureReportLocation(reportTZ)
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			runDailyReportScheduler(sweepCtx, store, dailyAt, reportLocation, reportTZ)
+		}()
+	}, close: func() { stopSweep(); workers.Wait(); _ = reviewSwitch.Close(); pool.Close(); _ = logger.Sync() }}, nil
 }
 
 func runReservationSweeper(ctx context.Context, store *data.ShopStore, interval time.Duration) {
@@ -334,9 +453,19 @@ func runReservationSweeper(ctx context.Context, store *data.ShopStore, interval 
 	}
 }
 
-func runBlobSweeper(ctx context.Context, store *data.ShopStore, dataDir string) {
+func runBlobSweeper(ctx context.Context, store *data.ShopStore, drive *imagestore.Drive) {
 	sweep := func() {
-		removed, err := sweepUnreferencedBlobs(ctx, store, dataDir)
+		cutoff := time.Now().Add(-24 * time.Hour)
+		references, err := store.ReferencedBlobPaths(ctx)
+		if err != nil {
+			logging.ErrorContext(ctx, "load image references for drive cleanup", zap.Error(err))
+			return
+		}
+		referenced := make(map[string]bool, len(references))
+		for _, reference := range references {
+			referenced[reference] = true
+		}
+		removed, err := drive.Sweep(ctx, referenced, cutoff)
 		if err != nil {
 			logging.ErrorContext(ctx, "orphan blob sweep failed", zap.Error(err))
 			return
@@ -356,45 +485,6 @@ func runBlobSweeper(ctx context.Context, store *data.ShopStore, dataDir string) 
 			sweep()
 		}
 	}
-}
-
-func sweepUnreferencedBlobs(ctx context.Context, store *data.ShopStore, dataDir string) (int, error) {
-	references, err := store.ReferencedBlobPaths(ctx)
-	if err != nil {
-		return 0, err
-	}
-	referenced := data.ReferencedBlobNames(references)
-	blobDir := filepath.Join(dataDir, "blobs")
-	entries, err := os.ReadDir(blobDir)
-	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil
-	}
-	if err != nil {
-		return 0, fmt.Errorf("read blob directory: %w", err)
-	}
-	cutoff := time.Now().Add(-24 * time.Hour)
-	removed := 0
-	for _, entry := range entries {
-		if !entry.Type().IsRegular() {
-			continue
-		}
-		fullPath := filepath.Join(blobDir, entry.Name())
-		if _, ok := referenced[entry.Name()]; ok {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return removed, fmt.Errorf("stat blob %q: %w", entry.Name(), err)
-		}
-		if !info.ModTime().Before(cutoff) {
-			continue
-		}
-		if err := os.Remove(fullPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return removed, fmt.Errorf("remove unreferenced blob %q: %w", entry.Name(), err)
-		}
-		removed++
-	}
-	return removed, nil
 }
 
 func runDailyReportScheduler(ctx context.Context, store *data.ShopStore, dailyAt string, location *time.Location, reportTZ string) {

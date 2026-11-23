@@ -15,7 +15,11 @@ data:
     # 本机 compose 示例：postgres://postgres:stallink@127.0.0.1:5432/stallink?sslmode=disable
     source: "$STALLINK_DATABASE_SOURCE"
 storage:
-  dir: ./data
+  drive_root_folder_id: 1VE__CW7uIEnn3lJmt6uKIz87if-h1Hd7
+  drive_oauth_web:
+    client_id: "781190528979-eot56nohqj4tgko1k3rf5ovecodsm20h.apps.googleusercontent.com"
+    client_secret: "$STALLINK_DRIVE_OAUTH_WEB_CLIENT_SECRET"
+    refresh_token: "$STALLINK_DRIVE_OAUTH_WEB_REFRESH_TOKEN"
 auth:
   platform_admin_login: platform
   platform_admin_password: "$STALLINK_PLATFORM_ADMIN_PASSWORD"

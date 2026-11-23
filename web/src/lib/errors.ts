@@ -41,8 +41,9 @@ const errorCodeText: Record<string, string> = {
   bundle_components_not_eligible: "套餐中的商品需要先通过审核并保持上架。",
   // 图片
   image_limit: "图片数量或大小超出限制：每张最多 6 MiB，每件商品最多 8 张。",
+  pay_code_image_limit: "收款码图片无损压缩后仍超过 4 MiB 或尺寸过大，请换一张图片。",
   invalid_image: "图片格式或大小不符合要求，请选择 JPG、PNG 或 WebP 图片。",
-  image_storage_failed: "服务器无法保存图片，请检查存储目录权限和磁盘空间。",
+  image_storage_failed: "图片存储暂时不可用，请稍后重试。",
   // 报表
   report_not_generated: "这一天还没有生成日报。",
 };

@@ -1,13 +1,10 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -23,7 +20,7 @@ import (
 type API struct {
 	DB                   *data.ShopStore
 	SecureCookies        bool
-	DataDir              string
+	Images               ImageStore
 	RequireIdempotency   bool
 	BundlesEnabled       bool
 	QuoteTTL             time.Duration
@@ -540,16 +537,6 @@ func (a *API) PlatformGoodImage(w http.ResponseWriter, r *http.Request) {
 	a.serveBlob(w, r, path)
 }
 
-func removeBlob(ctx context.Context, dir, name string) {
-	if name == "" {
-		return
-	}
-	path := filepath.Join(dir, "blobs", filepath.Base(name))
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		logging.ErrorContext(ctx, "remove image blob failed", zap.Error(err))
-	}
-}
-
 func (a *API) PayCodeImage(w http.ResponseWriter, r *http.Request) {
 	account, ok := a.staff(w, r)
 	if !ok {
@@ -568,37 +555,8 @@ func (a *API) PayCodeImage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not_found")
 		return
 	}
+	w.Header().Set("Cache-Control", "private, no-store")
 	a.serveBlob(w, r, path)
-}
-
-func (a *API) serveBlob(w http.ResponseWriter, r *http.Request, name string) {
-	base := filepath.Base(name)
-	if base == "." || base == ".." {
-		writeErr(w, http.StatusNotFound, "not_found")
-		return
-	}
-	full := filepath.Join(a.DataDir, "blobs", base)
-	rel, err := filepath.Rel(filepath.Join(a.DataDir, "blobs"), full)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		writeErr(w, http.StatusNotFound, "not_found")
-		return
-	}
-	file, err := os.Open(full)
-	if err != nil {
-		writeErr(w, http.StatusNotFound, "not_found")
-		return
-	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			logging.ErrorContext(r.Context(), "close image file failed", zap.Error(err))
-		}
-	}()
-	stat, err := file.Stat()
-	if err != nil {
-		writeErr(w, http.StatusNotFound, "not_found")
-		return
-	}
-	http.ServeContent(w, r, base, stat.ModTime(), file)
 }
 
 func meJSON(account data.Account) map[string]any {

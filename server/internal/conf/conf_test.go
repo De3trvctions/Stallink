@@ -36,7 +36,7 @@ func TestValidateBootstrapRequiresRuntimeSettings(t *testing.T) {
 			Driver: "postgres",
 			Source: "postgres://postgres:123456@127.0.0.1:5432/stallink?sslmode=disable",
 		}},
-		Storage: Storage{Dir: "./data"},
+		Storage: Storage{DriveRootFolderID: "test-folder"},
 		Auth: Auth{
 			PlatformAdminLogin:    "platform",
 			PlatformAdminPassword: "change-me-please",
@@ -62,6 +62,7 @@ func TestLocalStartupExpandsNacosCredentials(t *testing.T) {
 func TestPublishedNacosConfigBindsRuntimeSettings(t *testing.T) {
 	t.Setenv("STALLINK_DATABASE_SOURCE", "postgres://stallink:stallink@127.0.0.1:5432/stallink?sslmode=disable")
 	t.Setenv("STALLINK_PLATFORM_ADMIN_PASSWORD", "local-admin-password")
+	t.Setenv("STALLINK_DRIVE_OAUTH_WEB_CLIENT_SECRET", "test-oauth-secret")
 	bc, err := LoadFile("../../configs/nacos/stallink.yaml")
 	if err != nil {
 		t.Fatal(err)
@@ -75,6 +76,9 @@ func TestPublishedNacosConfigBindsRuntimeSettings(t *testing.T) {
 	}
 	if bc.Redis.Addr != "127.0.0.1:6379" {
 		t.Fatalf("redis addr = %q", bc.Redis.Addr)
+	}
+	if bc.Storage.DriveOAuthWeb.ClientID == "" || bc.Storage.DriveOAuthWeb.ClientSecret != "test-oauth-secret" {
+		t.Fatal("web oauth configuration did not resolve from the nacos yaml and environment")
 	}
 	if bc.Auth.SecureCookies {
 		t.Fatal("local template must keep secure cookies off for plain HTTP")
@@ -90,7 +94,7 @@ func TestScanBootstrapFromYAML(t *testing.T) {
 	if bc.Server.Name != "stallink" || bc.Server.HTTP.Addr != ":8080" {
 		t.Fatalf("%+v", bc.Server)
 	}
-	if bc.Data.Database.Driver != "postgres" || bc.Storage.Dir != "./data" {
+	if bc.Data.Database.Driver != "postgres" || bc.Storage.DriveRootFolderID != "test-folder" {
 		t.Fatalf("%+v", bc)
 	}
 	if bc.Auth.PlatformAdminLogin != "platform" {

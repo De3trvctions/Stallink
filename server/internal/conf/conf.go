@@ -114,7 +114,14 @@ type Database struct {
 }
 
 type Storage struct {
-	Dir string `json:"dir"`
+	DriveRootFolderID string        `json:"drive_root_folder_id"`
+	DriveOAuthWeb     DriveOAuthWeb `json:"drive_oauth_web"`
+}
+
+type DriveOAuthWeb struct {
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 type Auth struct {
@@ -178,6 +185,9 @@ func (c *Bootstrap) ResolveEnvironment() {
 	c.Data.Database.Source = os.ExpandEnv(c.Data.Database.Source)
 	c.Auth.PlatformAdminPassword = os.ExpandEnv(c.Auth.PlatformAdminPassword)
 	c.Redis.Password = os.ExpandEnv(c.Redis.Password)
+	c.Storage.DriveOAuthWeb.RefreshToken = os.ExpandEnv(c.Storage.DriveOAuthWeb.RefreshToken)
+	c.Storage.DriveOAuthWeb.ClientID = os.ExpandEnv(c.Storage.DriveOAuthWeb.ClientID)
+	c.Storage.DriveOAuthWeb.ClientSecret = os.ExpandEnv(c.Storage.DriveOAuthWeb.ClientSecret)
 }
 
 func ValidateBootstrap(c Bootstrap) error {
@@ -187,8 +197,8 @@ func ValidateBootstrap(c Bootstrap) error {
 	if c.Data.Database.Driver != "postgres" || strings.TrimSpace(c.Data.Database.Source) == "" {
 		return fmt.Errorf("bootstrap: data.database.driver must be postgres and source is required")
 	}
-	if strings.TrimSpace(c.Storage.Dir) == "" {
-		return fmt.Errorf("bootstrap: missing storage.dir")
+	if strings.TrimSpace(c.Storage.DriveRootFolderID) == "" {
+		return fmt.Errorf("bootstrap: missing storage.drive_root_folder_id")
 	}
 	if strings.TrimSpace(c.Auth.PlatformAdminLogin) == "" || len(c.Auth.PlatformAdminPassword) < 8 {
 		return fmt.Errorf("bootstrap: platform admin login is required and password must be at least 8 characters")

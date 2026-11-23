@@ -1,15 +1,8 @@
 package service
 
 import (
-	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
-	"io"
 	"net/http"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -17,6 +10,7 @@ import (
 	"github.com/De3trvctions/Stallink/internal/auth"
 	"github.com/De3trvctions/Stallink/internal/catalog"
 	"github.com/De3trvctions/Stallink/internal/data"
+	"github.com/De3trvctions/Stallink/internal/imagestore"
 	"github.com/De3trvctions/Stallink/internal/logging"
 	"go.uber.org/zap"
 )
@@ -127,11 +121,16 @@ func (a *API) CreatePayCode(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 6<<20)
-	if err := r.ParseMultipartForm(6 << 20); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, imagestore.MaxUploadBytes)
+	if err := r.ParseMultipartForm(imagestore.MaxUploadBytes); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid_image")
 		return
 	}
+	defer func() {
+		if err := r.MultipartForm.RemoveAll(); err != nil {
+			logging.ErrorContext(r.Context(), "remove multipart temp files", zap.Error(err))
+		}
+	}()
 	file, _, err := r.FormFile("image")
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid_image")
@@ -151,11 +150,6 @@ func (a *API) CreatePayCode(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_pay_code_name")
 		return
 	}
-	path, err := saveBlob(r.Context(), a.DataDir, file)
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid_image")
-		return
-	}
 	isDefault := r.FormValue("isDefault") == "true"
 	currencyRaw := strings.TrimSpace(r.FormValue("currency"))
 	var currency *string
@@ -165,6 +159,16 @@ func (a *API) CreatePayCode(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		currency = &currencyRaw
+	}
+	upload := imageUpload{api: a, shopID: *account.ShopID}
+	path, err := upload.put(r.Context(), "pay-code", file)
+	if errors.Is(err, imagestore.ErrImageTooLarge) {
+		writeErr(w, http.StatusBadRequest, "pay_code_image_limit")
+		return
+	}
+	if err != nil {
+		writeImageError(w, r, err)
+		return
 	}
 	id, err := a.DB.CreatePayCode(r.Context(), *account.ShopID, name, path, currency, isDefault)
 	if err != nil {
@@ -546,74 +550,4 @@ func (a *API) ReviewGood(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-}
-
-const maxBlobBytes = 6 << 20
-
-var errBlobTooLarge = errors.New("blob exceeds size limit")
-
-// limitWriter counts bytes written and aborts once the limit is exceeded, so
-// the multipart header.Size alone cannot be trusted to enforce the cap.
-type limitWriter struct {
-	file    *os.File
-	limit   int64
-	written int64
-}
-
-func (w *limitWriter) Write(p []byte) (int, error) {
-	if w.written+int64(len(p)) > w.limit {
-		return 0, errBlobTooLarge
-	}
-	n, err := w.file.Write(p)
-	w.written += int64(n)
-	return n, err
-}
-
-func saveBlob(ctx context.Context, dir string, src io.Reader) (string, error) {
-	buf := make([]byte, 512)
-	n, err := io.ReadFull(src, buf)
-	if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
-		return "", err
-	}
-	if int64(n) > maxBlobBytes {
-		return "", errBlobTooLarge
-	}
-	kind := http.DetectContentType(buf[:n])
-	if kind != "image/jpeg" && kind != "image/png" && kind != "image/webp" {
-		return "", strconv.ErrSyntax
-	}
-	nameBytes := make([]byte, 16)
-	if _, err := rand.Read(nameBytes); err != nil {
-		return "", err
-	}
-	name := hex.EncodeToString(nameBytes)
-	folder := filepath.Join(dir, "blobs")
-	if err := os.MkdirAll(folder, 0o755); err != nil {
-		return "", err
-	}
-	file, err := os.Create(filepath.Join(folder, name))
-	if err != nil {
-		return "", err
-	}
-	path := filepath.Join(folder, name)
-	stored := false
-	defer func() {
-		if err := file.Close(); err != nil {
-			logging.ErrorContext(ctx, "close blob", zap.Error(err))
-		}
-		if !stored {
-			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-				logging.ErrorContext(ctx, "remove incomplete blob", zap.Error(err))
-			}
-		}
-	}()
-	writer := &limitWriter{file: file, limit: maxBlobBytes, written: int64(n)}
-	if _, err := writer.Write(buf[:n]); err != nil {
-		return "", err
-	}
-	if _, err := io.Copy(writer, src); err != nil {
-		return "", err
-	}
-	stored = true
-	return name, nil
 }

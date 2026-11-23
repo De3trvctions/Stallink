@@ -10,11 +10,9 @@ reset-local:
 	@set -eu; \
 	stamp=$$(date +%Y%m%d%H%M%S); \
 	db_backup="/private/tmp/stallink-pre-reset-$$stamp.dump"; \
-	blobs_backup="/private/tmp/stallink-pre-reset-$$stamp-blobs.tar.gz"; \
 	docker exec postgres pg_dump -U postgres -Fc -d stallink > "$$db_backup"; \
-	tar -czf "$$blobs_backup" -C data blobs; \
-	chmod 600 "$$db_backup" "$$blobs_backup"; \
-	go run ./cmd/stallink reset-local -conf configs/local/stallink.yaml -confirm stallink -backup "$$db_backup" -blobs-backup "$$blobs_backup"
+	chmod 600 "$$db_backup"; \
+	go run ./cmd/stallink reset-local -conf configs/local/stallink.yaml -confirm stallink -backup "$$db_backup"
 
 seed-local:
 	go run ./cmd/stallink seed-local -conf configs/local/stallink.yaml

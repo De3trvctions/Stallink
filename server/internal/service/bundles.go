@@ -66,26 +66,23 @@ func (a *API) CreateBundle(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_bundle")
 		return
 	}
-	paths := make([]string, 0, 16)
-	bundleImages, err := saveGoodImages(a, r, bundleFiles)
+	upload := imageUpload{api: a, shopID: *account.ShopID}
+	bundleImages, err := upload.putCatalog(r.Context(), "bundle", bundleFiles)
 	if err != nil {
 		writeImageError(w, r, err)
 		return
 	}
-	paths = append(paths, bundleImages...)
 	components := make([]data.BundleComponentInput, 0, len(body.Components))
 	for _, component := range body.Components {
 		entry := data.BundleComponentInput{GoodID: component.GoodID, DraftKey: component.DraftKey, Quantity: component.Quantity}
 		if component.Draft != nil {
 			draft := *component.Draft
-			images, imageErr := saveGoodImages(a, r, componentFiles[component.DraftKey])
+			images, imageErr := upload.putCatalog(r.Context(), "good", componentFiles[component.DraftKey])
 			if imageErr != nil {
-				removeGoodImages(r.Context(), a.DataDir, paths)
 				writeImageError(w, r, imageErr)
 				return
 			}
 			draft.ImagePaths = images
-			paths = append(paths, images...)
 			entry.Draft = &draft
 		}
 		components = append(components, entry)
@@ -100,7 +97,6 @@ func (a *API) CreateBundle(w http.ResponseWriter, r *http.Request) {
 		IsListed: body.IsListed, ImagePaths: bundleImages, Approved: a.autoApprove(r.Context()),
 	})
 	if err != nil {
-		removeGoodImages(r.Context(), a.DataDir, paths)
 		writeDataErr(w, r, err)
 		return
 	}
@@ -166,25 +162,23 @@ func (a *API) UpdateBundle(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_bundle")
 		return
 	}
-	paths, err := saveGoodImages(a, r, files)
+	upload := imageUpload{api: a, shopID: *account.ShopID}
+	paths, err := upload.putCatalog(r.Context(), "bundle", files)
 	if err != nil {
 		writeImageError(w, r, err)
 		return
 	}
 	components := make([]data.BundleComponentInput, 0, len(body.Components))
-	allPaths := append([]string{}, paths...)
 	for _, component := range body.Components {
 		entry := data.BundleComponentInput{GoodID: component.GoodID, DraftKey: component.DraftKey, Quantity: component.Quantity}
 		if component.Draft != nil {
 			draft := *component.Draft
-			images, imageErr := saveGoodImages(a, r, componentFiles[component.DraftKey])
+			images, imageErr := upload.putCatalog(r.Context(), "good", componentFiles[component.DraftKey])
 			if imageErr != nil {
-				removeGoodImages(r.Context(), a.DataDir, allPaths)
 				writeImageError(w, r, imageErr)
 				return
 			}
 			draft.ImagePaths = images
-			allPaths = append(allPaths, images...)
 			entry.Draft = &draft
 		}
 		components = append(components, entry)
@@ -195,19 +189,14 @@ func (a *API) UpdateBundle(w http.ResponseWriter, r *http.Request) {
 	}
 	bundleID, valid := pathEntityID(w, r, "bundleID")
 	if !valid {
-		removeGoodImages(r.Context(), a.DataDir, allPaths)
 		return
 	}
-	oldPaths, err := a.DB.UpdateBundle(r.Context(), *account.ShopID, account.ID, bundleID, body.ExpectedRevision,
+	_, err = a.DB.UpdateBundle(r.Context(), *account.ShopID, account.ID, bundleID, body.ExpectedRevision,
 		data.BundleInput{Name: body.Name, Description: body.Description, EventID: body.EventID, Components: components,
 			UnitPriceMinor: body.UnitPriceMinor, PriceTiers: tiers, IsListed: body.IsListed, ImagePaths: paths}, body.ReplaceImages)
 	if err != nil {
-		removeGoodImages(r.Context(), a.DataDir, allPaths)
 		writeDataErr(w, r, err)
 		return
-	}
-	for _, path := range oldPaths {
-		removeBlob(r.Context(), a.DataDir, path)
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

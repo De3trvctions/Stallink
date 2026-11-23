@@ -1,12 +1,8 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
-	"io"
 	"mime/multipart"
-	"strconv"
 	"strings"
 
 	"github.com/De3trvctions/Stallink/internal/logging"
@@ -17,12 +13,13 @@ import (
 
 	"github.com/De3trvctions/Stallink/internal/catalog"
 	"github.com/De3trvctions/Stallink/internal/data"
+	"github.com/De3trvctions/Stallink/internal/imagestore"
 	"github.com/google/uuid"
 )
 
 const (
 	maxGoodImages       = 8
-	maxGoodImageBytes   = 6 << 20
+	maxGoodImageBytes   = imagestore.MaxUploadBytes
 	maxGoodUploadBytes  = 50 << 20
 	goodImageMemorySize = 8 << 20
 )
@@ -218,7 +215,8 @@ func (a *API) CreateGood(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_price_tiers")
 		return
 	}
-	imagePaths, err := saveGoodImages(a, r, files)
+	upload := imageUpload{api: a, shopID: *account.ShopID}
+	imagePaths, err := upload.putCatalog(r.Context(), "good", files)
 	if err != nil {
 		writeImageError(w, r, err)
 		return
@@ -230,7 +228,6 @@ func (a *API) CreateGood(w http.ResponseWriter, r *http.Request) {
 		ImagePaths: imagePaths, Approved: a.autoApprove(r.Context()),
 	})
 	if err != nil {
-		removeGoodImages(r.Context(), a.DataDir, imagePaths)
 		writeDataErr(w, r, err)
 		return
 	}
@@ -263,19 +260,18 @@ func (a *API) AddGoodImages(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "image_limit")
 		return
 	}
-	paths, err := saveGoodImages(a, r, files)
+	upload := imageUpload{api: a, shopID: *account.ShopID}
+	paths, err := upload.putCatalog(r.Context(), "good", files)
 	if err != nil {
 		writeImageError(w, r, err)
 		return
 	}
 	goodID, valid := pathEntityID(w, r, "goodID")
 	if !valid {
-		removeGoodImages(r.Context(), a.DataDir, paths)
 		return
 	}
 	ids, err := a.DB.AddGoodImages(r.Context(), *account.ShopID, account.ID, goodID, paths, a.autoApprove(r.Context()))
 	if err != nil {
-		removeGoodImages(r.Context(), a.DataDir, paths)
 		writeDataErr(w, r, err)
 		return
 	}
@@ -302,12 +298,11 @@ func (a *API) DeleteGoodImage(w http.ResponseWriter, r *http.Request) {
 	if !valid {
 		return
 	}
-	path, err := a.DB.DeleteGoodImage(r.Context(), *account.ShopID, account.ID, goodID, imageID, a.autoApprove(r.Context()))
+	_, err := a.DB.DeleteGoodImage(r.Context(), *account.ShopID, account.ID, goodID, imageID, a.autoApprove(r.Context()))
 	if err != nil {
 		writeDataErr(w, r, err)
 		return
 	}
-	removeBlob(r.Context(), a.DataDir, path)
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -332,53 +327,6 @@ func (a *API) ReorderGoodImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-}
-
-func writeImageError(w http.ResponseWriter, r *http.Request, err error) {
-	if errors.Is(err, data.ErrImageLimit) {
-		writeErr(w, http.StatusBadRequest, "image_limit")
-		return
-	}
-	if errors.Is(err, strconv.ErrSyntax) {
-		writeErr(w, http.StatusBadRequest, "invalid_image")
-		return
-	}
-	logging.ErrorContext(r.Context(), "store image upload", zap.Error(err))
-	writeErr(w, http.StatusInternalServerError, "image_storage_failed")
-}
-
-func saveGoodImages(a *API, r *http.Request, files []*multipart.FileHeader) ([]string, error) {
-	if len(files) > maxGoodImages {
-		return nil, data.ErrImageLimit
-	}
-	paths := make([]string, 0, len(files))
-	for _, header := range files {
-		if header.Size <= 0 || header.Size > maxGoodImageBytes {
-			removeGoodImages(r.Context(), a.DataDir, paths)
-			return nil, data.ErrImageLimit
-		}
-		file, err := header.Open()
-		if err != nil {
-			removeGoodImages(r.Context(), a.DataDir, paths)
-			return nil, err
-		}
-		path, saveErr := saveBlob(r.Context(), a.DataDir, io.Reader(file))
-		if closeErr := file.Close(); closeErr != nil {
-			logging.ErrorContext(r.Context(), "close good image upload", zap.Error(closeErr))
-		}
-		if saveErr != nil {
-			removeGoodImages(r.Context(), a.DataDir, paths)
-			return nil, saveErr
-		}
-		paths = append(paths, path)
-	}
-	return paths, nil
-}
-
-func removeGoodImages(ctx context.Context, dataDir string, paths []string) {
-	for _, path := range paths {
-		removeBlob(ctx, dataDir, path)
-	}
 }
 
 func (a *API) AddListing(w http.ResponseWriter, r *http.Request) {

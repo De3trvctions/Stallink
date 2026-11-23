@@ -7,16 +7,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/De3trvctions/Stallink/internal/auth"
 	"github.com/De3trvctions/Stallink/internal/data"
+	"github.com/De3trvctions/Stallink/internal/imagestore"
 	"github.com/De3trvctions/Stallink/internal/server"
 	"github.com/De3trvctions/Stallink/internal/service"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -65,10 +68,15 @@ func TestBundleDraftImagesCreateAndEdit(t *testing.T) {
 	if err := pool.QueryRow(ctx, `INSERT INTO events(shop_id,name,starts_on,ends_on,currency,status) VALUES($1,'event',CURRENT_DATE,CURRENT_DATE,'MYR','scheduled') RETURNING id::text`, shop).Scan(&event); err != nil {
 		t.Fatal(err)
 	}
-	dir := t.TempDir()
-	handler := server.NewHTTP(":0", "test", &service.API{DB: data.NewShopStore(pool), DataDir: dir, BundlesEnabled: true})
+	images := &testImageStore{files: make(map[string][]byte)}
+	handler := server.NewHTTP(":0", "test", &service.API{DB: data.NewShopStore(pool), Images: images, BundlesEnabled: true})
 	cookie := login(t, handler, "owner", "password123")
-	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0}
+	img := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	img.Set(0, 0, color.Black)
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, img); err != nil {
+		t.Fatal(err)
+	}
 	draft := func(key, name string) map[string]any {
 		return map[string]any{"draftKey": key, "quantity": 1, "draft": map[string]any{"name": name, "totalStock": 1, "listedQty": 1, "unitPriceMinor": 100, "isListed": true}}
 	}
@@ -83,7 +91,7 @@ func TestBundleDraftImagesCreateAndEdit(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := part.Write(png); err != nil {
+		if _, err := part.Write(encoded.Bytes()); err != nil {
 			t.Fatal(err)
 		}
 		if err := writer.Close(); err != nil {
@@ -107,12 +115,20 @@ func TestBundleDraftImagesCreateAndEdit(t *testing.T) {
 	if err := json.Unmarshal(created.Body.Bytes(), &result); err != nil {
 		t.Fatal(err)
 	}
-	var good, path string
-	if err := pool.QueryRow(ctx, `SELECT g.id::text,i.path FROM goods g JOIN good_images i ON i.good_id=g.id WHERE g.name='first'`).Scan(&good, &path); err != nil {
+	var good, imageID, path string
+	if err := pool.QueryRow(ctx, `SELECT g.id::text,i.id::text,i.path FROM goods g JOIN good_images i ON i.good_id=g.id WHERE g.name='first'`).Scan(&good, &imageID, &path); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := os.ReadFile(filepath.Join(dir, "blobs", path)); err != nil || !bytes.Equal(got, png) {
+	wantImage, err := images.Get(ctx, path)
+	if err != nil {
 		t.Fatalf("created image not saved: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/staff/goods/"+good+"/images/"+imageID, nil)
+	req.AddCookie(cookie)
+	preview := httptest.NewRecorder()
+	handler.ServeHTTP(preview, req)
+	if preview.Code != http.StatusOK || preview.Header().Get("Content-Type") != "image/png" || !bytes.Equal(preview.Body.Bytes(), wantImage) {
+		t.Fatalf("preview status=%d content-type=%q", preview.Code, preview.Header().Get("Content-Type"))
 	}
 	payload["expectedRevision"] = 1
 	payload["components"] = []any{map[string]any{"goodId": good, "quantity": 1}, draft("c", "third")}
@@ -123,7 +139,28 @@ func TestBundleDraftImagesCreateAndEdit(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT i.path FROM goods g JOIN good_images i ON i.good_id=g.id WHERE g.name='third'`).Scan(&path); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := os.ReadFile(filepath.Join(dir, "blobs", path)); err != nil || !bytes.Equal(got, png) {
+	if _, err := images.Get(ctx, path); err != nil {
 		t.Fatalf("updated image not saved: %v", err)
 	}
+}
+
+type testImageStore struct {
+	files map[string][]byte
+}
+
+func (s *testImageStore) Put(_ context.Context, shopID int64, kind, contentType string, content []byte) (string, error) {
+	if contentType != "image/png" {
+		return "", fmt.Errorf("unexpected image type %q", contentType)
+	}
+	ref := fmt.Sprintf("drive:shop-%d-%s-%d", shopID, kind, len(s.files)+1)
+	s.files[ref] = content
+	return ref, nil
+}
+
+func (s *testImageStore) Get(_ context.Context, reference string) ([]byte, error) {
+	content, found := s.files[reference]
+	if !found {
+		return nil, imagestore.ErrNotFound
+	}
+	return content, nil
 }

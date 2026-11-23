@@ -8,6 +8,8 @@ require (
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/nacos-group/nacos-sdk-go v1.1.6
 	go.uber.org/zap v1.15.0
+	golang.org/x/image v0.23.0
+	golang.org/x/oauth2 v0.36.0
 	google.golang.org/grpc v1.61.1
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
