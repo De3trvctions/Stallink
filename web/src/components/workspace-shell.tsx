@@ -11,6 +11,14 @@ type WorkspaceKind = "shop" | "sales" | "platform";
 type NavItem = { href: string; label: string; index: string };
 type NavGroup = { label: string; items: NavItem[] };
 
+const cashierGroup: NavGroup = {
+  label: "现场收银",
+  items: [
+    { href: "/counter", label: "现场开单", index: "POS" },
+    { href: "/counter/orders", label: "现场订单", index: "ORD" },
+  ],
+};
+
 const workspace = {
   shop: {
     label: "店铺工作台",
@@ -24,11 +32,9 @@ const workspace = {
         { href: "/admin/orders", label: "订单", index: "03" },
         { href: "/admin/reports", label: "销售日报", index: "04" },
       ] },
-      { label: "现场", items: [
-        { href: "/counter", label: "现场收银", index: "05" },
-        { href: "/admin/pay-codes", label: "收款方式", index: "06" },
-      ] },
+      cashierGroup,
       { label: "店铺", items: [
+        { href: "/admin/pay-codes", label: "收款方式", index: "06" },
         { href: "/admin/sales", label: "销售账号", index: "07" },
         { href: "/admin/shop", label: "店铺资料", index: "08" },
         { href: "/admin/audit", label: "操作记录", index: "09" },
@@ -39,12 +45,7 @@ const workspace = {
     label: "现场工作台",
     eyebrow: "STALLINK / POS",
     description: "开单、收款与交付",
-    groups: [
-      { label: "本场", items: [
-        { href: "/counter", label: "创建订单", index: "POS" },
-        { href: "/counter/orders", label: "本场订单", index: "ORD" },
-      ] },
-    ],
+    groups: [cashierGroup],
   },
   platform: {
     label: "平台工作台",
@@ -65,7 +66,8 @@ export function WorkspaceShell({ kind, children }: { kind: WorkspaceKind; childr
   const [checking, setChecking] = useState(true);
   const [authError, setAuthError] = useState(false);
   const [retry, setRetry] = useState(0);
-  const current = workspace[kind];
+  const [isShopAdmin, setIsShopAdmin] = useState(false);
+  const current = workspace[kind === "sales" && isShopAdmin ? "shop" : kind];
   const activeHref = current.groups
     .flatMap((group) => group.items.map((item) => item.href))
     .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
@@ -87,6 +89,7 @@ export function WorkspaceShell({ kind, children }: { kind: WorkspaceKind; childr
             ? role === "sales" || role === "shop_admin"
             : role === "platform_admin";
         if (allowed) {
+          setIsShopAdmin(role === "shop_admin");
           setChecking(false);
           return;
         }
