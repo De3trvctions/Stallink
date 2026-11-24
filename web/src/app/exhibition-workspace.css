@@ -1,0 +1,932 @@
+.workspace-sidebar__brand {
+  display: none;
+}
+
+.workspace-sidebar__identity,
+.workspace-nav__icon,
+.workspace-sidebar__logout {
+  display: none;
+}
+
+.audit-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem .75rem;
+  color: var(--muted);
+  font-size: .8rem;
+}
+
+@media screen {
+  [data-storefront-theme="exhibition"][data-surface="workspace"],
+  body:has(> [data-storefront-theme="exhibition"][data-surface="workspace"]) > .select-menu__panel {
+    color-scheme: light;
+    --canvas: #edf3f1;
+    --surface: #ffffff;
+    --surface-soft: #e2ece8;
+    --ink: #142e32;
+    --ink-soft: #345253;
+    --muted: #526c6d;
+    --accent: #215e58;
+    --accent-dark: #123b40;
+    --accent-soft: #dcebe3;
+    --accent-light: #d6ef9f;
+    --line: #d0dfda;
+    --line-strong: #8ca29d;
+    --warning: #a03a2b;
+  }
+
+  [data-storefront-theme="exhibition"][data-surface="workspace"] {
+    --workspace-rail: 224px;
+    --workspace-gutter: clamp(1rem, 3.4vw, 3rem);
+    --workspace-header: 0px;
+    --font-display: Georgia, "Songti SC", "Noto Serif SC", "STSong", serif;
+    --workspace-glass: linear-gradient(135deg, #fffffff5, #f4faf6e8);
+    --workspace-panel-border: 1px solid #dae5df;
+    --workspace-panel-shadow: 0 1px 2px #0f1f3310, 0 10px 26px #0f1f330d;
+    min-height: 100dvh;
+    background: radial-gradient(ellipse at 82% -6%, #d5e6df 0, transparent 46%), var(--canvas);
+    color: var(--ink);
+
+    > #main-content {
+      margin-inline-start: var(--workspace-rail);
+    }
+
+    &:not(:has(.workspace-shell)) > #main-content {
+      margin-inline-start: 0;
+    }
+
+    .workspace-shell {
+      display: block;
+      width: 100%;
+      min-height: 100dvh;
+      margin: 0;
+      overflow: visible;
+      border: 0;
+      background: transparent;
+    }
+
+    .workspace-sidebar {
+      position: fixed;
+      z-index: 21;
+      inset: 0 auto 0 0;
+      width: var(--workspace-rail);
+      display: flex;
+      flex-direction: column;
+      gap: .55rem;
+      padding: clamp(.7rem, 2vh, 1.25rem) .8rem .8rem;
+      overflow: hidden;
+      border: 0;
+      border-right: 1px solid #ffffff1f;
+      background: linear-gradient(180deg, #143e46, #123740 48%, #0e3036);
+      color: #ebf3ef;
+      box-shadow: 6px 0 24px #0b16281a;
+    }
+
+    .workspace-sidebar__brand {
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      min-height: 46px;
+      padding-inline: .35rem;
+      color: #fff;
+      text-decoration: none;
+    }
+
+    .workspace-sidebar__logo {
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      width: 30px;
+      height: 30px;
+      border-radius: 6px;
+      background: linear-gradient(150deg, #49827a, #215e58);
+      color: #fff;
+      font: 800 15px/1 Georgia, serif;
+      box-shadow: 0 4px 10px #215e5833;
+    }
+
+    .workspace-sidebar__wordmark {
+      display: grid;
+      gap: .12rem;
+      min-width: 0;
+    }
+
+    .workspace-sidebar__wordmark strong {
+      font: 800 .92rem/1 var(--font-ui);
+      letter-spacing: .04em;
+    }
+
+    .workspace-sidebar__wordmark small {
+      color: #b9cdc8;
+      font: 500 .64rem/1.2 var(--font-ui);
+      letter-spacing: .14em;
+    }
+
+    .workspace-sidebar__identity {
+      display: grid;
+      gap: .2rem;
+      margin: .1rem 0 .25rem;
+      padding: .7rem .6rem .75rem;
+      border: 1px solid #ffffff1a;
+      border-radius: .6rem;
+      background: #ffffff08;
+    }
+
+    .workspace-sidebar__identity strong {
+      font: 650 .95rem/1.3 var(--font-display);
+      letter-spacing: -.02em;
+    }
+
+    .workspace-sidebar__identity span {
+      color: #9fb2ce;
+      font: 500 .66rem/1.4 var(--font-ui);
+      letter-spacing: .03em;
+    }
+
+    .workspace-sidebar__heading {
+      padding: 0 .55rem .65rem;
+      border-color: #ffffff1f;
+    }
+
+    .workspace-sidebar__heading h2 {
+      margin: 0;
+      font: 600 .85rem/1.3 var(--font-ui);
+    }
+
+    .workspace-sidebar__heading {
+      display: none;
+    }
+
+    .workspace-nav__index {
+      display: none;
+    }
+
+    .workspace-nav__icon {
+      display: inline-flex;
+      flex: 0 0 17px;
+      width: 17px;
+      height: 17px;
+      border: 0;
+      border-radius: 0;
+      background: none;
+      color: #b8d1cb;
+    }
+
+    .workspace-nav__icon > svg {
+      width: 17px;
+      height: 17px;
+    }
+
+    .workspace-nav {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      gap: .5rem;
+      min-height: 0;
+      min-width: 0;
+      margin: 0;
+      padding: .15rem .15rem .25rem;
+      overflow: hidden auto;
+      overscroll-behavior: contain;
+      scrollbar-width: thin;
+      scrollbar-color: #88a9a3 transparent;
+    }
+
+    .workspace-nav__group {
+      display: grid;
+      flex-shrink: 0;
+      gap: .18rem;
+      margin: 0;
+      padding: .38rem .3rem;
+      border-top: 1px solid #ffffff1f;
+    }
+
+    .workspace-nav__group:first-child {
+      border-top-color: transparent;
+    }
+
+    .workspace-nav__group:has(> a[href="/counter"]) {
+      border: 1px solid #ffffff26;
+      border-radius: .55rem;
+      background: #ffffff0a;
+    }
+
+    .workspace-nav__label {
+      display: block;
+      padding: 0 .5rem .14rem;
+      color: #b8d1cb;
+      font: 550 .66rem/1.4 var(--font-ui);
+      letter-spacing: .04em;
+    }
+
+    .workspace-nav__link {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      min-height: 44px;
+      padding: .35rem .5rem;
+      border: 1px solid transparent;
+      border-radius: .38rem;
+      background: transparent;
+      color: #ebf3ef;
+      font-size: .84rem;
+      white-space: normal;
+    }
+
+    .workspace-nav__link[aria-current="page"] .workspace-nav__icon {
+      color: #fff;
+    }
+
+    .workspace-nav__link:hover {
+      background: #ffffff14;
+      color: #fff;
+    }
+
+    .workspace-nav__link[aria-current="page"] {
+      border-color: #aad0c966;
+      background: linear-gradient(100deg, #b5e2cc26, #d6f1e51f);
+      color: #fff;
+      box-shadow: inset 3px 0 #d8f69a;
+    }
+
+    .workspace-sidebar :focus-visible {
+      outline-color: var(--accent-light);
+      outline-offset: 0;
+    }
+
+    .workspace-sidebar__back {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      flex: 0 0 auto;
+      min-height: 44px;
+      margin: 0;
+      padding: .3rem .45rem;
+      border-color: #ffffff26;
+      color: #ebf3ef;
+      font-size: .7rem;
+    }
+
+    .workspace-sidebar__back:hover {
+      color: var(--accent-light);
+    }
+
+    .workspace-sidebar__logout {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      min-height: 36px;
+      margin: 0;
+      padding: .2rem .45rem;
+      border: 1px solid #ffffff26;
+      border-radius: .38rem;
+      background: transparent;
+      color: #c8d4ea;
+      font-size: .7rem;
+    }
+
+    .workspace-sidebar__logout:hover:not(:disabled) {
+      border-color: #d6ef9f66;
+      color: #fff;
+    }
+
+    .workspace-topbar {
+      display: none;
+    }
+
+    .workspace-page > main {
+      min-width: 0;
+      padding: clamp(1.35rem, 3vw, 2.65rem) var(--workspace-gutter) 3rem;
+    }
+
+    :is(.workspace-page > main > h1, .workspace-page__heading h1, .workspace-overview__heading h1) {
+      margin: 0;
+      font: 650 clamp(2.05rem, 4vw, 3.7rem)/1.15 var(--font-display);
+      letter-spacing: -.045em;
+      overflow-wrap: anywhere;
+    }
+
+    :is(.workspace-page > main > h1 + p, .workspace-page__heading h1 + p) {
+      font-size: .9rem;
+    }
+
+    .workspace-shell :is(
+      .workspace-page > main > form:not(.counter-form, .report-toolbar),
+      .counter-context, .counter-catalog, .counter-summary, .pay-dialog__panel,
+      .workspace-card, .report-sheet, .platform-shop-list, .workspace-rows,
+      .pay-code-list, .sales-list, .order-list, .review-shop, .event-goods-group,
+      .confirm-dialog, .workspace-tip
+    ) {
+      border: var(--workspace-panel-border);
+      border-radius: .8rem;
+      background: var(--workspace-glass);
+      box-shadow: var(--workspace-panel-shadow);
+    }
+
+    .workspace-shell :is(
+      .workspace-page > main > form:not(.counter-form, .report-toolbar),
+      .counter-context, .platform-shop-list, .workspace-rows, .pay-code-list,
+      .sales-list, .report-sheet, .review-shop, .event-goods-group
+    ) {
+      padding: clamp(.7rem, 2.2vw, 1.45rem);
+    }
+
+    .workspace-shell :is(.platform-shop-list, .workspace-rows, .pay-code-list, .sales-list) {
+      padding-block: .3rem;
+    }
+
+    .workspace-shell :is(.platform-shop-list, .workspace-rows, .pay-code-list, .sales-list, .review-good-list, .review-bundle-list) > li:last-child {
+      border-bottom: 0;
+    }
+
+    .workspace-card-grid {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+      gap: .75rem;
+      padding-top: .7rem;
+      border: 0;
+    }
+
+    .workspace-shell .workspace-card {
+      grid-template-columns: minmax(0, 1fr) auto;
+      padding: .9rem;
+    }
+
+    .workspace-shell .workspace-card:hover {
+      border-color: var(--line-strong);
+      background: var(--surface);
+    }
+
+    .workspace-shell .workspace-card__index {
+      display: none;
+    }
+
+    .workspace-shell .workspace-card h2 {
+      grid-column: 1;
+      font-weight: 650;
+    }
+
+    .workspace-shell .workspace-card__arrow {
+      grid-column: 2;
+    }
+
+    .workspace-shell .workspace-card p {
+      grid-column: 1 / -1;
+    }
+
+    .workspace-shell :is(.button, .select-menu__trigger, .counter-catalog-filter button, .counter-sheet__close) {
+      border-radius: .4rem;
+    }
+
+    .workspace-page :is(input:not([type="checkbox"], [type="radio"], [type="file"]), textarea, select) {
+      min-width: 0;
+      border-radius: .4rem;
+    }
+
+    .workspace-page :is(input, textarea)::placeholder {
+      color: #7183a0;
+    }
+
+    .workspace-page :is(.button--dark, .counter-submit):not(:disabled) {
+      border-color: var(--accent-dark);
+      background: var(--accent-dark);
+      color: #fff;
+    }
+
+    .workspace-page :is(.button--dark, .counter-submit):hover:not(:disabled) {
+      border-color: var(--accent);
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .workspace-page :is(.counter-catalog-filter button[data-active="true"], .review-filter button[data-active="true"]) {
+      border-color: var(--line-strong);
+      background: var(--accent-light);
+      color: var(--ink);
+    }
+
+    .counter-page .counter-context {
+      gap: .8rem;
+    }
+
+    .counter-page form button.counter-product {
+      gap: .5rem;
+      border-radius: .6rem;
+      background: var(--surface);
+    }
+
+    .counter-page form button.counter-product:disabled {
+      background: var(--surface-soft);
+    }
+
+    .counter-page form button.counter-product:has(.counter-product__count) {
+      border-color: var(--line-strong);
+      background: var(--accent-soft);
+    }
+
+    .counter-page .counter-product__count {
+      border-radius: 50%;
+      background: var(--accent-dark);
+    }
+
+    .counter-page .counter-product__copy {
+      flex: 1;
+      overflow-wrap: anywhere;
+    }
+
+    .counter-page .counter-product__copy strong {
+      font-family: var(--font-ui);
+      font-weight: 600;
+    }
+
+    .counter-page .counter-product__thumb {
+      border-radius: .38rem;
+    }
+
+    .counter-page .counter-summary {
+      top: calc(var(--workspace-header) + .8rem);
+    }
+
+    .workspace-shell :is(.goods-modal, .confirm-dialog, .pay-dialog__panel) {
+      border-radius: .85rem;
+    }
+
+    .workspace-shell .workspace-tip {
+      background: var(--accent-soft);
+    }
+
+    .workspace-shell .review-switch {
+      background: var(--surface);
+      border-color: var(--line);
+    }
+
+    .workspace-shell .review-switch__track {
+      border-radius: 999px;
+      border-color: var(--line-strong);
+      background: var(--surface-soft);
+    }
+
+    .workspace-shell .review-switch__track i {
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .workspace-shell .review-switch[aria-checked="true"] .review-switch__track {
+      border-color: var(--accent);
+      background: var(--accent);
+    }
+
+    .workspace-shell .review-switch[aria-checked="true"] .review-switch__track i {
+      background: #fff;
+    }
+
+    .workspace-shell .report-metric--lead {
+      background: #dcebe38f;
+    }
+
+    @media (max-width: 1080px) {
+      --workspace-rail: 152px;
+    }
+
+    @media (min-width: 1100px) and (max-width: 1330px) {
+      .counter-page .counter-products {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    @media (max-width: 1099px) {
+      .workspace-shell .counter-page .counter-summary {
+        inset: auto 0 0 var(--workspace-rail);
+        max-height: calc(100dvh - var(--workspace-header) - 1rem);
+        padding-inline: clamp(.65rem, 2.5vw, 1rem);
+        border-radius: .75rem .75rem 0 0;
+        background: var(--surface);
+      }
+
+      .counter-page .counter-bar {
+        left: var(--workspace-rail);
+        background: var(--surface);
+      }
+    }
+
+    @media (max-width: 760px) {
+      --workspace-rail: 74px;
+      --workspace-gutter: clamp(.55rem, 2.5vw, .95rem);
+
+      .workspace-sidebar {
+        gap: .35rem;
+        padding: .45rem .2rem .25rem;
+      }
+
+      .workspace-sidebar__brand {
+        justify-content: center;
+        padding-inline: .1rem;
+      }
+
+      .workspace-sidebar__wordmark {
+        display: none;
+      }
+
+      .workspace-sidebar__identity {
+        padding-inline: .25rem;
+        text-align: center;
+      }
+
+      .workspace-sidebar__identity strong {
+        font-size: .72rem;
+      }
+
+      .workspace-sidebar__identity span {
+        display: none;
+      }
+
+      .workspace-nav__icon {
+        display: none;
+      }
+
+      .workspace-sidebar__heading {
+        padding-inline: .1rem;
+        text-align: center;
+      }
+
+      .workspace-sidebar__heading h2 {
+        font-size: .65rem;
+      }
+
+      .workspace-nav__group {
+        padding-inline: .1rem;
+      }
+
+      .workspace-nav__label {
+        padding-inline: 0;
+        font-size: .6rem;
+        text-align: center;
+      }
+
+      .workspace-nav__link {
+        justify-content: center;
+        padding-inline: .1rem;
+        font-size: .72rem;
+        text-align: center;
+      }
+
+      .workspace-sidebar__back {
+        justify-content: center;
+        padding-inline: .1rem;
+        font-size: .64rem;
+        text-align: center;
+      }
+
+      .site-header__inner {
+        flex-wrap: wrap;
+        column-gap: .5rem;
+        row-gap: 0;
+      }
+
+      .site-header__actions :is(.header-link[href="/about"], .header-account) {
+        display: none;
+      }
+
+      .site-header__actions .header-logout {
+        width: fit-content;
+        min-height: 44px;
+      }
+
+      :is(.workspace-page > main > h1, .workspace-page__heading h1, .workspace-overview__heading h1) {
+        font-size: clamp(1.75rem, 6.5vw, 2.6rem);
+      }
+
+      .workspace-page :is(.sales-create-form, .sales-reset, .sales-row, .goods-form__dates) {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .workspace-page :is(.pay-code-row, .shop-link-preview, .pay-dialog__cash, .workspace-list-heading, .overview-actions) {
+        flex-wrap: wrap;
+      }
+
+      .workspace-page :is(.review-listing, .report-table li) {
+        overflow-wrap: anywhere;
+      }
+
+      .counter-page form button.counter-product {
+        min-height: 66px;
+        padding-inline: .45rem;
+      }
+
+      .counter-page .counter-product__thumb {
+        width: 43px;
+        height: 43px;
+        flex-basis: 43px;
+      }
+
+      .counter-page .counter-product__price {
+        max-width: 42%;
+        text-align: right;
+      }
+
+      .counter-page .counter-cart__line {
+        grid-template-columns: 34px minmax(0, 1fr) auto;
+      }
+
+      .counter-page .counter-cart__thumb {
+        width: 34px;
+        height: 34px;
+      }
+
+      .counter-page .counter-cart__amount {
+        grid-column: 2;
+        grid-row: 2;
+        text-align: left;
+      }
+    }
+  }
+}
+
+@media screen {
+  [data-storefront-theme="exhibition"][data-surface="workspace"] {
+    .workspace-shell .workspace-overview__heading {
+      max-inline-size: none;
+      padding: clamp(1rem, 3vw, 2rem);
+      border-radius: .85rem;
+      background: linear-gradient(115deg, #0e203a, #22467c);
+      color: #fff;
+    }
+
+    .workspace-overview__heading .eyebrow,
+    .workspace-overview__heading > p:last-child {
+      color: #d7e4fb;
+    }
+
+    .workspace-overview .overview-actions {
+      margin-block-start: .75rem;
+      padding: .7rem .85rem;
+      border: var(--workspace-panel-border);
+      border-radius: .65rem;
+      background: var(--surface);
+    }
+
+    .workspace-shell .workspace-card {
+      display: grid;
+      align-content: center;
+      gap: .35rem .6rem;
+      min-block-size: 7rem;
+    }
+
+    .workspace-card .workspace-card__arrow {
+      position: static;
+      align-self: center;
+      grid-row: 1;
+    }
+
+    .workspace-shell :is(.goods-search, .goods-view-tabs, .workspace-toolbar, .review-toolbar) {
+      min-inline-size: 0;
+    }
+
+    .workspace-shell :is(.workspace-toolbar, .review-toolbar) {
+      align-items: center;
+      padding: .65rem;
+      border: var(--workspace-panel-border);
+      border-radius: .65rem;
+      background: var(--surface);
+    }
+
+    .workspace-shell :is(.workspace-toolbar, .review-toolbar, .goods-view-tabs) button {
+      border-radius: .4rem;
+    }
+
+    .workspace-shell :is(.shop-link-preview, .platform-appearance, .pay-cash-toggle) {
+      flex-wrap: wrap;
+      padding: .85rem;
+      border: 1px solid var(--line);
+      border-radius: .6rem;
+      background: var(--accent-soft);
+    }
+
+    .workspace-shell .pay-code-form__row {
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+    }
+
+    .workspace-shell :is(.sales-list, .pay-code-list, .workspace-rows, .platform-shop-list, .order-list) {
+      gap: 0;
+      padding: 0;
+    }
+
+    .workspace-shell :is(.sales-row, .pay-code-row, .workspace-rows > li, .platform-shop-list > li) {
+      min-inline-size: 0;
+      padding: .85rem clamp(.7rem, 2vw, 1.15rem);
+      border: 0;
+      border-block-end: 1px solid var(--line);
+      background: transparent;
+    }
+
+    .workspace-shell :is(.platform-shop-list > li, .workspace-rows > li, .workspace-row__meta, .sales-row__actions) {
+      flex-wrap: wrap;
+    }
+
+    .workspace-shell :is(.sales-row__identity, .pay-code-row > div, .workspace-rows > li > div, .order-row__meta, .audit-row > div) {
+      min-inline-size: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .workspace-shell :is(.sales-row__avatar, .pay-code-row__thumb, .listing-admin-card__thumb, .review-bundle__component) {
+      border-radius: .4rem;
+    }
+
+    .workspace-shell :is(.order-row, .audit-row) {
+      padding: .95rem clamp(.7rem, 2.2vw, 1.35rem);
+    }
+
+    .workspace-shell .order-lines {
+      padding: .6rem .75rem;
+      border-radius: .45rem;
+      background: var(--surface-soft);
+    }
+
+    .workspace-shell .order-lines li > :first-child {
+      min-inline-size: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .workspace-shell .order-lines li > :last-child {
+      flex-shrink: 0;
+    }
+
+    .workspace-shell .order-row__totals {
+      min-inline-size: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .workspace-shell .order-row__totals > :first-child {
+      color: var(--ink);
+      font-weight: 650;
+    }
+
+    .workspace-shell .order-row__totals strong {
+      font-size: 1.05rem;
+    }
+
+    .workspace-shell .goods-card-grid {
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+    }
+
+    .workspace-shell :is(.listing-admin-list, .review-good-list, .review-bundle-list) {
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+    }
+
+    .workspace-shell :is(.goods-card, .listing-admin-card, .bundle-admin-card, .review-good, .review-bundle) {
+      border: 1px solid var(--line);
+      border-radius: .65rem;
+      background: var(--surface);
+    }
+
+    .workspace-shell .goods-card__media {
+      border-radius: .6rem .6rem 0 0;
+    }
+
+    .workspace-shell :is(.goods-card__name, .listing-admin-card__heading h3, .review-good__heading h3, .review-shop__heading h2) {
+      font-family: var(--font-ui);
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }
+
+    .workspace-shell :is(.goods-card__chips li, .listing-admin-card__heading, .review-shop__heading, .review-good__heading) {
+      flex-wrap: wrap;
+    }
+
+    .workspace-shell :is(.goods-card__chips li, .review-listing, .review-good__images a) {
+      border-radius: .35rem;
+    }
+
+    .workspace-shell :is(.appearance-options, .goods-card__chips li) {
+      min-inline-size: 0;
+    }
+
+    .workspace-shell .appearance-option {
+      min-inline-size: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .workspace-shell .appearance-option:has(input:checked) {
+      background: var(--accent-soft);
+    }
+
+    .workspace-shell .appearance-options {
+      margin-block: 0 1.15rem;
+    }
+
+    .workspace-shell :is(.goods-modal, .pay-dialog, .confirm-dialog)::backdrop {
+      background: #143e46a8;
+    }
+
+    .workspace-shell .goods-modal__panel {
+      scroll-padding-block-end: 5rem;
+    }
+
+    .workspace-shell .goods-modal__heading h1 {
+      overflow-wrap: anywhere;
+    }
+
+    .workspace-shell .goods-modal__footer {
+      bottom: calc(-1 * clamp(1rem, 3vw, 2rem));
+      background: var(--surface);
+    }
+
+    .workspace-shell :is(.listing-admin-section, .goods-image-editor, .goods-image-item, .goods-event-fields, .good-listing-editor, .tier-editor, .bundle-component-draft, .bundle-existing-picker) {
+      min-inline-size: 0;
+      border-radius: .55rem;
+    }
+
+    .workspace-shell :is(.goods-image-editor__heading, .goods-image-item figcaption, .goods-image-item figcaption > div, .good-listing-editor__heading) {
+      flex-wrap: wrap;
+    }
+
+    .workspace-shell .goods-image-item {
+      inline-size: min(100%, 8.5rem);
+    }
+
+    .workspace-shell .goods-modal .goods-image-item figcaption button {
+      min-inline-size: 2rem;
+      min-block-size: 2rem;
+      padding-inline: .3rem;
+    }
+
+    .workspace-shell .goods-modal .platform-form-divider {
+      color: var(--accent-dark);
+      font-weight: 650;
+    }
+
+    .workspace-shell .counter-context .field > label {
+      font-size: .8rem;
+    }
+
+    .workspace-shell .counter-product__price {
+      flex: 0 1 auto;
+      min-inline-size: 0;
+    }
+
+    .workspace-shell .counter-product__price :is(b, small) {
+      overflow-wrap: anywhere;
+    }
+
+    .workspace-shell .counter-cart__amount,
+    .workspace-shell .pay-dialog__head h1 {
+      overflow-wrap: anywhere;
+    }
+
+    .workspace-shell .pay-dialog__cash {
+      gap: .65rem;
+      padding: 1rem;
+      border-radius: .55rem;
+    }
+
+    @media (max-width: 1099px) {
+      .workspace-shell .counter-summary[data-open="true"] .counter-submit {
+        display: inline-flex;
+        justify-content: center;
+        inline-size: 100%;
+      }
+
+      .workspace-shell .counter-bar {
+        border-top: 1px solid var(--line);
+      }
+    }
+
+    @media (max-width: 600px) {
+      .workspace-shell .order-row__meta {
+        text-align: start;
+      }
+
+      .workspace-shell .goods-modal .tier-editor__row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .workspace-shell .goods-modal .tier-editor__remove {
+        grid-column: 1 / -1;
+        justify-self: start;
+      }
+
+      .workspace-shell .goods-modal__panel {
+        scroll-padding-block-end: 8rem;
+      }
+
+      .workspace-shell .counter-catalog-tools {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+
+    @media (max-height: 440px) {
+      .workspace-shell .goods-modal__footer {
+        position: static;
+      }
+    }
+
+    @media (pointer: coarse) {
+      .workspace-shell :is(.order-row__actions, .pay-code-row__actions, .sales-row__actions, .workspace-row__meta, .goods-card__foot) :is(.button, button),
+      .workspace-shell .counter-page .quantity-control button,
+      .workspace-shell .goods-modal .goods-image-item figcaption button {
+        min-block-size: 44px;
+        min-inline-size: 44px;
+      }
+    }
+  }
+}

@@ -47,6 +47,7 @@ export default function LoginPage() {
     <AuthLayout
       eyebrow="账号登录"
       title="欢迎回来"
+      exhibitionTitle="欢迎来逛展"
       description="登录后会根据你的账号权限打开对应页面。"
       footer={<>还没有账号？ <Link href="/register">创建顾客账号 <span aria-hidden="true">↗</span></Link></>}
     >
@@ -64,7 +65,9 @@ export default function LoginPage() {
             value={loginName}
             onChange={(event) => setLoginName(event.target.value)}
             placeholder="输入你的账号"
+            data-error="login-name-error"
           />
+          <span id="login-name-error" className="field__validity">错误：请输入账号。</span>
         </label>
         <div className="field">
           <label className="field__label" htmlFor="login-password">密码</label>
@@ -78,6 +81,7 @@ export default function LoginPage() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="输入你的密码"
+              data-error="login-password-error"
             />
             <button
               type="button"
@@ -89,6 +93,7 @@ export default function LoginPage() {
               {showPassword ? "隐藏" : "显示"}
             </button>
           </span>
+          <span id="login-password-error" className="field__validity">错误：请输入密码。</span>
         </div>
         {error ? <p className="form-message form-message--error" role="alert">{error}</p> : null}
         <button className="button button--dark auth-form__submit" type="submit" disabled={pending}>

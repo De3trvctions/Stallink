@@ -1,0 +1,33 @@
+.appearance-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: 1rem;
+  padding: 0;
+  margin: 2rem 0 1.25rem;
+  border: 0;
+  max-width: 52rem;
+}
+.appearance-option {
+  display: flex;
+  flex-direction: column;
+  padding: .65rem;
+  border: 1px solid var(--line);
+  border-radius: .65rem;
+  background: var(--surface);
+  cursor: pointer;
+}
+.appearance-option:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.appearance-option:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 3px; }
+.appearance-preview { position: relative; overflow: hidden; display: flex; align-items: center; min-height: 8.5rem; border-radius: .25rem; }
+.appearance-preview b { position: relative; line-height: 1; }
+.appearance-classic { background: #f5f1e8; color: #17181b; padding: 1.1rem; }
+.appearance-classic i { position: absolute; inset: .85rem 1.1rem; border-block: 1px solid #aaa59b; }
+.appearance-classic b { font: bold clamp(2rem, 3.5vw, 3.6rem) Georgia, serif; }
+.appearance-exhibition { padding: 1rem 1rem 1rem 2.5rem; background: linear-gradient(80deg, #101412dd, transparent), url('/images/artist-alley-booth.webp') center/cover; color: #d3ff65; }
+.appearance-exhibition i { position: absolute; inset: 0 auto 0 0; width: 1.1rem; background: #151817; border-right: 1px solid #aaa9; }
+.appearance-exhibition b { font: italic 900 clamp(1.9rem, 3.5vw, 3.6rem)/.9 Arial, sans-serif; letter-spacing: -.07em; }
+.appearance-label { display: flex; align-items: center; gap: .6rem; margin: 1rem .35rem .3rem; }
+.appearance-label input { accent-color: var(--accent); }
+.appearance-label small { margin-inline-start: auto; color: var(--accent); }
+.appearance-detail { margin: .2rem .35rem .55rem; font-size: .88rem; color: var(--muted); }
+.appearance-actions { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }

@@ -10,7 +10,6 @@ import { messageClass, useMessage } from "@/lib/message";
 import { clearPendingOrderCommand, sendOrderCommand } from "@/lib/order-command";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ListControls, usePagedList } from "@/components/paged-list";
-import { WorkspaceShell } from "@/components/workspace-shell";
 
 type StatusFilter = "all" | StaffOrder["status"];
 
@@ -61,7 +60,7 @@ export default function CounterOrdersPage() {
   const pendingCancel = confirmTarget?.order.id === pendingId;
 
   return (
-    <WorkspaceShell kind="sales">
+    <>
     <main className="workspace-page">
       <header className="workspace-page__heading">
         <p className="eyebrow">订单记录</p>
@@ -105,7 +104,7 @@ export default function CounterOrdersPage() {
                 </div>
                 <div className="order-row__meta">
                   <span>{order.eventName || "活动商品"}</span>
-                  <span>{new Date(order.createdAt).toLocaleString("zh-CN")}</span>
+                  <time dateTime={order.createdAt}>{new Date(order.createdAt).toLocaleString("zh-CN")}</time>
                 </div>
               </div>
               {order.boothName ? <p className="order-row__booth">顾客称呼：{order.boothName}</p> : null}
@@ -184,6 +183,6 @@ export default function CounterOrdersPage() {
         onCancel={() => setConfirmTarget(null)}
       />
     </main>
-    </WorkspaceShell>
+    </>
   );
 }

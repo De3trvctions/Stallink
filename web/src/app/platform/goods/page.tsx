@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { SafeImage } from "@/components/safe-image";
 import { useRouter } from "next/navigation";
-import { WorkspaceShell } from "@/components/workspace-shell";
 import { browserJSON } from "@/lib/api";
 import { describeRequest } from "@/lib/errors";
 import { messageClass, useMessage } from "@/lib/message";
@@ -157,7 +156,7 @@ export default function PlatformGoodsPage() {
   }
 
   return (
-    <WorkspaceShell kind="platform">
+    <>
       <main className="platform-review-page">
         <p className="eyebrow">平台内容管理</p>
         <h1>商品审核</h1>
@@ -165,14 +164,14 @@ export default function PlatformGoodsPage() {
         <div className="review-toolbar">
           <div className="review-filter" role="group" aria-label="筛选审核状态">
             {(["pending", "approved", "rejected", "all"] as const).map((value) => (
-              <button key={value} type="button" data-active={filter === value} onClick={() => setFilter(value)}>
+              <button key={value} type="button" data-active={filter === value} aria-pressed={filter === value} onClick={() => setFilter(value)}>
                 {value === "all" ? "全部" : statusText[value]}
                 {value === "pending" ? <span>{pendingCount}</span> : null}
               </button>
             ))}
           </div>
           <div className="review-filter" role="group" aria-label="筛选商品类型">
-            {(["all", "good", "bundle"] as const).map((value) => <button key={value} type="button" data-active={kindFilter === value} onClick={() => setKindFilter(value)}>
+            {(["all", "good", "bundle"] as const).map((value) => <button key={value} type="button" data-active={kindFilter === value} aria-pressed={kindFilter === value} onClick={() => setKindFilter(value)}>
               {value === "all" ? "全部类型" : value === "good" ? "单品" : "套餐"}
             </button>)}
           </div>
@@ -289,6 +288,6 @@ export default function PlatformGoodsPage() {
           </div>
         )}
       </main>
-    </WorkspaceShell>
+    </>
   );
 }

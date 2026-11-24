@@ -1,8 +1,22 @@
 import type { PriceTier } from "@/lib/pricing";
 import { hasValidEntityIds, isEntityId } from "@/lib/entity-id";
+import { appearancePath, isStorefrontTheme, type StorefrontTheme } from "@/lib/storefront-theme";
 
 export function apiOrigin() {
   return process.env.API_ORIGIN ?? "http://127.0.0.1:8080";
+}
+
+export async function getStorefrontTheme(): Promise<StorefrontTheme> {
+  try {
+    const res = await fetch(`${apiOrigin()}${appearancePath}`, { cache: "no-store", signal: AbortSignal.timeout(2500) });
+    if (res.ok) {
+      const data = await res.json();
+      if (isStorefrontTheme(data.theme)) return data.theme;
+    }
+  } catch {
+    // Keep the site available if the appearance service is temporarily offline.
+  }
+  return "classic";
 }
 
 export type RequestCategory =

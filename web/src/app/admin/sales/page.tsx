@@ -88,11 +88,13 @@ export default function SalesPage() {
       <form className="sales-create-form" onSubmit={createSales}>
         <label className="field" htmlFor="sales-login">
           <span>登录名</span>
-          <input id="sales-login" autoComplete="off" required value={loginName} onChange={(event) => setLoginName(event.target.value)} placeholder="例如：booth-helper" />
+          <input id="sales-login" autoComplete="off" required value={loginName} onChange={(event) => setLoginName(event.target.value)} placeholder="例如：booth-helper" data-error="sales-login-error" />
+          <span id="sales-login-error" className="field__validity">错误：请填写登录名。</span>
         </label>
         <label className="field" htmlFor="sales-password">
           <span>初始密码 <small>至少 8 位</small></span>
-          <input id="sales-password" type="password" autoComplete="new-password" minLength={8} maxLength={72} required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="设置临时密码" />
+          <input id="sales-password" type="password" autoComplete="new-password" minLength={8} maxLength={72} required value={password} onChange={(event) => setPassword(event.target.value)} placeholder="设置临时密码" data-error="sales-password-error" />
+          <span id="sales-password-error" className="field__validity">错误：初始密码至少需要 8 个字符。</span>
         </label>
         <button className="button button--dark" type="submit" disabled={pending}>{pending ? "正在创建…" : "创建销售账号"}</button>
       </form>
@@ -125,7 +127,8 @@ export default function SalesPage() {
                 <form className="sales-reset" onSubmit={(event) => savePassword(event, person)}>
                   <label className="field" htmlFor={`reset-${person.id}`}>
                     <span>为 {person.loginName} 设置新密码</span>
-                    <input id={`reset-${person.id}`} type="password" autoComplete="new-password" minLength={8} maxLength={72} required value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} placeholder="至少 8 位" />
+                    <input id={`reset-${person.id}`} type="password" autoComplete="new-password" minLength={8} maxLength={72} required value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} placeholder="至少 8 位" data-error={`reset-${person.id}-error`} />
+                    <span id={`reset-${person.id}-error`} className="field__validity">错误：新密码至少需要 8 个字符。</span>
                   </label>
                   <button className="button button--dark" type="submit">保存新密码</button>
                 </form>

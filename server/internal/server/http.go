@@ -105,6 +105,8 @@ func NewHTTP(addr, serviceName string, api *service.API) *khttp.Server {
 	route(r, http.MethodPatch, "/api/platform/bundles/{bundleID}/review", api.ReviewBundle, "bundleID")
 	route(r, http.MethodGet, "/api/platform/review/auto-approve", api.AutoApproveSetting)
 	route(r, http.MethodPatch, "/api/platform/review/auto-approve", api.SetAutoApproveSetting)
+	route(r, http.MethodGet, "/api/platform/appearance", api.PlatformAppearance)
+	route(r, http.MethodPut, "/api/platform/appearance", api.SetPlatformAppearance)
 	return srv
 }
 
@@ -123,6 +125,8 @@ func route(r *khttp.Router, method, path string, h http.HandlerFunc, keys ...str
 		r.GET(path, handler)
 	case http.MethodPost:
 		r.POST(path, handler)
+	case http.MethodPut:
+		r.PUT(path, handler)
 	case http.MethodPatch:
 		r.PATCH(path, handler)
 	case http.MethodDelete:

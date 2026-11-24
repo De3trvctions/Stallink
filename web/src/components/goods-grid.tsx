@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SafeImage } from "@/components/safe-image";
+import { ShelfCopy } from "@/components/shelf-copy";
 import type { BoothEvent, BundleOffer, Good } from "@/lib/api";
 import { formatMoney, lowestUnitRate } from "@/lib/pricing";
 
@@ -47,17 +48,16 @@ export function GoodsGrid({ slug, goods, showEventName = true }: { slug: string;
               ) : placeholder}
               {soldOut ? <span className="product-card__soldout-badge">售罄</span> : null}
             </figure>
-            <div className="product-card__info">
-              <h3>{good.name}</h3>
-              {showEventName ? <p>{good.eventName}</p> : null}
-              <div className="product-card__meta">
-                <span className="product-card__price">
-                  {offers.length > 0 ? <>{formatMoney(good.currency, Math.round(lowestUnitRate(good.unitPriceMinor, offers)))}<em className="product-card__from">起</em></> : good.priceLabel}
-                </span>
-                <span className="product-card__stock">{soldOut ? "售罄" : `余 ${good.remaining}`}</span>
-              </div>
-              {offers.length > 0 ? <small className="product-card__bundle">{offers.map((tier) => `${tier.quantity} 件 ${formatMoney(good.currency, tier.totalPriceMinor)}`).join(" · ")}</small> : null}
-            </div>
+            <ShelfCopy
+              title={good.name}
+              eventLine={showEventName ? good.eventName : undefined}
+              classicPrice={offers.length > 0 ? <>{formatMoney(good.currency, Math.round(lowestUnitRate(good.unitPriceMinor, offers)))}<em className="product-card__from">起</em></> : good.priceLabel}
+              unitPrice={good.priceLabel}
+              remaining={good.remaining}
+              soldOut={soldOut}
+              tier={offers[0] ? `${offers[0].quantity} 件一组 ${formatMoney(good.currency, offers[0].totalPriceMinor)}` : null}
+              classicExtra={offers.length > 0 ? <small className="classic-intro product-card__bundle">{offers.map((tier) => `${tier.quantity} 件 ${formatMoney(good.currency, tier.totalPriceMinor)}`).join(" · ")}</small> : null}
+            />
           </Link>
           </li>
         );
@@ -72,6 +72,7 @@ export function BundlesGrid({ slug, bundles }: { slug: string; bundles: BundleOf
     <ul className="bundle-grid">
       {bundles.map((bundle) => {
         const images = bundle.images?.length ? bundle.images : bundle.components.flatMap((component) => component.images ?? []).slice(0, 6);
+        const singleMinor = bundle.components.reduce((sum, component) => sum + component.unitPriceMinor * component.quantity, 0);
         return <li className="bundle-card" key={bundle.bundleListingId}>
           <Link href={`/c/${slug}/bundles/${bundle.bundleListingId}`} className="bundle-card__link">
             <div className="bundle-card__media" aria-label={`${bundle.name}套餐图片`}>
@@ -80,12 +81,15 @@ export function BundlesGrid({ slug, bundles }: { slug: string; bundles: BundleOf
               {bundle.remaining <= 0 ? <span className="bundle-card__soldout">暂时售罄</span> : null}
             </div>
             <div className="bundle-card__body">
-              <p className="eyebrow">{bundle.eventName} · 固定套餐</p>
+              <span className="exhibition-only product-card__tag">套餐</span>
+              <p className="classic-intro eyebrow">{bundle.eventName} · 固定套餐</p>
               <h3>{bundle.name}</h3>
-              {bundle.description ? <p className="bundle-card__description">{bundle.description}</p> : null}
-              <p className="bundle-card__components">{bundle.components.map((component) => `${component.name} × ${component.quantity}`).join(" · ")}</p>
-              <div className="bundle-card__price"><strong>{bundle.priceLabel}</strong><span>{bundle.remaining > 0 ? `${bundle.remaining} 套可售` : "等商品补货"}</span></div>
-              {bundle.priceTiers?.length ? <small className="bundle-card__tiers">多套优惠：{bundle.priceTiers.map((tier) => `${tier.quantity} 套 ${formatMoney(bundle.currency, tier.totalPriceMinor)}`).join(" · ")}</small> : null}
+              {bundle.description ? <p className="classic-intro bundle-card__description">{bundle.description}</p> : null}
+              <p className="classic-intro bundle-card__components">{bundle.components.map((component) => `${component.name} × ${component.quantity}`).join(" · ")}</p>
+              <div className="bundle-card__price"><strong>{bundle.priceLabel}</strong><span className="classic-intro">{bundle.remaining > 0 ? `${bundle.remaining} 套可售` : "等商品补货"}</span></div>
+              {singleMinor > bundle.unitPriceMinor ? <p className="exhibition-only product-card__tier">单买 {formatMoney(bundle.currency, singleMinor)}</p> : null}
+              <p className="exhibition-only product-card__stockline">{bundle.remaining > 0 ? `余 ${bundle.remaining}` : "售罄"} · 全店共用</p>
+              {bundle.priceTiers?.length ? <small className="classic-intro bundle-card__tiers">多套优惠：{bundle.priceTiers.map((tier) => `${tier.quantity} 套 ${formatMoney(bundle.currency, tier.totalPriceMinor)}`).join(" · ")}</small> : null}
             </div>
           </Link>
         </li>;

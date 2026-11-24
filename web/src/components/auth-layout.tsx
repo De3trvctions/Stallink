@@ -8,6 +8,8 @@ export function AuthLayout({
   children,
   footer,
   register = false,
+  profile = false,
+  exhibitionTitle,
 }: {
   eyebrow: string;
   title: string;
@@ -15,9 +17,11 @@ export function AuthLayout({
   children: ReactNode;
   footer: ReactNode;
   register?: boolean;
+  profile?: boolean;
+  exhibitionTitle?: string;
 }) {
   return (
-    <main className={`auth-page${register ? " auth-page--register" : ""}`}>
+    <main className={`auth-page${register ? " auth-page--register" : ""}${profile ? " exhibition-profile" : ""}`}>
       <aside className="auth-story" aria-label="关于 Stallink">
         <Link href="/" className="auth-story__brand"><span>s.</span>Stallink</Link>
         <div className="auth-story__copy">
@@ -31,7 +35,7 @@ export function AuthLayout({
         <div className="auth-panel__top"><span>{eyebrow}</span><Link href="/">返回首页</Link></div>
         <div className="auth-panel__body">
           <div className="auth-panel__heading">
-            <h1>{title}</h1>
+            <h1>{exhibitionTitle ? <><span className="classic-intro">{title}</span><span className="exhibition-only">{exhibitionTitle}</span></> : title}</h1>
             <p>{description}</p>
           </div>
           {children}

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Booth } from "@/lib/api";
 import { SafeImage } from "@/components/safe-image";
 import { BundlesGrid, EventList, GoodsGrid } from "@/components/goods-grid";
@@ -58,7 +59,7 @@ export function BoothView({ booth }: { booth: Booth }) {
           <div className="ed-pass">
             <div className="ed-pass__body">
               <span className="ed-pass__label">
-                {activeEvent ? (isLive ? "本场摊位 / 进行中" : "下一场活动") : "摊位信息"}
+                {activeEvent ? (activeEvent.status === "live" ? "本场摊位 / 进行中" : "即将开展") : "摊位信息"}
               </span>
               <div className="ed-pass__name">{activeEvent ? activeEvent.name : "线上浏览，现场见面"}</div>
               <div className="ed-pass__meta">
@@ -78,6 +79,7 @@ export function BoothView({ booth }: { booth: Booth }) {
           <div className="ed-store__actions">
             <a className="ed-link" href="#goods">看本场商品 ↓</a>
             <span className="ed-mono">{booth.goods.length} 件 / 现场自取</span>
+            {activeEvent ? <Link className="exhibition-only exhibition-action" href={`/c/${booth.slug}/events/${activeEvent.id}`}>查看活动 <span aria-hidden="true">↗</span></Link> : null}
           </div>
         </div>
 
@@ -99,10 +101,7 @@ export function BoothView({ booth }: { booth: Booth }) {
               </div>
             )}
           </div>
-          <figcaption className="ed-placard">
-            <strong>{featuredGood ? `本场主推 / ${featuredGood.name}` : "摊位主视觉待上传"}</strong>
-            <span>{isLive ? "LIVE" : "NEXT"}</span>
-          </figcaption>
+          {featuredGood ? <figcaption className="ed-placard"><strong>{featuredGood.name}</strong></figcaption> : null}
         </figure>
       </section>
 
@@ -117,15 +116,15 @@ export function BoothView({ booth }: { booth: Booth }) {
         {sections.length === 0 ? (
           <div className="empty-state">
             <span className="empty-state__mark" aria-hidden="true">✳</span>
-            <p>当前没有在售活动，新的场次上架后会出现在这里。</p>
+            <p>摊位暂未上架单件商品。</p>
           </div>
         ) : sections.map((section) => (
           <section className="ed-event-shelf" id={`event-${section.id}`} key={section.id}>
             <div className="ed-shelf__head">
               <div>
-                <h2>{section.name}{section.id === featuredEventId ? <em className="ed-shelf__flag">主推</em> : null}</h2>
+                <h3>{section.name}{section.id === featuredEventId ? <em className="ed-shelf__flag">主推</em> : null}</h3>
                 <p className="ed-shelf__meta">
-                  {section.status === "live" ? "现场进行中" : "即将开始"}
+                  {section.status === "live" ? "现场进行中" : section.status === "ended" ? "已结束" : "即将开始"}
                   {section.place ? ` · ${section.place}` : ""}
                   {section.boothNumber ? ` · 摊位 ${section.boothNumber}` : ""}
                   {section.dates ? ` · ${section.dates}` : ""}

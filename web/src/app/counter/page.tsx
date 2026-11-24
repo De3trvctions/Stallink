@@ -9,7 +9,6 @@ import { formatMoney, majorToMinor, type PriceTier } from "@/lib/pricing";
 import { clearCounterDraft, clearPendingCounterOrder, loadCounterDraft, loadPendingCounterOrder, saveCounterDraft, savePendingCounterOrder, type CounterDraftScope } from "@/lib/counter-draft";
 import { clearPendingOrderCommand, newClientOrderId, pendingOrderCommand, sendOrderCommand } from "@/lib/order-command";
 import { messageClass, useMessage } from "@/lib/message";
-import { WorkspaceShell } from "@/components/workspace-shell";
 import SelectMenu from "@/components/select-menu";
 
 type EventRow = { id: string; name: string; boothNumber: string; currency: string; status?: string; endsOn?: string };
@@ -149,6 +148,22 @@ export default function CounterPage() {
   }, [catalogNotice, catalogNoticeVersion]);
 
   const [payOpen, setPayOpen] = useState(false);
+  const payDialogRef = useRef<HTMLDialogElement>(null);
+  const receiptDialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = payDialogRef.current;
+    if (!dialog) return;
+    if (payOpen && !dialog.open) dialog.showModal();
+    if (!payOpen && dialog.open) dialog.close();
+  }, [payOpen]);
+
+  useEffect(() => {
+    const dialog = receiptDialogRef.current;
+    if (!dialog) return;
+    if (paidReceipt && !dialog.open) dialog.showModal();
+    if (!paidReceipt && dialog.open) dialog.close();
+  }, [paidReceipt]);
   const [loadedDraftKey, setLoadedDraftKey] = useState("");
   const quoteRequest = useRef(0);
   const catalogSignature = useRef("");
@@ -770,7 +785,7 @@ export default function CounterPage() {
   const cashInvalid = activePayCode?.kind === "cash" && (cashReceivedMinor === null || cashReceivedMinor < orderTotalMinor);
 
   return (
-    <WorkspaceShell kind="sales">
+    <>
       <main className="counter-page">
         <p className="eyebrow">现场收银</p>
         <h1>创建订单</h1>
@@ -780,12 +795,13 @@ export default function CounterPage() {
         ) : null}
         <form className="counter-form" onSubmit={place}>
           <div className="counter-context">
-            <label className="field"><span>活动场次</span>
-              <SelectMenu value={eventId} placeholder="选择活动" ariaLabel="活动场次" options={events.map((event) => ({ value: event.id, label: `${event.name}${event.boothNumber ? ` · ${event.boothNumber}` : ""}${event.status === "live" ? "（进行中）" : event.status === "ended" ? "（已结束）" : ""}` }))} onChange={switchEvent} />
+            <div className="field">
+              <label htmlFor="counter-event">活动场次</label>
+              <SelectMenu id="counter-event" value={eventId} placeholder="选择活动" options={events.map((event) => ({ value: event.id, label: `${event.name}${event.boothNumber ? ` · ${event.boothNumber}` : ""}${event.status === "live" ? "（进行中）" : event.status === "ended" ? "（已结束）" : ""}` }))} onChange={switchEvent} />
               {liveEvents.length > 1 ? <div className="counter-event-chips" role="group" aria-label="进行中的活动">
                 {liveEvents.map((event) => <button type="button" key={event.id} data-active={event.id === eventId} aria-pressed={event.id === eventId} onClick={() => switchEvent(event.id)}>{event.name}{event.boothNumber ? ` · ${event.boothNumber}` : ""}</button>)}
               </div> : null}
-            </label>
+            </div>
             <label className="field"><span>顾客称呼 <small>选填</small></span>
               <input value={boothName} onChange={(change) => setBoothName(change.target.value)} placeholder="方便现场叫号" />
             </label>
@@ -848,7 +864,7 @@ export default function CounterPage() {
               ) : null}
             </section>
 
-            <aside className="counter-summary" aria-label="订单实时预览" aria-busy={quoteLoading} data-open={cartOpen}>
+            <aside id="counter-summary" className="counter-summary" aria-label="订单实时预览" aria-busy={quoteLoading} data-open={cartOpen}>
               <div className="counter-summary__heading">
                 <div><p className="eyebrow">购物车</p><h2>订单预览</h2></div>
                 <span>{selectedCount} 件</span>
@@ -907,7 +923,7 @@ export default function CounterPage() {
             </aside>
           </div>
           <div className="counter-bar">
-            <button type="button" className="counter-bar__summary" onClick={() => setCartOpen(true)}>
+            <button type="button" className="counter-bar__summary" aria-controls="counter-summary" aria-expanded={cartOpen} onClick={() => setCartOpen(true)}>
               <span className="counter-bar__count">已选 {selectedCount} 件 · 查看明细</span>
               <strong>{quoteLoading ? "正在计价…" : quote ? formatMoney(currency, quote.totalMinor) : "-"}</strong>
             </button>
@@ -926,12 +942,17 @@ export default function CounterPage() {
           </section>
         ) : null}
 
-        {orderId && payOpen ? (
-          <div className="pay-dialog" role="dialog" aria-modal="true" aria-labelledby="pay-dialog-title">
+        <dialog
+          ref={payDialogRef}
+          className="pay-dialog"
+          aria-labelledby="pay-dialog-title"
+          onCancel={(event) => { if (submitting) event.preventDefault(); }}
+          onClose={() => setPayOpen(false)}
+        >
             <div className="pay-dialog__panel">
               <header className="pay-dialog__head">
-                <div><p className="eyebrow">待付款 · {activePayCode?.kind === "cash" ? "收取现金" : "请顾客扫码"}</p><h2 id="pay-dialog-title">订单 {orderNumber}</h2></div>
-                <button type="button" className="pay-dialog__close" aria-label="稍后处理这笔订单" disabled={submitting} onClick={() => setPayOpen(false)}>×</button>
+                <div><p className="eyebrow">待付款 · {activePayCode?.kind === "cash" ? "收取现金" : "请顾客扫码"}</p><h1 id="pay-dialog-title">订单 {orderNumber}</h1></div>
+                <button type="button" className="pay-dialog__close" aria-label="稍后处理这笔订单" disabled={submitting} onClick={() => payDialogRef.current?.close()}>×</button>
               </header>
               <strong className="pay-dialog__amount">{orderPriceLabel}</strong>
               {resumedOrder ? <p className="counter-reservation-note">收款后当前购物车会保留，请检查其中商品，避免重复开单。</p> : null}
@@ -961,32 +982,37 @@ export default function CounterPage() {
                 : <p className="counter-reservation-note">此订单暂未设置库存预留期限。</p>}
               <div className="pay-dialog__actions">
                 <button className="button button--dark" type="button" disabled={submitting || !payCodeId || cashInvalid} onClick={confirm}>{submitting ? "正在确认…" : "顾客已付款，扣减库存"}</button>
-                <button className="button button--outline" type="button" disabled={submitting} onClick={() => setPayOpen(false)}>稍后处理</button>
+                <button className="button button--outline" type="button" disabled={submitting} onClick={() => payDialogRef.current?.close()}>稍后处理</button>
                 <button className="text-link" type="button" disabled={submitting} onClick={unpaid}>顾客未付，保留待付款</button>
               </div>
             </div>
-          </div>
-        ) : null}
+        </dialog>
 
-        {paidReceipt ? (
-          <div className="pay-dialog" role="dialog" aria-modal="true" aria-labelledby="receipt-title">
+        <dialog
+          ref={receiptDialogRef}
+          className="pay-dialog"
+          aria-labelledby="receipt-title"
+          onCancel={(event) => { if (fulfilling) event.preventDefault(); }}
+          onClose={() => setPaidReceipt(null)}
+        >
+          {paidReceipt ? (
             <div className="pay-dialog__panel pay-receipt">
               <header className="pay-dialog__head">
-                <div><p className="eyebrow">收款成功</p><h2 id="receipt-title">取货凭证</h2></div>
-                <button type="button" className="pay-dialog__close" aria-label="关闭凭证" disabled={fulfilling} onClick={() => setPaidReceipt(null)}>×</button>
+                <div><p className="eyebrow">收款成功</p><h1 id="receipt-title">取货凭证</h1></div>
+                <button type="button" className="pay-dialog__close" aria-label="关闭凭证" disabled={fulfilling} onClick={() => receiptDialogRef.current?.close()}>×</button>
               </header>
               <p className="pay-receipt__hint">请把下面的订单号交给店员核对取货</p>
               <strong className="pay-receipt__number">{paidReceipt.number}</strong>
               <p className="pay-receipt__amount">{formatMoney(paidReceipt.currency, paidReceipt.totalMinor)}</p>
               <div className="pay-dialog__actions">
                 <button className="button button--dark" type="button" disabled={fulfilling} onClick={() => void fulfillReceipt()}>{fulfilling ? "正在交付…" : "当场交付"}</button>
-                <button className="button button--outline" type="button" disabled={fulfilling} onClick={() => setPaidReceipt(null)}>稍后交付</button>
+                <button className="button button--outline" type="button" disabled={fulfilling} onClick={() => receiptDialogRef.current?.close()}>稍后交付</button>
               </div>
             </div>
-          </div>
-        ) : null}
+          ) : <h1 id="receipt-title" className="sr-only">取货凭证</h1>}
+        </dialog>
         {catalogNotice ? <p className="counter-toast" role="status">{catalogNotice}</p> : null}
       </main>
-    </WorkspaceShell>
+    </>
   );
 }

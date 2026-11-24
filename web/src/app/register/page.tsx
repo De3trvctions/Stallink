@@ -43,6 +43,7 @@ export default function RegisterPage() {
       register
       eyebrow="创建顾客账号"
       title="创建你的账号"
+      exhibitionTitle="创建逛展账号"
       description="保存你希望摊位记住的称呼和联系方式。"
       footer={<>已经有账号？ <Link href="/login">直接登录 <span aria-hidden="true">↗</span></Link></>}
     >
@@ -62,7 +63,9 @@ export default function RegisterPage() {
             value={form.loginName}
             onChange={(event) => set("loginName", event.target.value)}
             placeholder="例如：mika_art"
+            data-error="register-login-error"
           />
+          <span id="register-login-error" className="field__validity">错误：账号需要 3 到 32 个字符，且不能包含空格。</span>
         </label>
         <div className="field">
           <label className="field__label" htmlFor="register-password"><span>密码</span><small>至少 8 个字符</small></label>
@@ -78,6 +81,7 @@ export default function RegisterPage() {
               value={form.password}
               onChange={(event) => set("password", event.target.value)}
               placeholder="创建一个密码"
+              data-error="register-password-error"
             />
             <button
               type="button"
@@ -89,6 +93,7 @@ export default function RegisterPage() {
               {showPassword ? "隐藏" : "显示"}
             </button>
           </span>
+          <span id="register-password-error" className="field__validity">错误：密码至少需要 8 个字符。</span>
         </div>
         <div className="auth-form__divider"><span>个人资料</span><i /></div>
         <label className="field" htmlFor="register-display-name">

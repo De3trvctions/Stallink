@@ -167,6 +167,7 @@ export default function SelectMenu({
     }
     if (event.key === "Escape") {
       event.preventDefault();
+      event.stopPropagation();
       closeMenu();
       return;
     }

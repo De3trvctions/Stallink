@@ -20,32 +20,36 @@ const ModalDialog = forwardRef<HTMLDialogElement, ModalDialogProps>(function Mod
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    const previousFocus = document.activeElement as HTMLElement | null;
-    const panel = closeRef.current?.closest(".goods-modal__panel") ?? null;
-    const focusable = panel?.querySelector<HTMLElement>("button:not([disabled]), input, select, textarea, a[href]");
-    (focusable ?? closeRef.current)?.focus();
-    return () => { previousFocus?.focus?.(); };
-  }, []);
+    const dialog = closeRef.current?.closest("dialog");
+    if (!dialog || "closedBy" in HTMLDialogElement.prototype) return;
+    const onClick = (event: MouseEvent) => {
+      if (closeDisabled || event.target !== dialog) return;
+      const rect = dialog.getBoundingClientRect();
+      const inside = rect.top <= event.clientY && event.clientY <= rect.top + rect.height
+        && rect.left <= event.clientX && event.clientX <= rect.left + rect.width;
+      if (!inside) dialog.close();
+    };
+    dialog.addEventListener("click", onClick);
+    return () => dialog.removeEventListener("click", onClick);
+  }, [closeDisabled]);
 
   return (
     <dialog
       ref={ref}
-      role="dialog"
-      aria-modal="true"
       className={`goods-modal ${className}`.trim()}
       aria-labelledby={labelledById}
+      {...({ closedby: closeDisabled ? "none" : "any" } as object)}
       onClose={onClose}
       onCancel={(event) => { if (closeDisabled) event.preventDefault(); }}
-      onClick={(event) => { if (event.target === event.currentTarget && !closeDisabled) onClose(); }}
     >
       <div className="goods-modal__panel">
         <header className="goods-modal__heading">
           <div>
             <p className="eyebrow">{kicker}</p>
-            <h2 id={labelledById}>{title}</h2>
+            <h1 id={labelledById}>{title}</h1>
             {description ? <p>{description}</p> : null}
           </div>
-          <button ref={closeRef} className="goods-modal__close" type="button" aria-label="关闭弹窗" disabled={closeDisabled} onClick={onClose}>×</button>
+          <button ref={closeRef} className="goods-modal__close" type="button" aria-label="关闭弹窗" disabled={closeDisabled} onClick={() => closeRef.current?.closest("dialog")?.close()}>×</button>
         </header>
         {children}
       </div>

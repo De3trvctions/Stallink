@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { browserJSON } from "@/lib/api";
 import { describeRequest } from "@/lib/errors";
 import { messageClass, useMessage } from "@/lib/message";
+import { appearancePath, isStorefrontTheme, type StorefrontTheme } from "@/lib/storefront-theme";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { WorkspaceShell } from "@/components/workspace-shell";
 
 type Shop = { id: string; name: string; slug: string; isEnabled: boolean };
 
@@ -18,10 +19,14 @@ export default function PlatformPage() {
   const [loadError, setLoadError] = useState("");
   const [pending, setPending] = useState(false);
   const [confirmTarget, setConfirmTarget] = useState<Shop | null>(null);
+  const [theme, setTheme] = useState<StorefrontTheme | null>(null);
   const { message, setError, setSuccess } = useMessage();
 
   const load = useCallback(() => {
     setLoadError("");
+    browserJSON(appearancePath).then((res) => {
+      if (isStorefrontTheme(res.data.theme)) setTheme(res.data.theme);
+    }).catch(() => {});
     browserJSON("/api/platform/shops").then((res) => {
       if (res.category === "unauthorized" || res.category === "forbidden") {
         router.replace("/login");
@@ -74,18 +79,26 @@ export default function PlatformPage() {
   }
 
   return (
-    <WorkspaceShell kind="platform">
+    <>
       <main>
         <p className="eyebrow">创作者入驻</p>
         <h1>开设店铺</h1>
         <p>为一位创作者建立独立摊位链接和第一位店铺管理员。</p>
+        <section className="platform-appearance">
+          <p>
+            <span className="eyebrow">平台外观</span>
+            <strong>{theme === "exhibition" ? "展场风格" : theme === "classic" ? "现有风格" : "读取中…"}</strong>
+            <span className="platform-appearance__note">· 顾客与工作台共用一套界面，切换后全站立即生效。</span>
+          </p>
+          <Link className="button button--outline" href="/platform/appearance">切换界面风格 ↗</Link>
+        </section>
         <form className="platform-create-form" onSubmit={createShop}>
-          <label className="field" htmlFor="platform-shop-name"><span>店铺名称</span><input id="platform-shop-name" required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：Mika 的作品摊" /></label>
-          <label className="field" htmlFor="platform-shop-slug"><span>专属链接 <small>3-40 位小写字母、数字或连字符</small></span><input id="platform-shop-slug" required minLength={3} maxLength={40} pattern="[a-z0-9][a-z0-9-]{1,38}[a-z0-9]" value={form.slug} onChange={(event) => setForm({ ...form, slug: event.target.value.toLowerCase() })} placeholder="例如：mika-art" /></label>
+          <label className="field" htmlFor="platform-shop-name"><span>店铺名称</span><input id="platform-shop-name" required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="例如：Mika 的作品摊" data-error="platform-shop-name-error" /><span id="platform-shop-name-error" className="field__validity">错误：请填写店铺名称。</span></label>
+          <label className="field" htmlFor="platform-shop-slug"><span>专属链接 <small>3-40 位小写字母、数字或连字符</small></span><input id="platform-shop-slug" required minLength={3} maxLength={40} pattern="[a-z0-9][a-z0-9-]{1,38}[a-z0-9]" value={form.slug} onChange={(event) => setForm({ ...form, slug: event.target.value.toLowerCase() })} placeholder="例如：mika-art" data-error="platform-shop-slug-error" /><span id="platform-shop-slug-error" className="field__validity">错误：专属链接需要 3 到 40 位小写字母、数字或连字符。</span></label>
           <label className="field" htmlFor="platform-shop-notice"><span>店铺公告 <small>选填</small></span><textarea id="platform-shop-notice" rows={3} value={form.notice} onChange={(event) => setForm({ ...form, notice: event.target.value })} placeholder="介绍作品或近期出摊安排" /></label>
           <div className="platform-form-divider"><span>店铺管理员</span><i /></div>
-          <label className="field" htmlFor="platform-admin-login"><span>管理员账号 <small>3-32 位，不含空格</small></span><input id="platform-admin-login" autoComplete="off" required minLength={3} maxLength={32} pattern="\S{3,32}" value={form.adminLogin} onChange={(event) => setForm({ ...form, adminLogin: event.target.value })} placeholder="为店主创建登录名" /></label>
-          <label className="field" htmlFor="platform-admin-password"><span>初始密码 <small>至少 8 位</small></span><input id="platform-admin-password" type="password" autoComplete="new-password" required minLength={8} maxLength={72} value={form.adminPassword} onChange={(event) => setForm({ ...form, adminPassword: event.target.value })} placeholder="设置临时密码" /></label>
+          <label className="field" htmlFor="platform-admin-login"><span>管理员账号 <small>3-32 位，不含空格</small></span><input id="platform-admin-login" autoComplete="off" required minLength={3} maxLength={32} pattern="\S{3,32}" value={form.adminLogin} onChange={(event) => setForm({ ...form, adminLogin: event.target.value })} placeholder="为店主创建登录名" data-error="platform-admin-login-error" /><span id="platform-admin-login-error" className="field__validity">错误：管理员账号需要 3 到 32 个字符，且不能包含空格。</span></label>
+          <label className="field" htmlFor="platform-admin-password"><span>初始密码 <small>至少 8 位</small></span><input id="platform-admin-password" type="password" autoComplete="new-password" required minLength={8} maxLength={72} value={form.adminPassword} onChange={(event) => setForm({ ...form, adminPassword: event.target.value })} placeholder="设置临时密码" data-error="platform-admin-password-error" /><span id="platform-admin-password-error" className="field__validity">错误：初始密码至少需要 8 个字符。</span></label>
           {message ? <p className={messageClass(message)} role="status">{message.text}</p> : null}
           <button className="button button--dark" type="submit" disabled={pending}>{pending ? "正在创建…" : "创建店铺"}</button>
         </form>
@@ -125,6 +138,6 @@ export default function PlatformPage() {
         onConfirm={() => confirmTarget && void toggleShop(confirmTarget, false)}
         onCancel={() => setConfirmTarget(null)}
       />
-    </WorkspaceShell>
+    </>
   );
 }

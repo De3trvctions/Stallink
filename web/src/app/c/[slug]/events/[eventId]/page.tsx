@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { BundlesGrid, GoodsGrid } from "@/components/goods-grid";
+import { StorefrontLoading } from "@/components/storefront-loading";
 import { getEvent } from "@/lib/api";
 
 function eventIsEnded(event: { status: string; endsOn: string | null }): boolean {
@@ -12,26 +14,27 @@ function eventIsEnded(event: { status: string; endsOn: string | null }): boolean
 async function EventPage({ params }: { params: Promise<{ slug: string; eventId: string }> }) {
   const { slug, eventId } = await params;
   const data = await getEvent(slug, eventId);
-  if (!data) {
-    return <div className="empty-page"><p className="eyebrow">页面不存在</p><h1>活动暂时不可用</h1><Link href={`/c/${slug}`} className="button button--dark">返回摊位</Link></div>;
-  }
+  if (!data) notFound();
   const event = data.event;
   const ended = eventIsEnded(event);
   return (
-    <>
+    <main className="wrap exhibition-event">
       <nav className="breadcrumbs" aria-label="面包屑导航">
         <Link href={`/c/${slug}`}>{slug}</Link><span aria-hidden="true">/</span><span>{event.name}</span>
       </nav>
       <header className="event-head event-head--detail">
-        <p className="eyebrow"><i aria-hidden="true" />{event.city || "线下活动"} · {event.venue || "地点待公布"}</p>
-        <h1>{event.name}{ended ? <span className="event-ended-badge">已结束</span> : null}</h1>
-        <div className="event-head__meta">
-          <span>{event.startsOn} 至 {event.endsOn}</span>
-          <span>摊位 {event.boothNumber || "待公布"}</span>
-          <span>币种 {event.currency}</span>
+        <div className="event-head__copy">
+          <p className="eyebrow"><i aria-hidden="true" />{event.city || "线下活动"} · {event.venue || "地点待公布"}</p>
+          <h1>{event.name}{ended ? <span className="event-ended-badge">已结束</span> : null}</h1>
+          <div className="event-head__meta">
+            <span><time dateTime={event.startsOn}>{event.startsOn}</time> 至 <time dateTime={event.endsOn}>{event.endsOn}</time></span>
+            <span>摊位 {event.boothNumber || "待公布"}</span>
+            <span>币种 {event.currency}</span>
+          </div>
+          <Link className="exhibition-only exhibition-action" href={`/c/${slug}`}>查看摊位 <span aria-hidden="true">↗</span></Link>
         </div>
       </header>
-      {ended ? <p className="event-ended-notice" role="status">活动尚未开始或已结束，当前不能下单购买。</p> : null}
+      {ended ? <p className="event-ended-notice">本场活动已结束，可继续浏览作品。</p> : event.status === "scheduled" ? <p className="event-ended-notice">本场活动尚未开始，可先浏览作品。</p> : null}
       <div className="section-heading section-heading--compact">
         <div><p className="eyebrow">仅限本场</p><h2>活动商品</h2></div>
         <span>{data.goods.length} 件</span>
@@ -47,16 +50,14 @@ async function EventPage({ params }: { params: Promise<{ slug: string; eventId: 
       <Link href={`/c/${slug}`} className="text-link event-back">
         ← 返回摊位
       </Link>
-    </>
+    </main>
   );
 }
 
 export default function Page({ params }: { params: Promise<{ slug: string; eventId: string }> }) {
   return (
-    <main className="wrap">
-      <Suspense fallback={<p className="kicker">正在打开活动…</p>}>
-        <EventPage params={params} />
-      </Suspense>
-    </main>
+    <Suspense fallback={<StorefrontLoading>正在打开活动…</StorefrontLoading>}>
+      <EventPage params={params} />
+    </Suspense>
   );
 }

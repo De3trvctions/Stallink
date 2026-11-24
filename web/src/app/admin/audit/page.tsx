@@ -15,7 +15,11 @@ export default function AuditPage() {
     {list.loading ? <p className="order-empty" role="status">正在加载操作记录…</p> : !list.error && entries.length === 0 ? <p className="order-empty">{list.input ? "没有找到匹配的记录。" : "暂无操作记录。"}</p> : null}
     {!list.loading && entries.length > 0 ? <ul className="order-list">{entries.map((entry) => (
       <li className="audit-row" key={`${entry.subjectId}-${entry.createdAt}-${entry.action}-${entry.actorLogin}`}>
-        <strong>{orderActionLabel(entry.action)}</strong><span>{entry.actorLogin} · {entry.createdAt}</span>
+        <strong>{orderActionLabel(entry.action)}</strong>
+        <div className="audit-row__meta">
+          <span>{entry.actorLogin}</span>
+          <time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString("zh-CN")}</time>
+        </div>
       </li>
     ))}</ul> : null}
   </main>;

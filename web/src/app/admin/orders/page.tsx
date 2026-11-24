@@ -108,7 +108,7 @@ export default function AdminOrdersPage() {
                 </div>
                 <div className="order-row__meta">
                   <span>{order.eventName || "活动商品"}</span>
-                  <span>{new Date(order.createdAt).toLocaleString("zh-CN")}</span>
+                  <time dateTime={order.createdAt}>{new Date(order.createdAt).toLocaleString("zh-CN")}</time>
                 </div>
               </div>
               {order.boothName ? <p className="order-row__booth">顾客称呼：{order.boothName}</p> : null}

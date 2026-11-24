@@ -9,7 +9,7 @@ export default function AboutPage() {
         <span className="ed-mono" style={{ color: "var(--ink)" }}>Stallink</span>
       </div>
 
-      <section className="ed-hero ed-hero--compact">
+      <section className="ed-hero ed-hero--compact classic-intro">
         <div>
           <div className="ed-kicker">
             <span className="ed-dash" aria-hidden="true" />
@@ -20,7 +20,25 @@ export default function AboutPage() {
         </div>
       </section>
 
-      <section className="ed-band" aria-label="我们解决什么">
+      <section className="exhibition-only exhibition-about-intro">
+        <div>
+          <span className="exhibition-kicker" lang="en">About Stallink</span>
+          <h1>在展场，<br />遇见创作者。</h1>
+          <p>展前浏览独立创作者的作品与价格，开展后按活动与摊位号找到他们。</p>
+          <Link className="exhibition-action" href="/#catalog">逛展场作品 <span aria-hidden="true">↗</span></Link>
+        </div>
+      </section>
+
+      <section className="exhibition-only exhibition-visit">
+        <h2>从作品目录，到摊位现场</h2>
+        <ol role="list">
+          <li><h3>先逛作品</h3><p>在作品目录搜索作品、摊位或活动，查看价格和余量。</p></li>
+          <li><h3>找到摊位</h3><p>打开作品的活动页，查看日期、场馆和摊位号。</p></li>
+          <li><h3>现场购买</h3><p>到摊位选购，由工作人员开单并当场取货。</p></li>
+        </ol>
+      </section>
+
+      <section className="ed-band classic-intro" aria-label="我们解决什么">
         <div className="ed-frame ed-band__in">
           <div>
             <h2 className="ed-h2">从布货到收银，<br />一条链路打通。</h2>
@@ -35,7 +53,7 @@ export default function AboutPage() {
         </div>
       </section>
 
-      <section className="ed-steps" aria-label="使用流程">
+      <section className="ed-steps classic-intro" aria-label="使用流程">
         <h2>从线上到收银</h2>
         <div className="ed-step-list">
           <div className="ed-step">
@@ -62,7 +80,7 @@ export default function AboutPage() {
         </div>
       </section>
 
-      <section className="ed-shelf" aria-label="面向谁">
+      <section className="ed-shelf classic-intro" aria-label="面向谁">
         <div className="ed-shelf__head">
           <h2>为两类人准备</h2>
         </div>
@@ -73,20 +91,20 @@ export default function AboutPage() {
           </article>
           <article className="ed-about__card">
             <h3>给逛展顾客</h3>
-            <p>画册式摊位页，按活动看商品与价格，提前收藏意向；到现场扫码即可核对，减少排队与沟通成本。</p>
+            <p>画册式摊位页，按活动看商品与价格，到现场扫码即可核对商品和库存。</p>
           </article>
         </div>
       </section>
 
-      <section className="ed-about__cta">
+      <section className="ed-about__cta classic-intro">
         <h2>准备好摆出你的摊位了吗？</h2>
         <div className="ed-actions">
-          <Link href="/register" className="ed-btn">注册摊主账号<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13L13 3M6 3h7v7" /></svg></Link>
+          <Link href="/register" className="ed-btn">注册顾客账号<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13L13 3M6 3h7v7" /></svg></Link>
           <Link href="/login" className="ed-link">已有账号，登录</Link>
         </div>
       </section>
 
-      <footer className="ed-frame ed-foot">
+      <footer className="ed-frame ed-foot classic-intro">
         <div className="ed-foot__mark">STALLINK</div>
         <div className="ed-foot__meta">
           <div><span>顾客端</span><span>画册式摊位页</span></div>

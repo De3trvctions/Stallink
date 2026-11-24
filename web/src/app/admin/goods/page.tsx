@@ -734,7 +734,7 @@ export default function GoodsPage() {
         onClose={() => setAddOpen(false)}
         closeDisabled={pending}
       >
-          <form className="goods-form goods-form--modal" onSubmit={submit}>
+          <form className="goods-form goods-form--modal" aria-labelledby="goods-modal-title" onSubmit={submit}>
         <label className="field" htmlFor="goods-item-kind"><span>{editingBundle ? "编辑类型" : "添加类型"}</span><SelectMenu id="goods-item-kind" ariaLabel={editingBundle ? "编辑类型" : "添加类型"} disabled={Boolean(editingBundle)} value={itemKind} options={[{ value: "good", label: "单个商品" }, { value: "bundle", label: "固定套餐（包含多个商品）" }]} onChange={(value) => {
           const kind = value as "good" | "bundle";
           setItemKind(kind);
@@ -918,7 +918,10 @@ export default function GoodsPage() {
           <label className="field" htmlFor="goods-total-stock"><span>商品总库存</span><input id="goods-total-stock" type="number" min="0" step="1" required value={totalStock} onChange={(event) => setTotalStock(Number(event.target.value))} /></label>
         </div> : null}
         {message ? <p className={`form-message ${messageKind === "error" ? "form-message--error" : "form-message--success"}`} role="status">{message}</p> : null}
-        <button className="button button--dark" type="submit" disabled={pending || (!createEvent && !eventId)}>{pending ? "正在提交…" : editingBundle ? "保存并重新提交审核" : itemKind === "bundle" ? "提交套餐审核" : "提交平台审核"}</button>
+        <footer className="goods-modal__footer">
+          <button className="button button--outline" type="button" disabled={pending} onClick={() => addDialogRef.current?.close()}>取消</button>
+          <button className="button button--dark" type="submit" disabled={pending || (!createEvent && !eventId)}>{pending ? "正在提交…" : editingBundle ? "保存并重新提交审核" : itemKind === "bundle" ? "提交套餐审核" : "提交平台审核"}</button>
+        </footer>
       </form>
       </ModalDialog>
       {!addOpen && !editingGoodId && message ? <p className={`form-message ${messageKind === "error" ? "form-message--error" : "form-message--success"}`} role="status">{message}</p> : null}
@@ -932,11 +935,11 @@ export default function GoodsPage() {
           <input type="search" aria-label="搜索商品或活动" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索商品名称或活动名称" />
           {search ? <button type="button" onClick={() => setSearch("")}>清除</button> : <span aria-hidden="true">⌕</span>}
         </div>
-        <div className="goods-view-tabs" role="tablist" aria-label="商品浏览方式">
-          <button type="button" role="tab" aria-selected={view === "goods"} className={view === "goods" ? "is-active" : ""} onClick={() => setView("goods")}>按商品</button>
-          <button type="button" role="tab" aria-selected={view === "events"} className={view === "events" ? "is-active" : ""} onClick={() => setView("events")}>按活动</button>
+        <div className="goods-view-tabs" role="group" aria-label="商品浏览方式">
+          <button type="button" aria-pressed={view === "goods"} className={view === "goods" ? "is-active" : ""} onClick={() => setView("goods")}>按商品</button>
+          <button type="button" aria-pressed={view === "events"} className={view === "events" ? "is-active" : ""} onClick={() => setView("events")}>按活动</button>
         </div>
-        <button className="button button--dark goods-add-button" type="button" onClick={startNewItem}>＋ 添加商品</button>
+        <button className="button button--dark goods-add-button" type="button" onClick={startNewItem}>＋ 添加商品或套餐</button>
       </div>
       {catalogError ? (
         <div className="event-goods-alert" role="alert">
@@ -994,7 +997,7 @@ export default function GoodsPage() {
                     </p>
                   </div>
                   <div className="goods-card__foot">
-                    <button type="button" className="button button--outline" onClick={() => openGood(good)}>编辑商品</button>
+                    <button type="button" className="button button--outline" aria-label={`编辑商品 ${good.name}`} onClick={() => openGood(good)}>编辑商品</button>
                   </div>
                 </li>
               );

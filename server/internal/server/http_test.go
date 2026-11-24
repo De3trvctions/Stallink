@@ -1,12 +1,24 @@
 package server
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/De3trvctions/Stallink/internal/service"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 )
+
+func TestPlatformAppearanceRejectsAnonymousUpdate(t *testing.T) {
+	srv := NewHTTP("127.0.0.1:0", "stallink", &service.API{})
+	request := httptest.NewRequest(http.MethodPut, "/api/platform/appearance", strings.NewReader(`{"theme":"exhibition"}`))
+	result := httptest.NewRecorder()
+	srv.ServeHTTP(result, request)
+	if result.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous appearance update returned %d, want 401: %s", result.Code, result.Body)
+	}
+}
 
 func TestHTTPServerLimitsAndDeleteRoute(t *testing.T) {
 	srv := NewHTTP("127.0.0.1:0", "stallink", &service.API{})
