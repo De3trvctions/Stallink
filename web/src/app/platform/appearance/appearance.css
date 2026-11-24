@@ -26,6 +26,9 @@
 .appearance-exhibition { padding: 1rem 1rem 1rem 2.5rem; background: linear-gradient(80deg, #101412dd, transparent), url('/images/artist-alley-booth.webp') center/cover; color: #d3ff65; }
 .appearance-exhibition i { position: absolute; inset: 0 auto 0 0; width: 1.1rem; background: #151817; border-right: 1px solid #aaa9; }
 .appearance-exhibition b { font: italic 900 clamp(1.9rem, 3.5vw, 3.6rem)/.9 Arial, sans-serif; letter-spacing: -.07em; }
+.appearance-shop { background: #f2f4f5; color: #000; padding: 1.1rem; }
+.appearance-shop i { position: absolute; top: 1.35rem; left: 1.35rem; width: 10px; height: 10px; border-radius: 9999px; background: #5433eb; box-shadow: 0 4px 16px rgba(69, 36, 219, .34); }
+.appearance-shop b { margin-left: 1.2rem; font: 500 clamp(1.8rem, 4vw, 3rem)/1 Inter, "PingFang SC", sans-serif; letter-spacing: -.05em; }
 .appearance-label { display: flex; align-items: center; gap: .6rem; margin: 1rem .35rem .3rem; }
 .appearance-label input { accent-color: var(--accent); }
 .appearance-label small { margin-inline-start: auto; color: var(--accent); }

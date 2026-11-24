@@ -24,7 +24,7 @@ func (a *API) SetPlatformAppearance(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_json")
 		return
 	}
-	if body.Theme != "classic" && body.Theme != "exhibition" {
+	if body.Theme != "classic" && body.Theme != "exhibition" && body.Theme != "shop" {
 		writeErr(w, http.StatusBadRequest, "invalid_theme")
 		return
 	}

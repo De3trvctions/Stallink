@@ -11,6 +11,7 @@ import "./appearance.css";
 const options = [
   { value: "classic", name: "现有风格", detail: "纸色背景、编辑式排版，保留当前的浏览体验。" },
   { value: "exhibition", name: "展场风格", detail: "顾客浏览展场海报，工作人员使用深青色固定侧栏。" },
+  { value: "shop", name: "店面风格", detail: "白底浮卡，圆角搜索，紫色只用于标识和主操作。" },
 ] as const;
 
 function AppearanceForm() {
@@ -67,7 +68,7 @@ function AppearanceForm() {
           {options.map(({ value, name, detail }) => (
             <label className="appearance-option" key={value}>
               <span aria-hidden="true" className={`appearance-preview appearance-${value}`}>
-                <i /><b>{value === "classic" ? "Stallink." : "Artist Alley."}</b>
+                <i /><b>{value === "classic" ? "Stallink." : value === "exhibition" ? "Artist Alley." : "Stallink"}</b>
               </span>
               <span className="appearance-label">
                 <input type="radio" name="storefront-theme" value={value} checked={selection === value} onChange={() => { setSelection(value); setError(""); setNotice(""); }} />

@@ -56,7 +56,7 @@ export function AppNav({ storefrontTheme, isWorkspace }: { storefrontTheme: Stor
   useEffect(() => {
     const meta = document.querySelector<HTMLMetaElement>('meta[name="color-scheme"]');
     if (!meta) return;
-    if (storefrontTheme === "exhibition") {
+    if (storefrontTheme === "exhibition" || storefrontTheme === "shop") {
       meta.dataset.pinned = "light";
       meta.content = "light";
       return () => {
@@ -168,10 +168,12 @@ export function AppNav({ storefrontTheme, isWorkspace }: { storefrontTheme: Stor
         </Link>
         <p className="site-header__note">{isWorkspace ? "现场订单 · 库存管理" : "独立摊位 · 现场好找"}</p>
         <nav className="site-header__actions" aria-label="账号导航">
-          <button type="button" className="theme-toggle" onClick={toggleTheme}>
-            <span className="theme-toggle__to-light"><span className="sr-only">切换至</span>浅色<span className="sr-only">模式</span></span>
-            <span className="theme-toggle__to-dark"><span className="sr-only">切换至</span>深色<span className="sr-only">模式</span></span>
-          </button>
+          {storefrontTheme === "shop" ? null : (
+            <button type="button" className="theme-toggle" onClick={toggleTheme}>
+              <span className="theme-toggle__to-light"><span className="sr-only">切换至</span>浅色<span className="sr-only">模式</span></span>
+              <span className="theme-toggle__to-dark"><span className="sr-only">切换至</span>深色<span className="sr-only">模式</span></span>
+            </button>
+          )}
           {account === undefined ? <><span className="header-loading" aria-hidden="true" /><span className="sr-only" role="status">正在加载账号…</span></> : account ? (
             <>
               <Link href="/about" className="header-link">关于</Link>

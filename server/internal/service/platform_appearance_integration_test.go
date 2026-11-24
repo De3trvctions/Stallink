@@ -61,8 +61,9 @@ func TestPlatformAppearance(t *testing.T) {
 	}
 	assertTheme(handler, http.MethodGet, nil, nil, "classic")
 	assertTheme(handler, http.MethodPut, exhibition, platform, "exhibition")
+	assertTheme(handler, http.MethodPut, map[string]string{"theme": "shop"}, platform, "shop")
 
-	for _, invalid := range []string{"", "Exhibition", "exhibition ", "missing"} {
+	for _, invalid := range []string{"", "Exhibition", "exhibition ", "shop ", "missing"} {
 		response := requestJSON(t, handler, http.MethodPut, endpoint, map[string]string{"theme": invalid}, platform)
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("invalid theme %q: status %d, body %s", invalid, response.Code, response.Body)
@@ -79,7 +80,7 @@ func TestPlatformAppearance(t *testing.T) {
 		t.Fatal(err)
 	}
 	handler = server.NewHTTP(":0", "appearance-test", &service.API{DB: data.NewShopStore(reloaded)})
-	assertTheme(handler, http.MethodGet, nil, nil, "exhibition")
+	assertTheme(handler, http.MethodGet, nil, nil, "shop")
 	assertTheme(handler, http.MethodPut, map[string]string{"theme": "classic"}, platform, "classic")
 	assertTheme(handler, http.MethodGet, nil, nil, "classic")
 }

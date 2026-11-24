@@ -7,6 +7,7 @@ import { getStorefrontTheme } from "@/lib/api";
 import "./globals.css";
 import "./exhibition.css";
 import "./exhibition-workspace.css";
+import "./shop.css";
 
 export const metadata: Metadata = {
   title: "Stallink",
@@ -21,7 +22,7 @@ const themeBootstrap = `(function(){var meta=document.querySelector('meta[name="
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   await connection();
   const theme = await getStorefrontTheme();
-  const pinnedLight = theme === "exhibition";
+  const pinnedLight = theme === "exhibition" || theme === "shop";
   return (
     <html lang="zh-CN" suppressHydrationWarning>
       <head>

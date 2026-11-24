@@ -87,7 +87,7 @@ export default function PlatformPage() {
         <section className="platform-appearance">
           <p>
             <span className="eyebrow">平台外观</span>
-            <strong>{theme === "exhibition" ? "展场风格" : theme === "classic" ? "现有风格" : "读取中…"}</strong>
+            <strong>{theme === "exhibition" ? "展场风格" : theme === "shop" ? "店面风格" : theme === "classic" ? "现有风格" : "读取中…"}</strong>
             <span className="platform-appearance__note">· 顾客与工作台共用一套界面，切换后全站立即生效。</span>
           </p>
           <Link className="button button--outline" href="/platform/appearance">切换界面风格 ↗</Link>
