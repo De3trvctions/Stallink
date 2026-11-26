@@ -1,3 +1,4 @@
+import { customerBoothLabel } from "@/lib/booth";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
@@ -28,7 +29,7 @@ async function EventPage({ params }: { params: Promise<{ slug: string; eventId: 
           <h1>{event.name}{ended ? <span className="event-ended-badge">已结束</span> : null}</h1>
           <div className="event-head__meta">
             <span><time dateTime={event.startsOn}>{event.startsOn}</time> 至 <time dateTime={event.endsOn}>{event.endsOn}</time></span>
-            <span>摊位 {event.boothNumber || "待公布"}</span>
+            <span>摊位 {customerBoothLabel(event)}</span>
             <span>币种 {event.currency}</span>
           </div>
           <Link className="exhibition-only exhibition-action" href={`/c/${slug}`}>查看摊位 <span aria-hidden="true">↗</span></Link>

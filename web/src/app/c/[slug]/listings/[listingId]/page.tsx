@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { StorefrontLoading } from "@/components/storefront-loading";
 import { getListing, getShop, type Booth } from "@/lib/api";
+import { customerBoothLabel } from "@/lib/booth";
 import { formatMoney, lowestUnitRate } from "@/lib/pricing";
 import { ProductGallery } from "@/components/product-gallery";
 
@@ -16,7 +17,7 @@ async function boothSpot(slug: string, eventId: string) {
   const events = booth ? [...booth.events.live, ...booth.events.scheduled, ...booth.events.ended] : [];
   return {
     name: booth?.name || slug,
-    number: events.find((event) => event.id === eventId)?.boothNumber ?? "",
+    number: (() => { const event = events.find((item) => item.id === eventId); return event ? customerBoothLabel(event) : ""; })(),
   };
 }
 

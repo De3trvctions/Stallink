@@ -2,6 +2,7 @@ import Link from "next/link";
 import { SafeImage } from "@/components/safe-image";
 import { ShelfCopy } from "@/components/shelf-copy";
 import type { BoothEvent, BundleOffer, Good } from "@/lib/api";
+import { customerBoothLabel } from "@/lib/booth";
 import { formatMoney, lowestUnitRate } from "@/lib/pricing";
 
 const statusLabel: Record<string, string> = {
@@ -118,7 +119,7 @@ export function EventList({ slug, events }: { slug: string; events: BoothEvent[]
               <h3>{event.name}</h3>
               <p>{[event.city, event.venue].filter(Boolean).join(" · ") || "地点待公布"}</p>
             </div>
-            <span className="event-card__booth">摊位 {event.boothNumber || "待公布"}<b aria-hidden="true">↗</b></span>
+            <span className="event-card__booth">摊位 {customerBoothLabel(event)}<b aria-hidden="true">↗</b></span>
           </Link>
         </li>
       ))}

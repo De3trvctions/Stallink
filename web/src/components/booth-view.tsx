@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Booth } from "@/lib/api";
+import { customerBoothLabel } from "@/lib/booth";
 import { SafeImage } from "@/components/safe-image";
 import { BundlesGrid, EventList, GoodsGrid } from "@/components/goods-grid";
 
@@ -24,7 +25,7 @@ export function BoothView({ booth }: { booth: Booth }) {
         name: event?.name ?? good.eventName,
         status: event?.status ?? "scheduled",
         place: [event?.city, event?.venue].filter(Boolean).join(" / "),
-        boothNumber: event?.boothNumber ?? "",
+        boothNumber: event ? customerBoothLabel(event) : "",
         dates: event ? `${event.startsOn.slice(5).replace("-", ".")}–${event.endsOn.slice(5).replace("-", ".")}` : "",
         goods: [good],
       });
@@ -66,7 +67,7 @@ export function BoothView({ booth }: { booth: Booth }) {
                 {activeEvent ? (
                   <>
                     <span>{[activeEvent.city, activeEvent.venue].filter(Boolean).join(" / ") || "地点待公布"}</span>
-                    <span>摊位 {activeEvent.boothNumber || "待公布"} / {activeEvent.startsOn} – {activeEvent.endsOn}</span>
+                    <span>摊位 {customerBoothLabel(activeEvent)} / {activeEvent.startsOn} – {activeEvent.endsOn}</span>
                   </>
                 ) : (
                   <span>活动安排将在这里更新。</span>

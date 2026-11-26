@@ -6,7 +6,14 @@ import { describeRequest } from "@/lib/errors";
 import { messageClass, useMessage } from "@/lib/message";
 import SelectMenu from "@/components/select-menu";
 
-const empty = { name: "", startsOn: "", endsOn: "", city: "", venue: "", boothNumber: "", currency: "MYR", status: "scheduled" };
+const emptyBase = { name: "", startsOn: "", endsOn: "", city: "", venue: "", boothNumber: "", currency: "MYR", status: "scheduled" };
+function emptyFromShop(shop?: { boothNumber?: string; defaultCurrency?: string | null }) {
+  return {
+    ...emptyBase,
+    boothNumber: shop?.boothNumber ?? "",
+    currency: shop?.defaultCurrency || "MYR",
+  };
+}
 const statusLabel: Record<string, string> = { scheduled: "即将开始", live: "进行中", ended: "已结束" };
 type EventSummary = { id: string; name: string; status: string; boothNumber: string; startsOn?: string; endsOn?: string; city?: string; venue?: string; currency?: string };
 
@@ -17,7 +24,8 @@ function dateRange(event: EventSummary) {
 }
 
 export default function EventsPage() {
-  const [form, setForm] = useState(empty);
+  const [form, setForm] = useState(emptyFromShop());
+  const [shopDefaults, setShopDefaults] = useState<{ boothNumber: string; defaultCurrency: string }>({ boothNumber: "", defaultCurrency: "MYR" });
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [pending, setPending] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -39,6 +47,25 @@ export default function EventsPage() {
     const timer = window.setTimeout(() => { void load(); }, 0);
     return () => window.clearTimeout(timer);
   }, [load]);
+
+  useEffect(() => {
+    let active = true;
+    void browserJSON("/api/admin/shop").then((res) => {
+      if (!active || !res.ok) return;
+      const boothNumber = String(res.data.boothNumber ?? "");
+      const defaultCurrency = typeof res.data.defaultCurrency === "string" && res.data.defaultCurrency ? String(res.data.defaultCurrency) : "MYR";
+      setShopDefaults({ boothNumber, defaultCurrency });
+      setForm((current) => {
+        if (editingId) return current;
+        const pristine = !current.name && !current.startsOn && !current.endsOn && !current.city && !current.venue && !current.boothNumber && current.currency === "MYR";
+        if (!pristine) return current;
+        return { ...current, boothNumber, currency: defaultCurrency };
+      });
+    }).catch(() => {
+      // 预填失败时保留本地默认值，店主仍可手动填写。
+    });
+    return () => { active = false; };
+  }, [editingId]);
 
   useEffect(() => {
     let active = true;
@@ -95,7 +122,7 @@ export default function EventsPage() {
 
   function cancelEdit() {
     setEditingId("");
-    setForm(empty);
+    setForm(emptyFromShop(shopDefaults));
     setMessage(null);
   }
 
@@ -113,7 +140,7 @@ export default function EventsPage() {
       }
       setSuccess(editingId ? "活动已更新，现场收银会立即使用新的场次信息。" : "活动已创建，可以继续为它上架商品。");
       setEditingId("");
-      setForm(empty);
+      setForm(emptyFromShop(shopDefaults));
       load();
     } catch {
       setError("无法连接服务，请检查网络后重试。");
@@ -123,7 +150,7 @@ export default function EventsPage() {
   }
 
   return (
-    <main>
+    <main className="workspace-subpage">
       <p className="eyebrow">{editingId ? "活动与场次 · 编辑" : "活动与场次"}</p>
       <h1>{editingId ? "编辑活动" : "活动管理"}</h1>
       <p>活动连接商品、库存和摊位信息。商品可以暂时为空，之后再上架。</p>

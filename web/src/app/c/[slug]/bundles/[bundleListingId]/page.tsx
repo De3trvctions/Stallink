@@ -5,6 +5,7 @@ import { StorefrontLoading } from "@/components/storefront-loading";
 import { ProductGallery } from "@/components/product-gallery";
 import { SafeImage } from "@/components/safe-image";
 import { getBundle, getShop, type Booth } from "@/lib/api";
+import { customerBoothLabel } from "@/lib/booth";
 import { formatMoney } from "@/lib/pricing";
 
 async function boothSpot(slug: string, eventId: string) {
@@ -17,7 +18,7 @@ async function boothSpot(slug: string, eventId: string) {
   const events = booth ? [...booth.events.live, ...booth.events.scheduled, ...booth.events.ended] : [];
   return {
     name: booth?.name || slug,
-    number: events.find((event) => event.id === eventId)?.boothNumber ?? "",
+    number: (() => { const event = events.find((item) => item.id === eventId); return event ? customerBoothLabel(event) : ""; })(),
   };
 }
 
