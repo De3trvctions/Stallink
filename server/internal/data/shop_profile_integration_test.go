@@ -211,3 +211,136 @@ func TestManual024aBackfillAndRollback(t *testing.T) {
 	got, _ = shopCurrency(t, ctx, pool, featuredOld)
 	wantCurrency(t, "untouched shop after rollback", got, "")
 }
+
+func TestShopProfileReadWriteAndSlugUntouched(t *testing.T) {
+	pool, ctx := newIsolatedMigratedIntegrationPool(t, "shop_profile")
+	store := NewShopStore(pool)
+	var rawID string
+	if err := pool.QueryRow(ctx, `INSERT INTO shops(name, slug, is_enabled) VALUES ('晚风', 'wanfeng', false) RETURNING id::text`).Scan(&rawID); err != nil {
+		t.Fatal(err)
+	}
+	shopID := integrationID(t, rawID)
+
+	got, err := store.ShopProfile(ctx, shopID)
+	if err != nil {
+		t.Fatalf("read disabled shop profile: %v", err)
+	}
+	if got.Slug != "wanfeng" || got.Enabled || got.Contact != "" || got.BoothNumber != "" || got.DefaultCurrency != nil || got.FeaturedEvent != nil || got.OnSaleCount != 0 || got.UpdatedAt.IsZero() {
+		t.Fatalf("unexpected initial profile: %+v", got)
+	}
+
+	sgd := "SGD"
+	if err := store.UpdateShopProfile(ctx, shopID, ShopProfileInput{
+		Name: "晚风工作室", Notice: "现场自取", Enabled: true, Contact: "IG @wanfeng.studio", BoothNumber: "A-27", DefaultCurrency: &sgd,
+	}); err != nil {
+		t.Fatalf("update profile: %v", err)
+	}
+	got, err = store.ShopProfile(ctx, shopID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "晚风工作室" || got.Notice != "现场自取" || !got.Enabled || got.Contact != "IG @wanfeng.studio" || got.BoothNumber != "A-27" || got.DefaultCurrency == nil || *got.DefaultCurrency != "SGD" {
+		t.Fatalf("unexpected updated profile: %+v", got)
+	}
+	if got.Slug != "wanfeng" {
+		t.Fatalf("slug must stay platform-assigned, got %q", got.Slug)
+	}
+	if err := store.UpdateShopProfile(ctx, shopID, ShopProfileInput{Name: "晚风工作室", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = store.ShopProfile(ctx, shopID); got.DefaultCurrency != nil {
+		t.Fatalf("null defaultCurrency must clear the value, got %v", *got.DefaultCurrency)
+	}
+	missing := integrationID(t, "999999999")
+	if _, err := store.ShopProfile(ctx, missing); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing shop: want ErrNotFound, got %v", err)
+	}
+	if err := store.UpdateShopProfile(ctx, missing, ShopProfileInput{Name: "x", Enabled: true}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("update missing shop: want ErrNotFound, got %v", err)
+	}
+}
+
+func TestShopProfileDisableRevokesSessionsAtomically(t *testing.T) {
+	pool, ctx := newIsolatedMigratedIntegrationPool(t, "shop_profile_disable")
+	store := NewShopStore(pool)
+	shopID := insertProfileShop(t, ctx, pool, "停用店", "disable-shop")
+	var user string
+	if err := pool.QueryRow(ctx, `INSERT INTO users(login_name,password_hash,role,shop_id) VALUES ('disable-owner','hash','shop_admin',$1) RETURNING id::text`, shopID).Scan(&user); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO sessions(user_id, token_hash, expires_at) VALUES ($1, '\x01', now() + interval '1 hour')`, user); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateShopProfile(ctx, shopID, ShopProfileInput{Name: "停用店", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	var sessions int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE user_id = $1`, user).Scan(&sessions); err != nil || sessions != 1 {
+		t.Fatalf("enabled save must keep sessions: %d %v", sessions, err)
+	}
+	// A CHECK violation in the same call must roll back the session revocation too.
+	if err := store.UpdateShopProfile(ctx, shopID, ShopProfileInput{Name: "停用店", Enabled: false, BoothNumber: " bad "}); err == nil {
+		t.Fatal("padded booth number must be rejected by the database check")
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE user_id = $1`, user).Scan(&sessions); err != nil || sessions != 1 {
+		t.Fatalf("failed save must not revoke sessions: %d %v", sessions, err)
+	}
+	if err := store.UpdateShopProfile(ctx, shopID, ShopProfileInput{Name: "停用店", Enabled: false}); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM sessions WHERE user_id = $1`, user).Scan(&sessions); err != nil || sessions != 0 {
+		t.Fatalf("disable must revoke sessions in the same call: %d %v", sessions, err)
+	}
+}
+
+func TestShopProfileFeaturedEventAndOnSaleCount(t *testing.T) {
+	pool, ctx := newIsolatedMigratedIntegrationPool(t, "shop_profile_onsale")
+	store := NewShopStore(pool)
+	shopID := insertProfileShop(t, ctx, pool, "预览店", "preview-shop")
+	setStatus := func(eventID ID, status, booth string) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `UPDATE events SET status = $2, booth_number = $3 WHERE id = $1`, eventID, status, booth); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ended := insertProfileEvent(t, ctx, pool, shopID, "已结束", "2026-01-01", "MYR")
+	setStatus(ended, "ended", "Z-1")
+	scheduled := insertProfileEvent(t, ctx, pool, shopID, "未开始", "2026-02-01", "SGD")
+	setStatus(scheduled, "scheduled", "S-1")
+	if got, err := store.ShopProfile(ctx, shopID); err != nil || got.FeaturedEvent == nil || got.FeaturedEvent.ID != scheduled {
+		t.Fatalf("without live events the first scheduled event is shown: %+v %v", got.FeaturedEvent, err)
+	}
+	live := insertProfileEvent(t, ctx, pool, shopID, "进行中", "2026-03-01", "MYR")
+	setStatus(live, "live", "L-1")
+	got, err := store.ShopProfile(ctx, shopID)
+	if err != nil || got.FeaturedEvent == nil || got.FeaturedEvent.ID != live || got.FeaturedEvent.BoothNumber != "L-1" || got.FeaturedEvent.Currency != "MYR" || got.FeaturedEvent.Status != "live" || got.FeaturedEvent.Name != "进行中" {
+		t.Fatalf("a live event beats a scheduled one: %+v %v", got.FeaturedEvent, err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE shops SET featured_event_id = $2 WHERE id = $1`, shopID, scheduled); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = store.ShopProfile(ctx, shopID); err != nil || got.FeaturedEvent == nil || got.FeaturedEvent.ID != scheduled {
+		t.Fatalf("the featured event wins: %+v %v", got.FeaturedEvent, err)
+	}
+
+	addListing := func(eventID ID, name string, stock int, review string, listed bool, reserved int) {
+		t.Helper()
+		var good string
+		if err := pool.QueryRow(ctx, `INSERT INTO goods(shop_id, name, total_stock, review_status) VALUES ($1, $2, $3, $4) RETURNING id::text`, shopID, name, stock, review).Scan(&good); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `INSERT INTO event_listings(shop_id, event_id, good_id, listed_qty, unit_price_minor, is_listed, reserved_qty) VALUES ($1, $2, $3, $4, 1000, $5, $6)`,
+			shopID, eventID, good, stock, listed, reserved); err != nil {
+			t.Fatal(err)
+		}
+	}
+	addListing(scheduled, "可售", 5, "approved", true, 1)
+	addListing(scheduled, "预占卖完", 2, "approved", true, 2)
+	addListing(scheduled, "待审核", 5, "pending", true, 0)
+	addListing(scheduled, "已下架", 5, "approved", false, 0)
+	addListing(scheduled, "零库存", 0, "approved", true, 0)
+	addListing(live, "别的活动", 5, "approved", true, 0)
+	if got, err = store.ShopProfile(ctx, shopID); err != nil || got.OnSaleCount != 1 {
+		t.Fatalf("onSaleCount = %d %v, want 1 (listed, approved, sellable after reservations, current event only)", got.OnSaleCount, err)
+	}
+}

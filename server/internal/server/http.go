@@ -78,6 +78,7 @@ func NewHTTP(addr, serviceName string, api *service.API) *khttp.Server {
 	route(r, http.MethodPost, "/api/staff/orders/{orderID}/cancel", api.Cancel, "orderID")
 	route(r, http.MethodPost, "/api/staff/orders/{orderID}/refund-confirm", api.RefundConfirm, "orderID")
 
+	route(r, http.MethodGet, "/api/admin/shop", api.AdminShop)
 	route(r, http.MethodPatch, "/api/admin/shop", api.UpdateShopSettings)
 	route(r, http.MethodPatch, "/api/admin/shop/featured-event", api.SetFeaturedEvent)
 	route(r, http.MethodGet, "/api/admin/pay-codes", api.AdminPayCodes)

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/De3trvctions/Stallink/internal/auth"
@@ -15,26 +16,98 @@ import (
 	"go.uber.org/zap"
 )
 
+// shopCurrencies mirrors shops_default_currency_check.
+var shopCurrencies = map[string]bool{"MYR": true, "SGD": true, "CNY": true}
+
+func hasControl(s string) bool {
+	return strings.IndexFunc(s, unicode.IsControl) >= 0
+}
+
+func shopProfileJSON(p data.ShopProfile) map[string]any {
+	out := map[string]any{
+		"id": p.ID, "name": p.Name, "notice": p.Notice, "slug": p.Slug, "isEnabled": p.Enabled,
+		"contact": p.Contact, "boothNumber": p.BoothNumber, "defaultCurrency": p.DefaultCurrency, "featuredEvent": nil,
+		"onSaleCount": p.OnSaleCount, "updatedAt": p.UpdatedAt.Format(time.RFC3339),
+	}
+	if p.FeaturedEvent != nil {
+		out["featuredEvent"] = map[string]any{
+			"id": p.FeaturedEvent.ID, "name": p.FeaturedEvent.Name, "boothNumber": p.FeaturedEvent.BoothNumber,
+			"currency": p.FeaturedEvent.Currency, "status": p.FeaturedEvent.Status,
+		}
+	}
+	return out
+}
+
+// AdminShop returns the owner's own shop profile; the shop always comes from
+// the session, never from the request.
+func (a *API) AdminShop(w http.ResponseWriter, r *http.Request) {
+	account, ok := a.shopAdmin(w, r)
+	if !ok {
+		return
+	}
+	profile, err := a.DB.ShopProfile(r.Context(), *account.ShopID)
+	if err != nil {
+		writeDataErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, shopProfileJSON(profile))
+}
+
+// UpdateShopSettings replaces the owner-editable profile fields. The slug is
+// platform-assigned: omitted or unchanged is ignored, a different value is
+// 422 slug_readonly and nothing is written (K-Q3 = B).
 func (a *API) UpdateShopSettings(w http.ResponseWriter, r *http.Request) {
 	account, ok := a.shopAdmin(w, r)
 	if !ok {
 		return
 	}
 	var body struct {
-		Name      string `json:"name"`
-		Notice    string `json:"notice"`
-		Slug      string `json:"slug"`
-		IsEnabled bool   `json:"isEnabled"`
+		Name            string  `json:"name"`
+		Notice          string  `json:"notice"`
+		Slug            *string `json:"slug"`
+		IsEnabled       bool    `json:"isEnabled"`
+		Contact         string  `json:"contact"`
+		BoothNumber     string  `json:"boothNumber"`
+		DefaultCurrency *string `json:"defaultCurrency"`
 	}
-	if err := readJSON(r, &body); err != nil || !slugPattern.MatchString(body.Slug) || body.Name == "" {
+	if err := readJSON(r, &body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid_shop")
 		return
 	}
-	if err := a.DB.UpdateShop(r.Context(), *account.ShopID, body.Name, body.Notice, body.Slug, body.IsEnabled); err != nil {
+	body.Name = strings.TrimSpace(body.Name)
+	body.Contact = strings.TrimSpace(body.Contact)
+	if n := utf8.RuneCountInString(body.Name); n < 1 || n > 80 ||
+		utf8.RuneCountInString(body.Notice) > 2000 || utf8.RuneCountInString(body.Contact) > 120 || utf8.RuneCountInString(body.BoothNumber) > 40 ||
+		hasControl(body.Name+body.Contact+body.BoothNumber) ||
+		body.BoothNumber != strings.TrimSpace(body.BoothNumber) || // B-3: padded booth numbers are rejected, not trimmed
+		(body.DefaultCurrency != nil && !shopCurrencies[*body.DefaultCurrency]) {
+		writeErr(w, http.StatusBadRequest, "invalid_shop")
+		return
+	}
+	if body.Slug != nil {
+		current, err := a.DB.ShopProfile(r.Context(), *account.ShopID)
+		if err != nil {
+			writeDataErr(w, r, err)
+			return
+		}
+		if *body.Slug != current.Slug {
+			writeErr(w, http.StatusUnprocessableEntity, "slug_readonly")
+			return
+		}
+	}
+	if err := a.DB.UpdateShopProfile(r.Context(), *account.ShopID, data.ShopProfileInput{
+		Name: body.Name, Notice: body.Notice, Enabled: body.IsEnabled, Contact: body.Contact,
+		BoothNumber: body.BoothNumber, DefaultCurrency: body.DefaultCurrency,
+	}); err != nil {
 		writeDataErr(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	updated, err := a.DB.ShopProfile(r.Context(), *account.ShopID)
+	if err != nil {
+		writeDataErr(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, shopProfileJSON(updated))
 }
 
 func (a *API) SetFeaturedEvent(w http.ResponseWriter, r *http.Request) {
