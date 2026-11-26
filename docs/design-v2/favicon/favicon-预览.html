@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stallink favicon 方案对比 · 设计预览</title>
+  <style>
+    :root {
+      --canvas: #faf8f3;
+      --surface: #fffdf8;
+      --surface-soft: #f0ece2;
+      --ink: #16171a;
+      --ink-soft: #3c3d42;
+      --muted: #6b685f;
+      --line: #dad3c3;
+      --line-strong: #c6bdaa;
+      --accent: #1e36a8;
+      --font-ui: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", system-ui, sans-serif;
+      --font-display: "Songti SC", "Noto Serif SC", "STSong", Georgia, serif;
+      --font-mono: "SF Mono", "Menlo", "IBM Plex Mono", ui-monospace, monospace;
+      --charcoal: #262820;
+      --lime: #e3f7a2;
+      --paper: #f4f0e6;
+      --ochre: #8c3c2d;
+      --teal: #215e58;
+      --tab-light-bg: #dee1e6;
+      --tab-light-face: #ffffff;
+      --tab-light-text: #3c4043;
+      --tab-dark-bg: #202124;
+      --tab-dark-face: #35363a;
+      --tab-dark-text: #e8eaed;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      min-height: 100dvh;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: var(--font-ui);
+      font-size: 15px;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    .page { width: min(1240px, calc(100% - 48px)); margin: 0 auto; padding: 36px 0 64px; }
+    header.intro h1 {
+      margin: 0 0 8px;
+      font-family: var(--font-display);
+      font-size: 2.15rem;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      line-height: 1.2;
+    }
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.14em;
+    }
+    .lede { max-width: 46rem; margin: 0 0 8px; color: var(--ink-soft); }
+    .rec-note {
+      max-width: 46rem;
+      margin: 0 0 28px;
+      padding: 10px 14px;
+      border-left: 3px solid var(--charcoal);
+      background: var(--surface);
+      color: var(--ink-soft);
+      font-size: 0.92rem;
+    }
+    .rec-note strong { color: var(--ink); }
+    .options {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 18px 16px 16px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .card.recommended { border-color: var(--charcoal); box-shadow: 0 0 0 1px var(--charcoal); }
+    .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .card h2 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    .badge {
+      flex: 0 0 auto;
+      padding: 2px 8px;
+      background: var(--charcoal);
+      color: var(--lime);
+      font-size: 0.68rem;
+      letter-spacing: 0.04em;
+    }
+    .badge.unused {
+      background: var(--surface-soft);
+      color: var(--muted);
+    }
+    .card .desc { margin: 0; color: var(--ink-soft); font-size: 0.86rem; }
+    .label {
+      margin: 4px 0 6px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      letter-spacing: 0.12em;
+    }
+    .tabs { display: grid; gap: 8px; }
+    .chrome {
+      display: flex;
+      align-items: flex-end;
+      min-height: 46px;
+      padding: 8px 8px 0;
+      background: var(--tab-light-bg);
+    }
+    .chrome.dark { background: var(--tab-dark-bg); }
+    .tab {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      min-height: 34px;
+      padding: 0 10px;
+      border-radius: 8px 8px 0 0;
+      background: var(--tab-light-face);
+      color: var(--tab-light-text);
+      font-size: 12px;
+    }
+    .chrome.dark .tab { background: var(--tab-dark-face); color: var(--tab-dark-text); }
+    .tab img { width: 16px; height: 16px; flex: 0 0 auto; }
+    .tab span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tab i { margin-left: auto; font-style: normal; opacity: 0.55; }
+    .boards { display: grid; gap: 8px; }
+    .board {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: 14px 16px;
+      padding: 12px;
+      background: var(--tab-light-bg);
+    }
+    .board.dark { background: var(--tab-dark-bg); }
+    .size {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      color: var(--tab-light-text);
+      font-family: var(--font-mono);
+      font-size: 0.58rem;
+      letter-spacing: 0.04em;
+    }
+    .board.dark .size { color: var(--tab-dark-text); }
+    .size img { display: block; }
+    .ios {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 168px;
+      padding: 22px 12px 16px;
+      background:
+        radial-gradient(ellipse at 20% 0%, #3d5a2a55, transparent 50%),
+        linear-gradient(180deg, #143e46, #262820);
+    }
+    .ios img {
+      width: 72px;
+      height: 72px;
+      border-radius: 22.5%;
+      box-shadow: 0 8px 20px #00000055;
+    }
+    .ios figcaption {
+      margin: 0;
+      color: #fff;
+      font-size: 11px;
+      letter-spacing: 0.02em;
+      text-shadow: 0 1px 2px #0008;
+    }
+    .zoom-section { margin-top: 40px; }
+    .zoom-section h2 {
+      margin: 0 0 6px;
+      font-family: var(--font-display);
+      font-size: 1.5rem;
+    }
+    .zoom-section p { margin: 0 0 16px; color: var(--ink-soft); max-width: 44rem; }
+    .zoom-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+    }
+    .zoom-card {
+      padding: 16px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+    }
+    .zoom-card h3 { margin: 0 0 12px; font-size: 1rem; }
+    .zoom-pair { display: flex; gap: 16px; align-items: end; }
+    .zoom-pair figure { margin: 0; text-align: center; }
+    .zoom-pair figcaption { margin-top: 6px; color: var(--muted); font-family: var(--font-mono); font-size: 0.58rem; }
+    .pixel {
+      width: 128px;
+      height: 128px;
+      image-rendering: pixelated;
+      background: #888;
+    }
+    .foot {
+      margin-top: 36px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    .swatches { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 8px 0 0; }
+    .swatch { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 0.7rem; }
+    .swatch b { display: block; width: 12px; height: 12px; border: 1px solid var(--line); }
+
+    body[data-shot="compare"] .zoom-section,
+    body[data-shot="compare"] .foot { display: none; }
+    body[data-shot="pixels"] .intro .lede,
+    body[data-shot="pixels"] .rec-note,
+    body[data-shot="pixels"] .options,
+    body[data-shot="pixels"] .foot { display: none; }
+    body[data-shot="pixels"] .intro h1 { font-size: 1.7rem; }
+    body[data-shot="pixels"] .zoom-section { margin-top: 12px; }
+  </style>
+  <script>
+    const shot = new URLSearchParams(location.search).get("shot");
+    if (shot) document.documentElement.dataset.pre = shot;
+    document.addEventListener("DOMContentLoaded", () => {
+      if (shot) document.body.dataset.shot = shot;
+    });
+  </script>
+</head>
+<body>
+  <div class="page">
+    <header class="intro">
+      <p class="eyebrow">DESIGN-V2 · D10 · 2026-11-26</p>
+      <h1>Stallink favicon 方案对比</h1>
+      <p class="lede">现在 <code>/favicon.ico</code> 返回 404，仓库里没有品牌标志图片。三个选项都用现有 token、不依赖外部字体，全站共用、不跟店面风格切换。16×16 在浅色和深色标签栏上都应能辨认。</p>
+      <p class="rec-note"><strong>已定：方案 A</strong>（Kel 已定 2026-11-26 15:07）。「S.」字标，炭黑圆底配青柠色「S.」。设计师原先推荐 C，B 和 C 未采用，下方仍列出作记录。</p>
+    </header>
+
+    <div class="options">
+      <article class="card recommended" id="option-a">
+        <div class="card-head"><h2>A · 「S.」字标</h2><span class="badge">已定</span></div>
+        <p class="desc">圆形炭黑底加柠绿「S.」，延续顾客端手机侧栏和 classic 圆形字标。略带斜体，呼应展场侧栏 Georgia 斜体。</p>
+        <p class="label">模拟标签栏 · 16px</p>
+        <div class="tabs">
+          <div class="chrome"><div class="tab"><img src="option-a-16.svg" alt=""><span>Stallink</span><i>×</i></div></div>
+          <div class="chrome dark"><div class="tab"><img src="option-a-16.svg" alt=""><span>Stallink</span><i>×</i></div></div>
+        </div>
+        <p class="label">浅色标签栏背景 · 16 / 32 / 180 / 512</p>
+        <div class="board">
+          <div class="size"><img src="option-a-16.svg" width="16" height="16" alt=""><span>16</span></div>
+          <div class="size"><img src="option-a.svg" width="32" height="32" alt=""><span>32</span></div>
+          <div class="size"><img src="option-a-apple.svg" width="72" height="72" alt=""><span>180</span></div>
+          <div class="size"><img src="option-a-maskable.svg" width="128" height="128" alt=""><span>512 maskable</span></div>
+        </div>
+        <p class="label">深色标签栏背景 · 16 / 32 / 180 / 512</p>
+        <div class="board dark">
+          <div class="size"><img src="option-a-16.svg" width="16" height="16" alt=""><span>16</span></div>
+          <div class="size"><img src="option-a.svg" width="32" height="32" alt=""><span>32</span></div>
+          <div class="size"><img src="option-a-apple.svg" width="72" height="72" alt=""><span>180</span></div>
+          <div class="size"><img src="option-a-maskable.svg" width="128" height="128" alt=""><span>512 maskable</span></div>
+        </div>
+        <p class="label">iOS 主屏 · apple-icon 实底</p>
+        <figure class="ios">
+          <img src="option-a-apple.svg" alt="选项 A 的 iOS 图标">
+          <figcaption>Stallink</figcaption>
+        </figure>
+      </article>
+
+      <article class="card" id="option-b">
+        <div class="card-head"><h2>B · 摊位图形</h2><span class="badge unused">未采用</span></div>
+        <p class="desc">摘要式摊位：柠绿篷顶、纸色立柱和台面、赭石号牌。不靠字母识别，直接点出「摊位」这个产品含义。</p>
+        <p class="label">模拟标签栏 · 16px</p>
+        <div class="tabs">
+          <div class="chrome"><div class="tab"><img src="option-b-16.svg" alt=""><span>Stallink</span><i>×</i></div></div>
+          <div class="chrome dark"><div class="tab"><img src="option-b-16.svg" alt=""><span>Stallink</span><i>×</i></div></div>
+        </div>
+        <p class="label">浅色标签栏背景 · 16 / 32 / 180 / 512</p>
+        <div class="board">
+          <div class="size"><img src="option-b-16.svg" width="16" height="16" alt=""><span>16</span></div>
+          <div class="size"><img src="option-b.svg" width="32" height="32" alt=""><span>32</span></div>
+          <div class="size"><img src="option-b-apple.svg" width="72" height="72" alt=""><span>180</span></div>
+          <div class="size"><img src="option-b-maskable.svg" width="128" height="128" alt=""><span>512 maskable</span></div>
+        </div>
+        <p class="label">深色标签栏背景 · 16 / 32 / 180 / 512</p>
+        <div class="board dark">
+          <div class="size"><img src="option-b-16.svg" width="16" height="16" alt=""><span>16</span></div>
+          <div class="size"><img src="option-b.svg" width="32" height="32" alt=""><span>32</span></div>
+          <div class="size"><img src="option-b-apple.svg" width="72" height="72" alt=""><span>180</span></div>
+          <div class="size"><img src="option-b-maskable.svg" width="128" height="128" alt=""><span>512 maskable</span></div>
+        </div>
+        <p class="label">iOS 主屏 · apple-icon 实底</p>
+        <figure class="ios">
+          <img src="option-b-apple.svg" alt="选项 B 的 iOS 图标">
+          <figcaption>Stallink</figcaption>
+        </figure>
+      </article>
+
+      <article class="card" id="option-c">
+        <div class="card-head"><h2>C · 字母块</h2><span class="badge unused">未采用</span></div>
+        <p class="desc">深青实底、纸色「S」、右上角赭石色块加纸色描边。直接升格已定的展场工作台 logo，圆角对应 --radius-control。</p>
+        <p class="label">模拟标签栏 · 16px</p>
+        <div class="tabs">
+          <div class="chrome"><div class="tab"><img src="option-c-16.svg" alt=""><span>Stallink</span><i>×</i></div></div>
+          <div class="chrome dark"><div class="tab"><img src="option-c-16.svg" alt=""><span>Stallink</span><i>×</i></div></div>
+        </div>
+        <p class="label">浅色标签栏背景 · 16 / 32 / 180 / 512</p>
+        <div class="board">
+          <div class="size"><img src="option-c-16.svg" width="16" height="16" alt=""><span>16</span></div>
+          <div class="size"><img src="option-c.svg" width="32" height="32" alt=""><span>32</span></div>
+          <div class="size"><img src="option-c-apple.svg" width="72" height="72" alt=""><span>180</span></div>
+          <div class="size"><img src="option-c-maskable.svg" width="128" height="128" alt=""><span>512 maskable</span></div>
+        </div>
+        <p class="label">深色标签栏背景 · 16 / 32 / 180 / 512</p>
+        <div class="board dark">
+          <div class="size"><img src="option-c-16.svg" width="16" height="16" alt=""><span>16</span></div>
+          <div class="size"><img src="option-c.svg" width="32" height="32" alt=""><span>32</span></div>
+          <div class="size"><img src="option-c-apple.svg" width="72" height="72" alt=""><span>180</span></div>
+          <div class="size"><img src="option-c-maskable.svg" width="128" height="128" alt=""><span>512 maskable</span></div>
+        </div>
+        <p class="label">iOS 主屏 · apple-icon 实底</p>
+        <figure class="ios">
+          <img src="option-c-apple.svg" alt="选项 C 的 iOS 图标">
+          <figcaption>Stallink</figcaption>
+        </figure>
+      </article>
+    </div>
+
+    <section class="zoom-section" id="pixels">
+      <h2>16px 像素放大</h2>
+      <p>左侧是实际 16×16，右侧是就近取样放大到 128×128，用来检查笔画和角标会不会糊成一团。截图见 <code>docs/design-v2/screens/favicon-小尺寸.png</code>。</p>
+      <div class="zoom-grid">
+        <div class="zoom-card">
+          <h3>A · 「S.」字标</h3>
+          <div class="zoom-pair">
+            <figure>
+              <img src="option-a-16.svg" width="16" height="16" alt="">
+              <figcaption>16 × 16</figcaption>
+            </figure>
+            <figure>
+              <img class="pixel" src="option-a-16.svg" width="16" height="16" alt="">
+              <figcaption>×8 邻近取样</figcaption>
+            </figure>
+          </div>
+        </div>
+        <div class="zoom-card">
+          <h3>B · 摊位图形</h3>
+          <div class="zoom-pair">
+            <figure>
+              <img src="option-b-16.svg" width="16" height="16" alt="">
+              <figcaption>16 × 16</figcaption>
+            </figure>
+            <figure>
+              <img class="pixel" src="option-b-16.svg" width="16" height="16" alt="">
+              <figcaption>×8 邻近取样</figcaption>
+            </figure>
+          </div>
+        </div>
+        <div class="zoom-card">
+          <h3>C · 字母块</h3>
+          <div class="zoom-pair">
+            <figure>
+              <img src="option-c-16.svg" width="16" height="16" alt="">
+              <figcaption>16 × 16</figcaption>
+            </figure>
+            <figure>
+              <img class="pixel" src="option-c-16.svg" width="16" height="16" alt="">
+              <figcaption>×8 邻近取样</figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="foot">
+      颜色只用现有 token，不跟主题切换。全站建议共用选定的这一套。
+      <div class="swatches">
+        <span class="swatch"><b style="background:#262820"></b>#262820 --expo-charcoal</span>
+        <span class="swatch"><b style="background:#e3f7a2"></b>#e3f7a2 --expo-lime</span>
+        <span class="swatch"><b style="background:#f4f0e6"></b>#f4f0e6 --expo-paper</span>
+        <span class="swatch"><b style="background:#8c3c2d"></b>#8c3c2d --brand-mark</span>
+        <span class="swatch"><b style="background:#215e58"></b>#215e58 工作台 --accent</span>
+      </div>
+    </footer>
+  </div>
+</body>
+</html>

@@ -1,0 +1,12 @@
+<!-- Stallink favicon 设计稿，不是前端用的最终资源。
+     不要复制进 web/src/app 或 web/public；等 Kel 选定后再由前端按 favicon-设计说明.md 导出。
+     颜色全部取自现有 token，字形为 path，不依赖外部字体。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="title">
+  <title id="title">Stallink</title>
+  <!-- 主文件：浏览器标签、app/icon.svg。圆形底，延续 classic 圆标与侧栏「S.」。 -->
+  <!-- 底色 expo-charcoal #262820；字形与圆环 expo-lime #e3f7a2。圆环让深色标签栏上也能看出外轮廓。 -->
+  <circle cx="16" cy="16" r="16" fill="#262820"/>
+  <circle cx="16" cy="16" r="15.25" fill="none" stroke="#e3f7a2" stroke-width="1"/>
+  <path d="M19.8 8.9C18.9 7.05 16.6 6.15 14.1 6.4C11.1 6.7 9 8.5 9.15 10.9C9.35 13.15 11.2 14.15 14.35 15.15C17.7 16.2 20.6 17.6 20.4 21.05C20.2 24.5 17.1 26.4 13.3 26C10.15 25.65 7.95 23.55 7.8 20.95" fill="none" stroke="#e3f7a2" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="22.7" cy="23.3" r="1.85" fill="#e3f7a2"/>
+</svg>

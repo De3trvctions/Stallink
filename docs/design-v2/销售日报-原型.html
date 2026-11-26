@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>销售日报 · Stallink 设计原型（示例数据）</title>
+  <style>
+    :root {
+      --canvas: #faf8f3;
+      --surface: #fffdf8;
+      --surface-soft: #f0ece2;
+      --ink: #16171a;
+      --ink-soft: #3c3d42;
+      --muted: #6b685f;
+      --line: #dad3c3;
+      --line-strong: #c6bdaa;
+      --accent: #1e36a8;
+      --accent-dark: #16171a;
+      --accent-soft: #e9edfb;
+      --accent-light: #c9d2f2;
+      --warning: #b23a18;
+      --touch: 44px;
+      --content: 1280px;
+      --font-ui: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", system-ui, sans-serif;
+      --font-display: "Songti SC", "Noto Serif CJK SC", "Noto Serif SC", "Source Han Serif SC", "STSong", serif;
+      --font-mono: "SF Mono", "Menlo", "IBM Plex Mono", ui-monospace, monospace;
+      --shadow-soft: 0 18px 40px rgba(22, 23, 26, 0.06);
+      --radius: 0px;
+      --sheet-pad: 0px;
+      --danger: var(--warning);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: var(--font-ui);
+      font-size: 15px;
+      line-height: 1.55;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select { color: inherit; font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: wait; opacity: 0.64; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    a { color: inherit; text-decoration: none; }
+
+    /* —— 原型控制条，产品界面以外 —— */
+    .proto-bar {
+      position: sticky; top: 0; z-index: 80;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.55rem 0.9rem;
+      padding: 0.55rem 1rem;
+      border-bottom: 1px solid #d9d6cd;
+      background: #1d1d1b;
+      color: #f4f1ea;
+      font-size: 0.75rem;
+    }
+    .proto-bar strong { font-weight: 650; letter-spacing: 0.04em; }
+    .proto-bar label { display: inline-flex; align-items: center; gap: 0.35rem; }
+    .proto-bar select, .proto-bar button {
+      min-height: 32px; padding: 0 0.55rem;
+      border: 1px solid #5c5a54; border-radius: 2px;
+      background: #2a2a27; color: #f4f1ea;
+    }
+    .proto-bar button:hover { border-color: #c9d2f2; }
+    body[data-shot] .proto-bar { display: none; }
+
+    /* —— 顶栏 / 侧栏（编辑式图：纸白侧栏） —— */
+    .site-header {
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 253, 248, 0.94);
+    }
+    .site-header__inner {
+      display: flex; align-items: center; gap: 1.5rem;
+      width: min(var(--content), calc(100% - 2rem));
+      min-height: 64px; margin: 0 auto;
+    }
+    .site-brand { display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 650; }
+    .site-brand__mark {
+      display: grid; place-items: center; width: 22px; height: 22px;
+      background: var(--accent-dark); color: #fffefa;
+      font: 700 0.72rem/1 var(--font-ui);
+    }
+    .header-links { display: flex; gap: 1rem; color: var(--ink-soft); font-size: 0.8rem; }
+    .header-spacer { flex: 1; }
+    .header-actions { display: flex; align-items: center; gap: 0.85rem; font-size: 0.8rem; color: var(--ink-soft); }
+    .header-account {
+      display: inline-flex; align-items: center; min-height: 36px; padding: 0 0.8rem;
+      border: 1px solid var(--accent-dark); background: var(--accent-dark); color: #fffefa;
+      font-size: 0.8rem; font-weight: 650;
+    }
+
+    .workspace { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: calc(100dvh - 64px); }
+    .workspace-sidebar {
+      display: flex; flex-direction: column;
+      padding: 1.2rem 0.95rem 1rem;
+      border-right: 1px solid var(--line);
+      background: var(--canvas);
+    }
+    .workspace-sidebar__eyebrow {
+      color: var(--accent); font-size: 0.55rem; font-weight: 700; letter-spacing: 0.16em;
+    }
+    .workspace-sidebar__heading h2 {
+      margin: 0.35rem 0 0.15rem; font: 500 1.35rem var(--font-display);
+    }
+    .workspace-sidebar__heading p { margin: 0; color: var(--muted); font-size: 0.68rem; }
+    .workspace-nav { display: grid; gap: 1rem; margin-top: 1.2rem; }
+    .workspace-nav__group { display: grid; gap: 0.15rem; }
+    .workspace-nav__label {
+      margin: 0 0 0.2rem; color: var(--muted);
+      font-family: var(--font-mono); font-size: 0.54rem; letter-spacing: 0.12em;
+    }
+    .workspace-nav__link {
+      display: flex; align-items: center; gap: 0.55rem;
+      min-height: 36px; padding: 0.25rem 0.55rem;
+      color: var(--ink-soft); font-size: 0.82rem;
+    }
+    .workspace-nav__link[aria-current="page"] {
+      background: var(--accent-soft); color: var(--accent);
+      font-weight: 650;
+    }
+    .workspace-nav__index {
+      flex: 0 0 1.6rem; color: var(--muted);
+      font-family: var(--font-mono); font-size: 0.58rem;
+    }
+    .workspace-nav__link[aria-current="page"] .workspace-nav__index { color: var(--accent); }
+    .workspace-sidebar__foot { margin-top: auto; padding-top: 1rem; border-top: 1px solid var(--line); }
+    .workspace-sidebar__back { color: var(--ink-soft); font-size: 0.75rem; }
+
+    .workspace-main { min-width: 0; padding: 1.1rem clamp(1rem, 3vw, 2.4rem) 3rem; }
+    .workspace-topbar {
+      display: flex; justify-content: space-between; gap: 1rem;
+      margin-bottom: 1.1rem; color: var(--muted); font-size: 0.68rem;
+    }
+    .workspace-topbar__link { color: var(--accent); }
+
+    /* —— 页面 —— */
+    .report-page { max-width: 1080px; }
+    .workspace-page__heading h1 {
+      margin: 0; color: var(--ink);
+      font: 500 clamp(1.9rem, 3vw, 2.6rem)/1.08 var(--font-display);
+      letter-spacing: -0.045em;
+    }
+    .sample-flag {
+      display: inline-block; margin: 0.55rem 0 0;
+      padding: 0.15rem 0.45rem;
+      border: 1px solid var(--line-strong);
+      color: var(--muted);
+      font-family: var(--font-mono); font-size: 0.58rem; letter-spacing: 0.08em;
+    }
+
+    .report-range-search { display: grid; gap: 0.5rem; margin-block: 1.15rem; }
+    .report-range-filters {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(10rem, 13rem)) auto;
+      justify-content: start; align-items: end; gap: 0.7rem;
+      margin: 0;
+    }
+    .field { display: grid; gap: 0.35rem; color: var(--ink-soft); font-size: 0.76rem; font-weight: 650; }
+    .field input[type="date"] {
+      width: 100%; min-height: var(--touch); min-inline-size: 0;
+      padding: 0 0.65rem;
+      border: 1px solid var(--line-strong); border-radius: var(--radius);
+      background: var(--surface); color: var(--ink);
+      font-family: var(--font-mono); font-size: 1rem;
+    }
+    .field-hint { margin: 0; color: var(--muted); font-size: 0.8rem; line-height: 1.55; overflow-wrap: break-word; word-break: normal; }
+    .button {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: var(--touch); padding: 0 0.95rem;
+      border: 1px solid transparent; border-radius: var(--radius);
+      font-size: 0.82rem; font-weight: 650; white-space: nowrap;
+      transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+    }
+    .button--dark { background: var(--accent-dark); border-color: var(--accent-dark); color: #fffefa; }
+    .button--dark:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); }
+    .button--outline { border-color: var(--line-strong); background: transparent; color: var(--ink); }
+    .button--outline:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+
+    .report-range-results {
+      margin-block: 0.4rem 1.2rem; padding: 1rem;
+      border: 1px solid var(--line); border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .report-range-heading { display: grid; gap: 0.2rem; margin-bottom: 0.75rem; }
+    .report-range-heading h2 { margin: 0; font-size: 1rem; font-weight: 650; }
+    .report-range-heading p { margin: 0; color: var(--muted); font-size: 0.82rem; }
+    .report-range-days { display: grid; gap: 0.35rem; padding: 0; margin: 0; list-style: none; }
+    .report-range-day {
+      display: grid;
+      grid-template-columns: minmax(7.5rem, max-content) minmax(0, 1fr) auto;
+      align-items: center; gap: 0.45rem 0.75rem;
+      width: 100%; min-height: 3rem; padding: 0.65rem 0.8rem;
+      border: 1px solid transparent; border-radius: var(--radius);
+      background: var(--surface-soft); color: var(--ink);
+      font-size: 0.82rem; text-align: start;
+    }
+    .report-range-day:hover { border-color: var(--line-strong); }
+    .report-range-day[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+    .report-range-day time, .report-range-amounts { font-variant-numeric: tabular-nums; }
+    .report-range-amounts { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
+    .report-range-day-action { color: var(--accent); font-weight: 600; }
+
+    .report-toolbar.report-range-detail-toolbar {
+      display: flex; flex-wrap: wrap; align-items: center;
+      gap: 0.7rem 1rem; margin: 0.2rem 0 0.7rem;
+    }
+    .report-toolbar > strong { font-size: 0.95rem; font-variant-numeric: tabular-nums; }
+    .report-toolbar__actions {
+      display: flex; flex-wrap: wrap; align-items: center;
+      gap: 0.75rem 1.15rem; margin-left: auto;
+    }
+    .report-toolbar__group {
+      display: flex; flex-wrap: nowrap; align-items: center; gap: 0.5rem;
+    }
+    .report-toolbar__group + .report-toolbar__group {
+      padding-left: 1.15rem;
+      border-left: 1px solid var(--line);
+    }
+    .select-menu { position: relative; display: flex; align-items: center; gap: 0.45rem; width: auto; flex: 0 0 auto; }
+    .select-menu label { color: var(--ink-soft); font-size: 0.76rem; font-weight: 650; white-space: nowrap; }
+    .select-menu select {
+      width: auto; min-width: 8.5rem; max-width: 12rem; min-height: var(--touch); padding: 0 1.8rem 0 0.7rem;
+      border: 1px solid var(--line-strong); border-radius: var(--radius);
+      background: var(--surface); color: var(--ink); appearance: none;
+      font-size: 0.82rem;
+    }
+    .select-menu::after {
+      content: ""; position: absolute; right: 0.7rem; top: 50%;
+      width: 0.35rem; height: 0.35rem;
+      border-right: 1.5px solid var(--ink-soft); border-bottom: 1.5px solid var(--ink-soft);
+      transform: translateY(-70%) rotate(45deg); pointer-events: none;
+    }
+    .report-export-hint { margin: -0.15rem 0 0.7rem; max-width: 100%; }
+    .report-export-hint[hidden] { display: none !important; }
+    @media (min-width: 45rem) {
+      .report-export-hint { margin-left: auto; max-width: 36rem; text-align: right; }
+    }
+    .report-block__note {
+      margin: 0.65rem 0 0; max-width: 100%;
+      color: var(--muted); font-size: 0.8rem; line-height: 1.55;
+      overflow-wrap: break-word; word-break: normal;
+    }
+
+    .form-message { margin: 0 0 0.8rem; font-size: 0.82rem; }
+    .form-message--success { color: var(--accent); }
+    .form-message--error { color: var(--danger); }
+
+    .empty-state, .report-skeleton {
+      margin: 1rem 0; padding: 1.6rem 1rem;
+      border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+      background: var(--surface-soft);
+    }
+    .empty-state { display: grid; justify-items: start; gap: 0.55rem; }
+    .empty-state__mark { color: var(--accent); font-size: 1.3rem; }
+    .empty-state p { margin: 0; max-width: 44rem; color: var(--ink-soft); }
+    .skeleton-line {
+      height: 0.7rem; margin: 0.45rem 0; border-radius: 2px;
+      background: linear-gradient(90deg, var(--line) 25%, var(--surface) 50%, var(--line) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.2s ease-in-out infinite;
+    }
+    .skeleton-hero { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.8rem; margin-top: 1rem; }
+    .skeleton-card { min-height: 5.2rem; padding: 0.8rem; background: var(--surface); border: 1px solid var(--line); }
+    .skeleton-card:first-child { grid-column: span 2; }
+    @media (prefers-reduced-motion: reduce) {
+      .skeleton-line { animation: none; background: var(--line); }
+    }
+    @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+
+    .report-sheet {
+      margin-top: 0.6rem; padding: var(--sheet-pad);
+      border-top: 2px solid var(--ink); border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .report-sheet__head {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: 1rem; padding: 1rem 0 0.9rem; border-bottom: 1px solid var(--line-strong);
+    }
+    .report-sheet__head .eyebrow {
+      margin: 0 0 0.2rem; color: var(--accent);
+      font-family: var(--font-mono); font-size: 0.58rem; letter-spacing: 0.1em;
+    }
+    .report-sheet__head h2 {
+      margin: 0; font-family: var(--font-display); font-size: 2rem; font-weight: 500;
+    }
+    .report-sheet__head p { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.78rem; }
+    .report-sheet__stamp { color: var(--muted); font-family: var(--font-mono); font-size: 0.6rem; }
+
+    .report-hero {
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+      border-bottom: 1px solid var(--line-strong);
+    }
+    .report-metric {
+      display: grid; gap: 0.35rem; min-width: 0; max-width: 100%;
+      padding: 1rem; border-left: 1px solid var(--line);
+    }
+    .report-metric--lead { grid-column: span 2; border-left: 0; padding-left: 0; }
+    .report-metric:nth-child(n+3) { border-top: 1px solid var(--line); }
+    .report-metric:nth-child(3) { border-left: 0; padding-left: 0; }
+    .report-metric span {
+      color: var(--muted); font-family: var(--font-mono); font-size: 0.58rem;
+      letter-spacing: 0.06em;
+    }
+    .report-metric strong {
+      font-family: var(--font-display);
+      font-size: clamp(1.35rem, 2vw, 1.85rem); font-weight: 500;
+      line-height: 1.15; overflow-wrap: break-word; font-variant-numeric: tabular-nums;
+    }
+    .report-metric--lead { background: transparent; }
+    .report-metric--lead strong { font-size: clamp(1.55rem, 2.4vw, 2.25rem); color: var(--accent); }
+    .report-metric small { color: var(--muted); font-size: 0.62rem; line-height: 1.5; }
+
+    .report-block { padding: 1rem 0; border-bottom: 1px solid var(--line); }
+    .report-block:last-child { border-bottom: 0; }
+    .report-block__head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.65rem; }
+    .report-block__head h3 { margin: 0; font-family: var(--font-display); font-size: 1.1rem; font-weight: 500; }
+    .report-block__head span { color: var(--muted); font-family: var(--font-mono); font-size: 0.58rem; }
+    .report-columns { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line-strong); }
+    .report-columns .report-block { padding: 1rem; border-bottom: 0; }
+    .report-columns .report-block:first-child { padding-left: 0; border-right: 1px solid var(--line); }
+
+    .report-currency-group + .report-currency-group { margin-top: 0.9rem; }
+    .report-currency-group__label {
+      margin: 0 0 0.4rem; color: var(--muted);
+      font-size: 0.7rem; letter-spacing: 0.06em;
+    }
+    .report-empty { margin: 0; color: var(--muted); font-size: 0.78rem; }
+
+    .report-table, .report-rank { margin: 0; padding: 0; list-style: none; }
+    .report-table li, .report-rank li {
+      display: grid; align-items: baseline; gap: 0.55rem 0.7rem;
+      padding: 0.52rem 0; border-bottom: 1px dotted var(--line);
+    }
+    .report-table li:last-child, .report-rank li:last-child { border-bottom: 0; }
+    .report-table--summary li {
+      grid-template-columns: 4.2rem minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) 7.25rem;
+    }
+    .report-table--summary li > strong { justify-self: end; text-align: right; }
+    .report-table--event li {
+      grid-template-columns: minmax(0, 1.4fr) auto minmax(0, 1fr) auto;
+    }
+    .report-table--pay li { grid-template-columns: minmax(0, 1.4fr) auto auto; }
+    .report-table span { color: var(--ink-soft); font-size: 0.72rem; overflow-wrap: break-word; }
+    .report-table .mono, .report-table li > span:nth-child(n+2) {
+      color: var(--muted); font-family: var(--font-mono); font-size: 0.62rem;
+      font-variant-numeric: tabular-nums;
+    }
+    .report-table strong {
+      font-family: var(--font-mono); font-size: 0.74rem; font-weight: 500;
+      text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+
+    /* 热销：序号、名称、件数、金额分列，名称按列宽正常折行 */
+    .report-rank li { grid-template-columns: 1.6rem minmax(0, 1fr) auto auto; }
+    .report-rank__index {
+      color: var(--muted); font-family: var(--font-mono); font-size: 0.6rem; font-style: normal;
+    }
+    .report-rank__name {
+      min-width: 0; font-size: 0.72rem; line-height: 1.45;
+      overflow-wrap: break-word; word-break: normal;
+    }
+    .report-rank__qty, .report-rank__amt {
+      font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+    .report-rank__qty { color: var(--muted); font-size: 0.62rem; }
+    .report-rank__amt { font-size: 0.72rem; font-weight: 500; }
+
+    /* 状态显隐：按元素类型恢复 display，避免 revert 把工具栏变回 block */
+    [data-state] .when { display: none !important; }
+    [data-state="ready"] section.when-ready,
+    [data-state="ready"] p.when-ready,
+    [data-state="glyphs"] section.when-ready,
+    [data-state="glyphs"] p.when-ready,
+    [data-state="glyphs"] p.when-glyphs,
+    [data-state="loading"] .when-loading,
+    [data-state="empty"] p.when-empty,
+    [data-state="empty"] section.when-empty,
+    [data-state="error"] section.when-error,
+    [data-state="error"] p.when-error { display: block !important; }
+    [data-state="ready"] .report-toolbar.when-ready-flex,
+    [data-state="ready"] .report-toolbar__group.when-ready-flex,
+    [data-state="glyphs"] .report-toolbar.when-ready-flex,
+    [data-state="glyphs"] .report-toolbar__group.when-ready-flex,
+    [data-state="empty"] .report-toolbar.when-empty-flex { display: flex !important; }
+    [data-state="ready"] .button.when-ready,
+    [data-state="glyphs"] .button.when-ready,
+    [data-state="empty"] .button.when-empty,
+    [data-state="error"] .button.when-error { display: inline-flex !important; }
+    [data-state="error"] .empty-state.when-error-grid,
+    [data-state="forbidden"] .empty-state.when-forbidden { display: grid !important; }
+    [data-state="forbidden"] .workspace-page__heading,
+    [data-state="forbidden"] .report-range-search,
+    [data-state="forbidden"] .report-range-results,
+    [data-state="forbidden"] #report-detail { display: none !important; }
+
+    /* 展场 */
+    [data-storefront-theme="exhibition"] {
+      --canvas: #edf3f1; --surface: #ffffff; --surface-soft: #e2ece8;
+      --ink: #142e32; --ink-soft: #345253; --muted: #526c6d;
+      --accent: #215e58; --accent-dark: #123b40;
+      --accent-soft: #dcebe3; --accent-light: #d6ef9f;
+      --line: #d0dfda; --line-strong: #8ca29d; --warning: #a03a2b;
+      --font-display: Georgia, "Songti SC", "Noto Serif CJK SC", "Noto Serif SC", "STSong", serif;
+      --radius: 0.8rem; --sheet-pad: 1rem;
+      background: radial-gradient(ellipse at 82% -6%, #d5e6df 0, transparent 46%), var(--canvas);
+      color: var(--ink);
+    }
+    [data-storefront-theme="exhibition"] .site-header { background: rgba(255, 255, 255, 0.9); }
+    [data-storefront-theme="exhibition"] .workspace-sidebar { background: transparent; }
+    [data-storefront-theme="exhibition"] .report-sheet {
+      border-top: 0; border: 1px solid #dae5df;
+      background: linear-gradient(135deg, #fffffff5, #f4faf6e8);
+      box-shadow: 0 1px 2px #0f1f3310, 0 10px 26px #0f1f330d;
+    }
+    [data-storefront-theme="exhibition"] .report-metric--lead { background: #dcebe38f; }
+    [data-storefront-theme="exhibition"] .button--dark { border-radius: 0.4rem; }
+    [data-storefront-theme="exhibition"] .button--outline,
+    [data-storefront-theme="exhibition"] .field input,
+    [data-storefront-theme="exhibition"] .select-menu select,
+    [data-storefront-theme="exhibition"] .report-range-day,
+    [data-storefront-theme="exhibition"] .report-range-results { border-radius: 0.5rem; }
+
+    /* 店面 */
+    [data-storefront-theme="shop"] {
+      --canvas: #f2f4f5; --surface: #ffffff; --surface-soft: #f2f4f5;
+      --ink: #000000; --ink-soft: #332f2d; --muted: #726f6e;
+      --line: #ebebeb; --line-strong: #dedfe0;
+      --accent: #5433eb; --accent-dark: #5433eb;
+      --accent-soft: #f2f4f5; --accent-light: #c0b5f3;
+      --warning: #b42318; --danger: #b42318;
+      --font-display: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+      --font-ui: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+      --font-mono: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+      --radius: 1.25rem; --sheet-pad: 1.1rem;
+      font-size: 16px;
+    }
+    [data-storefront-theme="shop"] .site-header { background: #fff; }
+    [data-storefront-theme="shop"] .site-brand__mark { background: var(--accent); }
+    [data-storefront-theme="shop"] .workspace-nav__link[aria-current="page"] { border-radius: 999px; }
+    [data-storefront-theme="shop"] .report-sheet {
+      border-top: 0; border: 1px solid var(--line);
+      box-shadow: rgba(0, 0, 0, 0.1) 0 4px 6px -1px, rgba(0, 0, 0, 0.1) 0 2px 4px -2px;
+    }
+    [data-storefront-theme="shop"] .button,
+    [data-storefront-theme="shop"] .field input,
+    [data-storefront-theme="shop"] .select-menu select { border-radius: 999px; }
+    [data-storefront-theme="shop"] .report-range-results,
+    [data-storefront-theme="shop"] .report-range-day { border-radius: 1rem; }
+    [data-storefront-theme="shop"] .report-metric--lead strong { color: var(--accent); }
+
+    /* 平板与手机 */
+    @media (max-width: 900px) {
+      .workspace { grid-template-columns: 168px minmax(0, 1fr); }
+      .header-links { display: none; }
+    }
+    @media (max-width: 720px) {
+      .report-hero { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .report-metric { border-top: 1px solid var(--line); border-left: 0; padding-left: 0; }
+      .report-metric--lead { grid-column: 1 / -1; border-top: 0; border-left: 0; padding-left: 0; }
+      .report-metric:nth-child(3) { border-left: 0; padding-left: 0; }
+      .report-metric:nth-child(2n+1):not(:first-child) { padding-left: 0.85rem; border-left: 1px solid var(--line); }
+      .report-metric strong { font-size: clamp(1.2rem, 5vw, 1.45rem); }
+      .report-metric--lead strong { font-size: clamp(1.35rem, 6vw, 1.7rem); }
+      .skeleton-hero { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .skeleton-card:first-child { grid-column: 1 / -1; }
+      .site-header__inner { width: calc(100% - 1.2rem); min-height: 56px; }
+      .header-actions { flex-wrap: nowrap; gap: 0.55rem; font-size: 0.72rem; }
+      .header-actions a:nth-child(1),
+      .header-actions a:nth-child(2) { display: none; }
+      .header-actions a, .header-account { white-space: nowrap; }
+      .header-account { min-height: 32px; padding: 0 0.55rem; font-size: 0.72rem; }
+      .workspace { display: block; }
+      .workspace-sidebar {
+        padding: 0.7rem 0.8rem 0.4rem;
+        border-right: 0; border-bottom: 1px solid var(--line);
+      }
+      .workspace-sidebar__heading p, .workspace-sidebar__foot { display: none; }
+      .workspace-sidebar__heading h2 { font-size: 1.05rem; }
+      .workspace-nav { display: flex; flex-wrap: wrap; gap: 0.25rem 0.15rem; margin-top: 0.6rem; }
+      .workspace-nav__group { display: contents; }
+      .workspace-nav__label { display: none; }
+      .workspace-nav__link { min-height: 36px; padding: 0.2rem 0.45rem; font-size: 0.75rem; }
+      .workspace-main { padding: 0.9rem 0.85rem 2.4rem; }
+      .workspace-topbar { display: none; }
+      .report-range-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .report-range-filters .button { grid-column: 1 / -1; justify-self: start; }
+      .report-range-day { grid-template-columns: minmax(0, 1fr) auto; }
+      .report-range-day > :nth-child(2) { grid-row: 2; grid-column: 1 / -1; }
+      .report-toolbar__group { flex-wrap: wrap; }
+      .report-toolbar__group + .report-toolbar__group { padding-left: 0; border-left: 0; }
+      .report-metric strong { font-size: clamp(1.2rem, 5vw, 1.45rem); }
+      .report-metric--lead strong { font-size: clamp(1.35rem, 6vw, 1.7rem); }
+      .report-columns { grid-template-columns: 1fr; }
+      .report-columns .report-block { padding-left: 0; padding-right: 0; }
+      .report-columns .report-block:first-child { border-right: 0; border-bottom: 1px solid var(--line); }
+      .report-sheet__head { flex-direction: column; align-items: flex-start; }
+      .report-sheet__head h2 { font-size: 1.55rem; }
+      .report-table--summary li, .report-table--event li {
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+      .report-table--summary li > :first-child { grid-column: 1; grid-row: 1; }
+      .report-table--summary li > strong { grid-column: 2; grid-row: 1; }
+      .report-table--summary li > :nth-child(n+2):not(strong),
+      .report-table--event li > :nth-child(3) {
+        grid-column: 1 / -1; grid-row: auto;
+      }
+    }
+    /* 1280 视口：工具栏强制一行（主栏变窄后仍按自身宽度排，不让下拉占满） */
+    @media (min-width: 1280px) {
+      .report-range-detail-toolbar,
+      .report-range-detail-toolbar .report-toolbar__actions,
+      .report-range-detail-toolbar .report-toolbar__group { flex-wrap: nowrap; }
+    }
+    @media print {
+      .proto-bar, .site-header, .workspace-sidebar, .workspace-topbar,
+      .report-range-search, .report-range-results, .report-toolbar, .form-message { display: none !important; }
+      .workspace { display: block; }
+      .report-sheet { border-top: 1.5pt solid #1d1d1b; box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="proto-bar">
+    <strong>销售日报原型</strong>
+    <span>示例数据，非真实账目。</span>
+    <label>状态
+      <select id="proto-state" aria-label="切换原型状态">
+        <option value="ready">有数据</option>
+        <option value="loading">加载中</option>
+        <option value="empty">空日</option>
+        <option value="error">出错 / 断网</option>
+        <option value="forbidden">无权限</option>
+        <option value="glyphs">导出缺字</option>
+      </select>
+    </label>
+    <label>风格
+      <select id="proto-theme" aria-label="切换外观风格">
+        <option value="classic">classic 纸白钴蓝</option>
+        <option value="exhibition">展场</option>
+        <option value="shop">店面</option>
+      </select>
+    </label>
+    <button type="button" id="proto-overflow">演示超过 31 天</button>
+  </div>
+
+  <div id="storefront-shell" data-storefront-theme="classic" data-surface="workspace" data-state="ready">
+    <header class="site-header">
+      <div class="site-header__inner">
+        <a class="site-brand" href="#"><span class="site-brand__mark">S</span> Stallink</a>
+        <nav class="header-links" aria-label="站点">
+          <a href="#">现场订单</a>
+          <a href="#">库存管理</a>
+        </nav>
+        <span class="header-spacer"></span>
+        <div class="header-actions">
+          <a href="#">深色</a>
+          <a href="#">关于</a>
+          <a href="#">查看店铺</a>
+          <span class="header-account">店铺工作台</span>
+          <a href="#">退出</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="workspace-sidebar">
+        <div class="workspace-sidebar__heading">
+          <span class="workspace-sidebar__eyebrow">STALLINK / SHOP DESK</span>
+          <h2>店铺工作台</h2>
+          <p>活动、商品、订单与现场收银</p>
+        </div>
+        <nav class="workspace-nav" aria-label="工作台">
+          <div class="workspace-nav__group">
+            <p class="workspace-nav__label">经营</p>
+            <a class="workspace-nav__link" href="#"><span class="workspace-nav__index">00</span>总览</a>
+            <a class="workspace-nav__link" href="#"><span class="workspace-nav__index">01</span>活动</a>
+            <a class="workspace-nav__link" href="#"><span class="workspace-nav__index">02</span>商品</a>
+            <a class="workspace-nav__link" href="#"><span class="workspace-nav__index">03</span>订单记录</a>
+            <a class="workspace-nav__link" href="#" aria-current="page"><span class="workspace-nav__index">04</span>销售日报</a>
+          </div>
+          <div class="workspace-nav__group">
+            <p class="workspace-nav__label">现场收银</p>
+            <a class="workspace-nav__link" href="#"><span class="workspace-nav__index">POS</span>现场开单</a>
+            <a class="workspace-nav__link" href="#"><span class="workspace-nav__index">ORD</span>本场订单</a>
+          </div>
+          <div class="workspace-nav__group">
+            <p class="workspace-nav__label">店铺</p>
+            <a class="workspace-nav__link" href="#"><span class="workspace-nav__index">06</span>收款方式</a>
+            <a class="workspace-nav__link" href="#"><span class="workspace-nav__index">07</span>销售账号</a>
+            <a class="workspace-nav__link" href="#"><span class="workspace-nav__index">08</span>店铺资料</a>
+            <a class="workspace-nav__link" href="#"><span class="workspace-nav__index">09</span>操作记录</a>
+          </div>
+        </nav>
+        <div class="workspace-sidebar__foot">
+          <a class="workspace-sidebar__back" href="#">← 返回 Stallink</a>
+        </div>
+      </aside>
+
+      <div class="workspace-main">
+        <div class="workspace-topbar">
+          <span>■ 工作空间已连接</span>
+          <a class="workspace-topbar__link" href="#">返回 Stallink ↗</a>
+        </div>
+
+        <main class="workspace-page report-page">
+          <header class="workspace-page__heading">
+            <h1>销售日报</h1>
+            <p class="sample-flag">示例数据 · 青瓷工作室</p>
+          </header>
+
+          <div class="when when-forbidden empty-state" role="alert">
+            <span class="empty-state__mark" aria-hidden="true">!</span>
+            <p>没有权限执行这个操作。销售日报只对店铺管理员开放，店员或收银账号看不到这份报表。</p>
+            <button type="button" class="button button--outline">返回工作台</button>
+          </div>
+
+          <search class="report-range-search" aria-label="查询日报">
+            <form class="report-range-filters" id="report-form">
+              <div class="field">
+                <label for="report-start">起始日期</label>
+                <input id="report-start" name="start" type="date" required value="2026-11-24" max="2026-11-26">
+              </div>
+              <div class="field">
+                <label for="report-end">结束日期</label>
+                <input id="report-end" name="end" type="date" required value="2026-11-26" max="2026-11-26" aria-describedby="report-date-hint">
+              </div>
+              <button type="submit" class="button button--dark" id="query-btn">查询日报</button>
+            </form>
+            <p id="report-date-hint" class="field-hint">含起止日期，每次最多查询 31 天。今天 2026-11-26 由服务端按店铺时区提供，不能选择更晚的日期。</p>
+          </search>
+
+          <div class="when when-loading" role="status">
+            <p class="empty-state" style="margin-bottom:0">正在读取日报…</p>
+            <div class="report-skeleton" style="border-top:0;margin-top:0">
+              <div class="skeleton-line" style="width:28%"></div>
+              <div class="skeleton-line" style="width:54%"></div>
+              <div class="skeleton-hero">
+                <div class="skeleton-card"><div class="skeleton-line"></div><div class="skeleton-line" style="width:60%"></div></div>
+                <div class="skeleton-card"><div class="skeleton-line"></div><div class="skeleton-line" style="width:40%"></div></div>
+                <div class="skeleton-card"><div class="skeleton-line"></div><div class="skeleton-line" style="width:50%"></div></div>
+                <div class="skeleton-card"><div class="skeleton-line"></div><div class="skeleton-line" style="width:45%"></div></div>
+                <div class="skeleton-card"><div class="skeleton-line"></div><div class="skeleton-line" style="width:55%"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <section class="report-range-results when when-ready when-empty when-error when-glyphs" aria-labelledby="report-range-heading">
+            <div class="report-range-heading">
+              <h2 id="report-range-heading">逐日收款</h2>
+              <p role="status">2026-11-24 至 2026-11-26 · 2 / 3 天有日报</p>
+            </div>
+            <ul class="report-range-days">
+              <li>
+                <button class="report-range-day" type="button" aria-pressed="true" aria-controls="report-detail" data-day="2026-11-26">
+                  <time datetime="2026-11-26">2026-11-26</time>
+                  <span class="report-range-amounts">
+                    <span>MYR RM 1280.50</span>
+                    <span>SGD S$ 312.00</span>
+                    <span>CNY ¥ 580.00</span>
+                  </span>
+                  <span class="report-range-day-action">当前日报</span>
+                </button>
+              </li>
+              <li>
+                <button class="report-range-day" type="button" aria-pressed="false" data-day="2026-11-25">
+                  <time datetime="2026-11-25">2026-11-25</time>
+                  <span class="report-range-amounts">
+                    <span>MYR RM 640.00</span>
+                    <span>SGD S$ 88.00</span>
+                  </span>
+                  <span class="report-range-day-action">查看</span>
+                </button>
+              </li>
+              <li>
+                <button class="report-range-day" type="button" aria-pressed="false" data-day="2026-11-24">
+                  <time datetime="2026-11-24">2026-11-24</time>
+                  <span>未生成</span>
+                  <span class="report-range-day-action">查看</span>
+                </button>
+              </li>
+            </ul>
+          </section>
+
+          <div id="report-detail">
+            <div class="report-toolbar report-range-detail-toolbar when when-ready-flex when-empty-flex when-glyphs">
+              <strong><time datetime="2026-11-26">2026-11-26</time> 日报</strong>
+              <div class="report-toolbar__actions">
+                <div class="report-toolbar__group" aria-label="生成">
+                  <button type="button" class="button button--outline when when-ready when-glyphs" id="btn-regen">重新生成日报</button>
+                  <button type="button" class="button button--outline when when-empty" id="btn-gen">生成日报</button>
+                </div>
+                <div class="report-toolbar__group when when-ready-flex when-glyphs" aria-label="导出">
+                  <div class="select-menu">
+                    <label for="currency">导出币种</label>
+                    <select id="currency" aria-label="导出币种">
+                      <option value="" selected>全部币种</option>
+                      <option value="MYR">MYR</option>
+                      <option value="SGD">SGD</option>
+                      <option value="CNY">CNY</option>
+                    </select>
+                  </div>
+                  <button type="button" class="button button--outline" id="btn-csv">导出当日 CSV</button>
+                  <button type="button" class="button button--outline" id="btn-pdf">导出 PDF</button>
+                </div>
+              </div>
+            </div>
+            <p class="field-hint report-export-hint when when-ready when-glyphs" id="csv-currency-hint">CSV 只包含主币种 MYR。PDF 仍包含全部币种。</p>
+            <p class="form-message form-message--success when when-glyphs" role="status">销售日报-2026-11-26-全部币种.pdf 已开始下载。有 3 个字符字体未收录，已显示为 □。</p>
+            <p class="form-message form-message--success" id="toast" hidden role="status"></p>
+
+            <div class="when when-error-grid empty-state" role="alert">
+              <span class="empty-state__mark" aria-hidden="true">!</span>
+              <p>无法连接服务，请检查网络后重试。</p>
+              <button type="button" class="button button--outline">重试查询</button>
+            </div>
+
+            <p class="empty-state when when-empty" role="status">这一天还没有生成日报。</p>
+
+            <section class="report-sheet when when-ready when-glyphs" aria-label="日报内容">
+              <div class="report-sheet__head">
+                <div>
+                  <p class="eyebrow">2026-11-26 · MYR</p>
+                  <h2>当日订单与收款</h2>
+                  <p>生成于 2026/11/26 21:30:00 · 手动生成</p>
+                </div>
+                <span class="report-sheet__stamp">含退款订单</span>
+              </div>
+
+              <div class="report-hero">
+                <div class="report-metric report-metric--lead">
+                  <span>收款总额（MYR）</span>
+                  <strong>RM 1280.50</strong>
+                  <small>17 笔已收款 · 0 笔待付款</small>
+                </div>
+                <div class="report-metric">
+                  <span>订单数</span>
+                  <strong>18</strong>
+                  <small>已关闭 1 · 退款 1</small>
+                </div>
+                <div class="report-metric">
+                  <span>售出件数</span>
+                  <strong>46</strong>
+                  <small>平均每单 RM 75.32</small>
+                </div>
+                <div class="report-metric">
+                  <span>优惠金额（MYR）</span>
+                  <strong>RM 45.00</strong>
+                  <small>数量价与套餐优惠合计</small>
+                </div>
+                <div class="report-metric">
+                  <span>待退金额（MYR）</span>
+                  <strong>RM 25.00</strong>
+                  <small>待确认退款的金额</small>
+                </div>
+              </div>
+
+              <section class="report-block" aria-label="分币种汇总">
+                <div class="report-block__head">
+                  <h3>分币种汇总</h3>
+                  <span>各币种独立合计，不跨币种相加</span>
+                </div>
+                <ul class="report-table report-table--summary">
+                  <li>
+                    <span>MYR</span>
+                    <span>18 笔 · 已收款 17</span>
+                    <span>优惠 RM 45.00</span>
+                    <span>退款 RM 25.00</span>
+                    <strong>RM 1280.50</strong>
+                  </li>
+                  <li>
+                    <span>SGD</span>
+                    <span>7 笔 · 已收款 6</span>
+                    <span>优惠 S$ 8.00</span>
+                    <span>退款 S$ 0.00</span>
+                    <strong>S$ 312.00</strong>
+                  </li>
+                  <li>
+                    <span>CNY</span>
+                    <span>4 笔 · 已收款 3</span>
+                    <span>优惠 ¥ 0.00</span>
+                    <span>退款 ¥ 0.00</span>
+                    <strong>¥ 580.00</strong>
+                  </li>
+                </ul>
+                <p class="report-block__note">售出件数、待付款、已关闭和退款笔数只按主币种 MYR 统计，不按其他币种拆分。</p>
+              </section>
+
+              <div class="report-columns">
+                <section class="report-block" aria-label="活动与场次">
+                  <div class="report-block__head"><h3>活动与场次</h3><span>按币种分组</span></div>
+                  <div class="report-currency-group">
+                    <p class="report-currency-group__label">MYR</p>
+                    <ul class="report-table report-table--event">
+                      <li>
+                        <span>Comic Fiesta 2026</span>
+                        <span>10 笔</span>
+                        <span>优惠 RM 45.00</span>
+                        <strong>RM 1280.50</strong>
+                      </li>
+                    </ul>
+                  </div>
+                  <div class="report-currency-group">
+                    <p class="report-currency-group__label">SGD</p>
+                    <ul class="report-table report-table--event">
+                      <li>
+                        <span>Dough Market SG</span>
+                        <span>7 笔</span>
+                        <span>优惠 S$ 8.00</span>
+                        <strong>S$ 312.00</strong>
+                      </li>
+                    </ul>
+                  </div>
+                  <div class="report-currency-group">
+                    <p class="report-currency-group__label">CNY</p>
+                    <ul class="report-table report-table--event">
+                      <li>
+                        <span>上海 CP 漫展</span>
+                        <span>4 笔</span>
+                        <span>优惠 ¥ 0.00</span>
+                        <strong>¥ 580.00</strong>
+                      </li>
+                    </ul>
+                  </div>
+                </section>
+
+                <section class="report-block" aria-label="热销商品">
+                  <div class="report-block__head"><h3>热销商品</h3><span>按币种分组</span></div>
+                  <div class="report-currency-group">
+                    <p class="report-currency-group__label">MYR</p>
+                    <ul class="report-rank">
+                      <li>
+                        <em class="report-rank__index">01</em>
+                        <span class="report-rank__name">手工巧克力海盐饼干</span>
+                        <span class="report-rank__qty">12 件</span>
+                        <strong class="report-rank__amt">RM 388.00</strong>
+                      </li>
+                      <li>
+                        <em class="report-rank__index">02</em>
+                        <span class="report-rank__name">联盟徽章套装</span>
+                        <span class="report-rank__qty">8 件</span>
+                        <strong class="report-rank__amt">RM 71.00</strong>
+                      </li>
+                      <li>
+                        <em class="report-rank__index">03</em>
+                        <span class="report-rank__name">手製緞帶書簽</span>
+                        <span class="report-rank__qty">3 件</span>
+                        <strong class="report-rank__amt">RM 45.00</strong>
+                      </li>
+                    </ul>
+                  </div>
+                  <div class="report-currency-group">
+                    <p class="report-currency-group__label">SGD</p>
+                    <ul class="report-rank">
+                      <li>
+                        <em class="report-rank__index">01</em>
+                        <span class="report-rank__name">咸蛋黄雪花酥</span>
+                        <span class="report-rank__qty">6 件</span>
+                        <strong class="report-rank__amt">S$ 188.00</strong>
+                      </li>
+                    </ul>
+                  </div>
+                  <div class="report-currency-group">
+                    <p class="report-currency-group__label">CNY</p>
+                    <ul class="report-rank">
+                      <li>
+                        <em class="report-rank__index">01</em>
+                        <span class="report-rank__name">限量合作图录</span>
+                        <span class="report-rank__qty">4 件</span>
+                        <strong class="report-rank__amt">¥ 580.00</strong>
+                      </li>
+                    </ul>
+                  </div>
+                </section>
+              </div>
+
+              <section class="report-block" aria-label="收款方式">
+                <div class="report-block__head"><h3>收款方式</h3><span>按币种分组</span></div>
+                <div class="report-currency-group">
+                  <p class="report-currency-group__label">MYR</p>
+                  <ul class="report-table report-table--pay">
+                    <li><span>现金</span><span>14 笔</span><strong>RM 700.00</strong></li>
+                    <li><span>DuitNow 二维码</span><span>3 笔</span><strong>RM 580.50</strong></li>
+                  </ul>
+                </div>
+                <div class="report-currency-group">
+                  <p class="report-currency-group__label">SGD</p>
+                  <ul class="report-table report-table--pay">
+                    <li><span>PayNow</span><span>7 笔</span><strong>S$ 312.00</strong></li>
+                  </ul>
+                </div>
+                <div class="report-currency-group">
+                  <p class="report-currency-group__label">CNY</p>
+                  <ul class="report-table report-table--pay">
+                    <li><span>微信支付</span><span>4 笔</span><strong>¥ 580.00</strong></li>
+                  </ul>
+                </div>
+              </section>
+            </section>
+          </div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const shell = document.getElementById("storefront-shell");
+    const stateSel = document.getElementById("proto-state");
+    const themeSel = document.getElementById("proto-theme");
+    const form = document.getElementById("report-form");
+    const start = document.getElementById("report-start");
+    const end = document.getElementById("report-end");
+    const toast = document.getElementById("toast");
+    const DAY = 86400000;
+
+    function selectDay(date) {
+      document.querySelectorAll(".report-range-day").forEach((btn) => {
+        const on = btn.dataset.day === date;
+        btn.setAttribute("aria-pressed", on ? "true" : "false");
+        const action = btn.querySelector(".report-range-day-action");
+        if (action) action.textContent = on ? "当前日报" : "查看";
+      });
+      document.querySelectorAll("#report-detail time").forEach((el) => {
+        el.dateTime = date;
+        el.textContent = date;
+      });
+    }
+    function applyState(state) {
+      shell.dataset.state = state;
+      stateSel.value = state;
+      selectDay(state === "empty" ? "2026-11-24" : "2026-11-26");
+    }
+    function applyTheme(theme) {
+      shell.dataset.storefrontTheme = theme;
+      themeSel.value = theme;
+    }
+    stateSel.addEventListener("change", () => applyState(stateSel.value));
+    themeSel.addEventListener("change", () => applyTheme(themeSel.value));
+
+    const params = new URLSearchParams(location.search);
+    if (params.get("state")) applyState(params.get("state"));
+    if (params.get("theme")) applyTheme(params.get("theme"));
+    if (params.get("shot") === "1") document.body.dataset.shot = "1";
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      end.setCustomValidity("");
+      const count = (end.valueAsNumber - start.valueAsNumber) / DAY + 1;
+      if (!Number.isInteger(count)) {
+        end.setCustomValidity("请选择有效的起始日期和结束日期。");
+      } else if (count < 1) {
+        end.setCustomValidity("结束日期须在起始日期当天或之后。");
+      } else if (count > 31) {
+        end.setCustomValidity("每次最多查询 31 天，请缩短日期区间。");
+      }
+      if (!end.checkValidity()) { end.reportValidity(); return; }
+      showToast("已按 " + start.value + " 至 " + end.value + " 查询（原型不请求接口）。", "success");
+    });
+
+    document.getElementById("proto-overflow").addEventListener("click", () => {
+      start.value = "2026-10-01";
+      end.value = "2026-11-26";
+      end.setCustomValidity("每次最多查询 31 天，请缩短日期区间。");
+      end.reportValidity();
+    });
+
+    function showToast(text, kind) {
+      toast.hidden = false;
+      toast.className = "form-message form-message--" + (kind || "success");
+      toast.textContent = text;
+    }
+    document.getElementById("btn-regen").addEventListener("click", () => showToast("2026-11-26 的日报已生成。"));
+    document.getElementById("btn-gen").addEventListener("click", () => showToast("2026-11-26 的日报已生成。"));
+    document.getElementById("btn-csv").addEventListener("click", () => showToast("2026-11-26 的 CSV 已开始下载。"));
+    document.getElementById("btn-pdf").addEventListener("click", () => {
+      applyState("glyphs");
+    });
+    const currencySel = document.getElementById("currency");
+    const csvHint = document.getElementById("csv-currency-hint");
+    function syncCsvHint() {
+      if (!currencySel || !csvHint) return;
+      csvHint.hidden = currencySel.value !== "";
+    }
+    currencySel.addEventListener("change", syncCsvHint);
+    syncCsvHint();
+  </script>
+</body>
+</html>

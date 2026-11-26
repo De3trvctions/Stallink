@@ -1,0 +1,14 @@
+<!-- Stallink favicon 设计稿，不是前端用的最终资源。
+     不要复制进 web/src/app 或 web/public；等 Kel 选定后再由前端按 favicon-设计说明.md 导出。
+     颜色全部取自现有 token，字形为 path，不依赖外部字体。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="title">
+  <title id="title">Stallink</title>
+  <!-- 主文件：摘要式摊位。底与描边同 A；篷顶 expo-lime #e3f7a2；台面与立柱 expo-paper #f4f0e6；号牌 brand-mark / expo-red #8c3c2d。赭石在柠绿上约 6.46:1。 -->
+  <rect width="32" height="32" rx="6" fill="#262820"/>
+  <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="5.25" fill="none" stroke="#e3f7a2" stroke-width="1"/>
+  <path d="M5 8 L27 8 L23.2 15.2 L8.8 15.2 Z" fill="#e3f7a2"/>
+  <rect x="8.8" y="15.2" width="3.3" height="8" fill="#f4f0e6"/>
+  <rect x="19.9" y="15.2" width="3.3" height="8" fill="#f4f0e6"/>
+  <rect x="7.5" y="22.8" width="17" height="3.5" rx="0.4" fill="#f4f0e6"/>
+  <rect x="17.6" y="9.5" width="5.2" height="4.1" rx="0.5" fill="#8c3c2d"/>
+</svg>

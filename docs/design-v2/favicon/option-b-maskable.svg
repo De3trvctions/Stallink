@@ -1,0 +1,15 @@
+<!-- Stallink favicon 设计稿，不是前端用的最终资源。
+     不要复制进 web/src/app 或 web/public；等 Kel 选定后再由前端按 favicon-设计说明.md 导出。
+     颜色全部取自现有 token，字形为 path，不依赖外部字体。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="title">
+  <title id="title">Stallink</title>
+  <!-- maskable 源：炭黑铺满，摊位缩进安全区，号牌不得靠近画布角。 -->
+  <rect width="32" height="32" fill="#262820"/>
+  <g transform="translate(16 16) scale(0.70) translate(-16 -16)">
+    <path d="M5 8 L27 8 L23.2 15.2 L8.8 15.2 Z" fill="#e3f7a2"/>
+    <rect x="8.8" y="15.2" width="3.3" height="8" fill="#f4f0e6"/>
+    <rect x="19.9" y="15.2" width="3.3" height="8" fill="#f4f0e6"/>
+    <rect x="7.5" y="22.8" width="17" height="3.5" rx="0.4" fill="#f4f0e6"/>
+    <rect x="17.6" y="9.5" width="5.2" height="4.1" rx="0.5" fill="#8c3c2d"/>
+  </g>
+</svg>
