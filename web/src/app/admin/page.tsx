@@ -1,17 +1,23 @@
 import Link from "next/link";
 
-const sections = [
-  { href: "/admin/events", index: "01", title: "活动与场次", description: "设置时间、场馆与摊位号，决定这一场卖什么。", label: "开摊准备" },
-  { href: "/admin/goods", index: "02", title: "商品与套餐", description: "维护说明、价格、活动库存与组合优惠。", label: "目录与库存" },
-  { href: "/admin/orders", index: "03", title: "订单记录", description: "核对现场订单、商品明细与收款状态。", label: "现场流水" },
-  { href: "/admin/pay-codes", index: "04", title: "收款方式", description: "上传收款码，设定现场默认使用的那一个。", label: "付款配置" },
-  { href: "/admin/sales", index: "05", title: "销售账号", description: "给现场同事开账号，限定他们能做的事。", label: "团队与权限" },
-  { href: "/admin/shop", index: "06", title: "店铺资料", description: "店名、公告与对外分享链接，顾客看到的就是这些。", label: "公开页面" },
+const groups = [
+  { label: "经营", items: [
+    { href: "/admin/events", index: "01", title: "活动", description: "设置时间、场馆与摊位号，决定这一场卖什么。", label: "开摊准备" },
+    { href: "/admin/goods", index: "02", title: "商品", description: "维护说明、价格、活动库存与组合优惠。", label: "目录与库存" },
+    { href: "/admin/orders", index: "03", title: "订单记录", description: "核对本场订单、商品明细与收款状态。", label: "现场流水" },
+    { href: "/admin/reports", index: "04", title: "销售日报", description: "按日期查看营业额、优惠和收款构成，需要时再导出。", label: "经营统计" },
+  ] },
+  { label: "店铺", items: [
+    { href: "/admin/pay-codes", index: "05", title: "收款方式", description: "上传收款码，设定现场默认使用的那一个。", label: "付款配置" },
+    { href: "/admin/sales", index: "06", title: "销售账号", description: "给现场同事开账号，限定他们能做的事。", label: "团队与权限" },
+    { href: "/admin/shop", index: "07", title: "店铺资料", description: "店名、公告与对外分享链接，顾客看到的就是这些。", label: "公开页面" },
+    { href: "/admin/audit", index: "08", title: "操作记录", description: "查看店铺的管理和订单操作，按时间倒序排列。", label: "变更留痕" },
+  ] },
 ];
 
 export default function AdminHome() {
   return (
-    <main className="workspace-overview">
+    <main className="workspace-overview admin-overview">
       <header className="workspace-overview__heading">
         <p className="eyebrow">店铺工作台</p>
         <h1>开摊之前，把清单过一遍。</h1>
@@ -21,16 +27,22 @@ export default function AdminHome() {
         <span><i aria-hidden="true" />本店工作台已连接</span>
         <Link href="/counter" className="button button--dark">打开现场收银 <span aria-hidden="true">→</span></Link>
       </div>
-      <section className="workspace-card-grid" aria-label="店铺管理功能">
-        {sections.map((section) => (
-          <Link href={section.href} key={section.href} className="workspace-card">
-            <span className="workspace-card__index">{section.index}</span>
-            <h2>{section.title}</h2>
-            <span className="workspace-card__arrow" aria-hidden="true">→</span>
-            <p>{section.description}</p>
-          </Link>
-        ))}
-      </section>
+      {groups.map((group) => (
+        <section className="workspace-card-group" key={group.label} aria-labelledby={`overview-group-${group.label}`}>
+          <h2 id={`overview-group-${group.label}`}>{group.label}</h2>
+          <div className="workspace-card-grid">
+            {group.items.map((section) => (
+              <Link href={section.href} key={section.href} className="workspace-card">
+                <span className="workspace-card__index">{section.index}</span>
+                <span className="shop-only admin-overview__category">{section.label}</span>
+                <h2>{section.title}</h2>
+                <span className="workspace-card__arrow" aria-hidden="true">→</span>
+                <p>{section.description}</p>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ))}
       <aside className="workspace-tip">
         <span className="workspace-tip__mark" aria-hidden="true">※</span>
         <div><strong>开摊前检查</strong><p>活动时间与摊位号对得上、商品可售数量够卖、收款码能正常打开。</p></div>

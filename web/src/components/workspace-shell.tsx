@@ -13,7 +13,7 @@ type RailIconName =
   | "grid" | "calendar" | "box" | "receipt" | "chart" | "scan" | "bag"
   | "card" | "users" | "store" | "history" | "shop" | "review" | "appearance";
 
-type NavItem = { href: string; label: string; index: string; icon?: RailIconName };
+type NavItem = { href: string; label: string; index?: string; icon?: RailIconName };
 type NavGroup = { label: string; items: NavItem[] };
 
 const railIcons: Record<RailIconName, string> = {
@@ -44,8 +44,8 @@ function RailIcon({ name }: { name: RailIconName }) {
 const cashierGroup: NavGroup = {
   label: "现场收银",
   items: [
-    { href: "/counter", label: "现场开单", index: "POS", icon: "scan" },
-    { href: "/counter/orders", label: "现场订单", index: "ORD", icon: "bag" },
+    { href: "/counter", label: "现场开单", icon: "scan" },
+    { href: "/counter/orders", label: "本场订单", icon: "bag" },
   ],
 };
 
@@ -56,18 +56,18 @@ const workspace = {
     description: "活动、商品、订单与现场收银",
     groups: [
       { label: "经营", items: [
-        { href: "/admin", label: "总览", index: "00", icon: "grid" },
+        { href: "/admin", label: "总览", icon: "grid" },
         { href: "/admin/events", label: "活动", index: "01", icon: "calendar" },
         { href: "/admin/goods", label: "商品", index: "02", icon: "box" },
-        { href: "/admin/orders", label: "订单", index: "03", icon: "receipt" },
+        { href: "/admin/orders", label: "订单记录", index: "03", icon: "receipt" },
         { href: "/admin/reports", label: "销售日报", index: "04", icon: "chart" },
       ] },
       cashierGroup,
       { label: "店铺", items: [
-        { href: "/admin/pay-codes", label: "收款方式", index: "06", icon: "card" },
-        { href: "/admin/sales", label: "销售账号", index: "07", icon: "users" },
-        { href: "/admin/shop", label: "店铺资料", index: "08", icon: "store" },
-        { href: "/admin/audit", label: "操作记录", index: "09", icon: "history" },
+        { href: "/admin/pay-codes", label: "收款方式", index: "05", icon: "card" },
+        { href: "/admin/sales", label: "销售账号", index: "06", icon: "users" },
+        { href: "/admin/shop", label: "店铺资料", index: "07", icon: "store" },
+        { href: "/admin/audit", label: "操作记录", index: "08", icon: "history" },
       ] },
     ],
   },
@@ -91,7 +91,7 @@ const workspace = {
   },
 } satisfies Record<WorkspaceKind, { label: string; eyebrow: string; description: string; groups: NavGroup[] }>;
 
-export function WorkspaceShell({ kind, children }: { kind: WorkspaceKind; children: ReactNode }) {
+export function WorkspaceShell({ kind, themeFallback = false, children }: { kind: WorkspaceKind; themeFallback?: boolean; children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [account, setAccount] = useState<{ role: string; id: string } | null>(null);
@@ -101,10 +101,10 @@ export function WorkspaceShell({ kind, children }: { kind: WorkspaceKind; childr
   const [shopName, setShopName] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
   const current = workspace[kind === "sales" && account?.role === "shop_admin" ? "shop" : kind];
-  const activeHref = current.groups
-    .flatMap((group) => group.items.map((item) => item.href))
-    .filter((href) => pathname === href || pathname.startsWith(`${href}/`))
-    .sort((left, right) => right.length - left.length)[0];
+  const activeItem = current.groups
+    .flatMap((group) => group.items)
+    .filter(({ href }) => pathname === href || pathname.startsWith(`${href}/`))
+    .sort((left, right) => right.href.length - left.href.length)[0];
 
   useEffect(() => {
     let active = true;
@@ -138,6 +138,29 @@ export function WorkspaceShell({ kind, children }: { kind: WorkspaceKind; childr
       router.replace(home[role] ?? "/login");
     }
   }, [role, allowed, router]);
+
+  useEffect(() => {
+    if (!allowed) return;
+    const nav = document.getElementById("workspace-navigation");
+    const current = nav?.querySelector<HTMLElement>("[aria-current='page']");
+    if (!nav || !current) return;
+
+    const alignCurrentIntoView = () => {
+      const style = getComputedStyle(nav);
+      const navRect = nav.getBoundingClientRect();
+      const currentRect = current.getBoundingClientRect();
+      if (style.overflowX === "auto" || style.overflowX === "scroll") {
+        nav.scrollLeft += currentRect.left - navRect.left - (nav.clientWidth - currentRect.width) / 2;
+      }
+      if (style.overflowY === "auto" || style.overflowY === "scroll") {
+        nav.scrollTop += currentRect.top - navRect.top - (nav.clientHeight - currentRect.height) / 2;
+      }
+    };
+
+    alignCurrentIntoView();
+    const frame = requestAnimationFrame(alignCurrentIntoView);
+    return () => cancelAnimationFrame(frame);
+  }, [pathname, allowed]);
 
   async function logout() {
     setLoggingOut(true);
@@ -185,7 +208,11 @@ export function WorkspaceShell({ kind, children }: { kind: WorkspaceKind; childr
           <h2>{current.label}</h2>
           <p>{current.description}</p>
         </div>
-        <nav className="workspace-nav" aria-label={`${current.label}导航`}>
+        <nav
+          id="workspace-navigation"
+          className="workspace-nav"
+          aria-label={`${current.label}导航`}
+        >
           {current.groups.map((group) => (
             <div className="workspace-nav__group" key={group.label}>
               <span className="workspace-nav__label">{group.label}</span>
@@ -194,26 +221,37 @@ export function WorkspaceShell({ kind, children }: { kind: WorkspaceKind; childr
                   key={item.href}
                   href={item.href}
                   className="workspace-nav__link"
-                  data-active={activeHref === item.href}
-                  aria-current={activeHref === item.href ? "page" : undefined}
+                  data-active={activeItem?.href === item.href}
+                  aria-current={activeItem?.href === item.href ? "page" : undefined}
                 >
                   {item.icon ? <span className="workspace-nav__icon"><RailIcon name={item.icon} /></span> : null}
-                  <span className="workspace-nav__index" aria-hidden="true">{item.index}</span>
+                  {item.index ? <span className="workspace-nav__index" aria-hidden="true">{item.index}</span> : null}
                   <span className="workspace-nav__text">{item.label}</span>
                 </Link>
               ))}
             </div>
           ))}
         </nav>
-        <Link href="/" className="workspace-sidebar__back"><span aria-hidden="true">←</span> 返回 Stallink</Link>
-        <button type="button" className="workspace-sidebar__logout" disabled={loggingOut} onClick={() => void logout()}>{loggingOut ? "退出中…" : "退出登录"}</button>
-        {logoutError && <p role="alert">{logoutError}</p>}
+        <div className="workspace-sidebar__foot">
+          <Link href="/" className="workspace-sidebar__back"><span aria-hidden="true">←</span> 返回 Stallink</Link>
+          <button type="button" className="workspace-sidebar__logout" disabled={loggingOut} onClick={() => void logout()}>{loggingOut ? "退出中…" : "退出登录"}</button>
+          {logoutError && <p role="alert">{logoutError}</p>}
+        </div>
       </aside>
       <div className="workspace-main">
         <div className="workspace-topbar">
           <span><i aria-hidden="true" />工作空间已连接</span>
           <Link href="/" className="workspace-topbar__link">返回 Stallink ↗</Link>
         </div>
+        {themeFallback && account?.role === "platform_admin" ? (
+          <div className="platform-theme-fallback" role="status">
+            <div>
+              <strong>外观设置暂时读取失败，全站临时使用「现有风格」</strong>
+              <p>保存的设置没有丢，通常是外观服务短暂超时，刷新后会重新读取。这条提醒只有平台管理员能看到。</p>
+            </div>
+            <button type="button" className="button button--outline" onClick={() => router.refresh()}>重新检查</button>
+          </div>
+        ) : null}
         <div className="workspace-page">{children}</div>
       </div>
     </div>
