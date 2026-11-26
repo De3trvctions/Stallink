@@ -21,7 +21,7 @@ const themeBootstrap = `(function(){var meta=document.querySelector('meta[name="
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   await connection();
-  const theme = await getStorefrontTheme();
+  const { theme, fallback } = await getStorefrontTheme();
   const pinnedLight = theme === "exhibition" || theme === "shop";
   return (
     <html lang="zh-CN" suppressHydrationWarning>
@@ -33,7 +33,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <a className="skip-link" href="#main-content">跳到主要内容</a>
         <FieldValidity />
         <Suspense fallback={<span className="sr-only" role="status">正在打开 Stallink…</span>}>
-          <SiteFrame theme={theme}>{children}</SiteFrame>
+          <SiteFrame theme={theme} fallback={fallback}>{children}</SiteFrame>
         </Suspense>
       </body>
     </html>

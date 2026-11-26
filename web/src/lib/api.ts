@@ -6,17 +6,17 @@ export function apiOrigin() {
   return process.env.API_ORIGIN ?? "http://127.0.0.1:8080";
 }
 
-export async function getStorefrontTheme(): Promise<StorefrontTheme> {
+export async function getStorefrontTheme(): Promise<{ theme: StorefrontTheme; fallback: boolean }> {
   try {
     const res = await fetch(`${apiOrigin()}${appearancePath}`, { cache: "no-store", signal: AbortSignal.timeout(2500) });
     if (res.ok) {
       const data = await res.json();
-      if (isStorefrontTheme(data.theme)) return data.theme;
+      if (isStorefrontTheme(data.theme)) return { theme: data.theme, fallback: false };
     }
   } catch {
     // Keep the site available if the appearance service is temporarily offline.
   }
-  return "classic";
+  return { theme: "classic", fallback: true };
 }
 
 export type RequestCategory =
@@ -158,8 +158,6 @@ export type StaffOrder = {
   createdAt: string;
   reservationExpiresAt: string | null;
   refundedAt: string | null;
-  cashReceivedMinor: number | null;
-  cashChangeMinor: number | null;
   openedByLogin: string | null;
   openedByRole: string | null;
   paidByLogin: string | null;
@@ -222,6 +220,7 @@ export type BoothEvent = {
   city: string;
   venue: string;
   boothNumber: string;
+  displayBoothNumber?: string;
   currency: string;
   status: string;
 };
