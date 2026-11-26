@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SafeImage } from "@/components/safe-image";
 import { ShelfCopy } from "@/components/shelf-copy";
+import { ShopHero, ShopSpotlight } from "@/components/shop-landing";
 import { type Good } from "@/lib/api";
 import { formatMoney, lowestUnitRate } from "@/lib/pricing";
 type SortKey = "relevance" | "price_asc" | "price_desc" | "newest";
@@ -17,7 +18,7 @@ const sortOptions: { key: SortKey; label: string }[] = [
 
 const unavailableMessage = "暂时无法加载商品目录，请重试。";
 
-export function CatalogExplorer({ initialGoods, initialUnavailable }: { initialGoods: Good[]; initialUnavailable: boolean }) {
+export function CatalogExplorer({ initialGoods, initialUnavailable, shopLanding = false }: { initialGoods: Good[]; initialUnavailable: boolean; shopLanding?: boolean }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("relevance");
   const [inStockOnly, setInStockOnly] = useState(false);
@@ -27,6 +28,15 @@ export function CatalogExplorer({ initialGoods, initialUnavailable }: { initialG
   const [request, setRequest] = useState(0);
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const searchButtonRef = useRef<HTMLButtonElement>(null);
+
+  function showResults() {
+    setFocused(false);
+    inputRef.current?.blur();
+    resultsRef.current?.scrollIntoView({ block: "start" });
+    if (error) refresh();
+  }
 
   useEffect(() => {
     if (request === 0) return;
@@ -91,10 +101,12 @@ export function CatalogExplorer({ initialGoods, initialUnavailable }: { initialG
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     event.preventDefault();
     inputRef.current?.blur();
+    if (searchButtonRef.current?.getClientRects().length) showResults();
   };
 
   return (
-    <section className="catalog" aria-label="在售商品">
+    <section className={`catalog${shopLanding ? " catalog--shop-landing" : ""}`} aria-label="在售商品">
+      {shopLanding ? <ShopHero goods={initialGoods} /> : null}
       <div className="catalog__search">
         <div
           className={`catalog__box${focused ? " catalog__box--focus" : ""}`}
@@ -117,6 +129,11 @@ export function CatalogExplorer({ initialGoods, initialUnavailable }: { initialG
             placeholder="搜商品、摊位或活动…"
             aria-label="搜索商品"
           />
+          {shopLanding ? (
+            <button ref={searchButtonRef} type="button" className="shop-only shop-search-submit" onClick={showResults} aria-label="查看搜索结果">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
+            </button>
+          ) : null}
           {query ? (
             <button type="button" className="catalog__clear" onClick={() => { changeQuery(""); inputRef.current?.focus(); }} aria-label="清空搜索">×</button>
           ) : null}
@@ -133,26 +150,30 @@ export function CatalogExplorer({ initialGoods, initialUnavailable }: { initialG
             </ul>
           ) : null}
         </div>
-        <div className="catalog__toolbar">
-          <div className="catalog__sorts" role="group" aria-label="排序方式">
-            {sortOptions.map((option) => (
-              <button
-                key={option.key}
-                type="button"
-                aria-pressed={sort === option.key}
-                className={`catalog__sort${sort === option.key ? " catalog__sort--active" : ""}`}
-                onClick={() => { if (sort !== option.key) { setSort(option.key); refresh(); } }}
-              >
-                {option.label}
-              </button>
-            ))}
+        {shopLanding ? <ShopSpotlight goods={initialGoods} unavailable={initialUnavailable} /> : null}
+        <div ref={resultsRef} className="catalog__results-head">
+          {shopLanding ? <h2 className="shop-only shop-catalog-title">全部商品</h2> : null}
+          <div className="catalog__toolbar">
+            <div className="catalog__sorts" role="group" aria-label="排序方式">
+              {sortOptions.map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  aria-pressed={sort === option.key}
+                  className={`catalog__sort${sort === option.key ? " catalog__sort--active" : ""}`}
+                  onClick={() => { if (sort !== option.key) { setSort(option.key); refresh(); } }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <label className="catalog__stock">
+              <input type="checkbox" checked={inStockOnly} onChange={(event) => setInStockOnly(event.target.checked)} />
+              仅看有货
+            </label>
+            {loading ? <span className="catalog__count ed-mono">正在加载商品…</span> : null}
+            <span className={loading ? "sr-only" : "catalog__count ed-mono"} role="status">{!loading && !error ? `${visible.length} 件商品` : ""}</span>
           </div>
-          <label className="catalog__stock">
-            <input type="checkbox" checked={inStockOnly} onChange={(event) => setInStockOnly(event.target.checked)} />
-            仅看有货
-          </label>
-          {loading ? <span className="catalog__count ed-mono">正在加载商品…</span> : null}
-          <span className={loading ? "sr-only" : "catalog__count ed-mono"} role="status">{!loading && !error ? `${visible.length} 件商品` : ""}</span>
         </div>
       </div>
 
