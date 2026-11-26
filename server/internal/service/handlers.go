@@ -691,8 +691,6 @@ func writeDataErr(w http.ResponseWriter, r *http.Request, err error) {
 		writeErr(w, http.StatusConflict, "pay_code_required")
 	case errors.Is(err, data.ErrPayCodeCurrencyMismatch):
 		writeErr(w, http.StatusBadRequest, "pay_code_currency_mismatch")
-	case errors.Is(err, data.ErrInvalidCashReceived):
-		writeErr(w, http.StatusBadRequest, "invalid_cash_received")
 	case errors.Is(err, data.ErrEventNotOpen):
 		writeErr(w, http.StatusBadRequest, "event_not_open")
 	case errors.Is(err, data.ErrNotListed):

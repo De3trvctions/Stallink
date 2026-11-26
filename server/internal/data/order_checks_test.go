@@ -26,41 +26,6 @@ func TestPayCodeCurrencyMatches(t *testing.T) {
 	}
 }
 
-func TestCashSettlement(t *testing.T) {
-	t.Run("qr without cash leaves amounts nil", func(t *testing.T) {
-		gotReceived, gotChange, err := cashSettlement("qr", 1000, nil)
-		if err != nil || gotReceived != nil || gotChange != nil {
-			t.Fatalf("cashSettlement(qr, 1000, nil) = %v, %v, %v; want nil nil nil", gotReceived, gotChange, err)
-		}
-	})
-	received := int64(1500)
-	gotReceived, gotChange, err := cashSettlement("cash", 1000, &received)
-	if err != nil {
-		t.Fatalf("cashSettlement returned error: %v", err)
-	}
-	if gotReceived == nil || *gotReceived != 1500 {
-		t.Fatalf("received = %v, want 1500", gotReceived)
-	}
-	if gotChange == nil || *gotChange != 500 {
-		t.Fatalf("change = %v, want 500", gotChange)
-	}
-	exact := int64(1000)
-	gotReceived, gotChange, err = cashSettlement("cash", 1000, &exact)
-	if err != nil || gotChange == nil || *gotChange != 0 {
-		t.Fatalf("exact total: received=%v change=%v err=%v", gotReceived, gotChange, err)
-	}
-	under := int64(900)
-	if _, _, err := cashSettlement("cash", 1000, &under); err != ErrInvalidCashReceived {
-		t.Fatalf("underpaid error = %v, want ErrInvalidCashReceived", err)
-	}
-	if _, _, err := cashSettlement("cash", 1000, nil); err != ErrInvalidCashReceived {
-		t.Fatalf("missing cash tender error = %v, want ErrInvalidCashReceived", err)
-	}
-	if _, _, err := cashSettlement("qr", 1000, &exact); err != ErrInvalidCashReceived {
-		t.Fatalf("qr with cash amount error = %v, want ErrInvalidCashReceived", err)
-	}
-}
-
 func TestPayStillAllowed(t *testing.T) {
 	cases := []struct {
 		name           string

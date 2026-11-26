@@ -16,7 +16,6 @@ var (
 	ErrStatus                  = errors.New("data: invalid status")
 	ErrPayCode                 = errors.New("data: pay code required")
 	ErrPayCodeCurrencyMismatch = errors.New("data: pay code currency does not match order currency")
-	ErrInvalidCashReceived     = errors.New("data: cash received must cover the order total")
 	ErrNotListed               = errors.New("data: not listed")
 	ErrImageLimit              = errors.New("data: image limit")
 	ErrInvalidBundle           = errors.New("data: invalid bundle")

@@ -624,16 +624,13 @@ func (a *API) Pay(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// cashReceivedMinor is no longer part of the request (K-Q10 = A, K-Q17 = A).
+	// readJSON is lenient, so older clients that still send it are ignored.
 	var body struct {
-		PayCodeID         data.ID `json:"payCodeId"`
-		CashReceivedMinor *int64  `json:"cashReceivedMinor"`
+		PayCodeID data.ID `json:"payCodeId"`
 	}
 	if err := readJSON(r, &body); err != nil || body.PayCodeID == 0 {
 		writeErr(w, http.StatusBadRequest, "pay_code_required")
-		return
-	}
-	if body.CashReceivedMinor != nil && *body.CashReceivedMinor < 0 {
-		writeErr(w, http.StatusBadRequest, "invalid_cash_received")
 		return
 	}
 	orderID, valid := pathEntityID(w, r, "orderID")
@@ -641,7 +638,7 @@ func (a *API) Pay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.orderActionCommand(w, r, account, "order.pay:"+orderID.String(), body, func(identity data.CommandIdentity) (data.OrderCommandResult, error) {
-		return a.DB.PayOrderCommand(r.Context(), identity, orderID, body.PayCodeID, body.CashReceivedMinor, a.AllowScheduledOrders)
+		return a.DB.PayOrderCommand(r.Context(), identity, orderID, body.PayCodeID, a.AllowScheduledOrders)
 	})
 }
 
@@ -803,10 +800,8 @@ func orderJSON(order data.Order) map[string]any {
 		"currency": order.Currency, "priceLabel": priceLabel(order.Currency, order.TotalMinor),
 		"totalMinor": order.TotalMinor, "payCodeName": order.PayCodeName,
 		"stateVersion": order.StateVersion, "createdAt": order.CreatedAt, "reservationExpiresAt": order.ReservationExpiresAt,
-		"refundedAt":        order.RefundedAt,
-		"cashReceivedMinor": order.CashReceivedMinor,
-		"cashChangeMinor":   order.CashChangeMinor,
-		"openedByLogin":     order.OpenedByLogin, "openedByRole": order.OpenedByRole,
+		"refundedAt":    order.RefundedAt,
+		"openedByLogin": order.OpenedByLogin, "openedByRole": order.OpenedByRole,
 		"paidByLogin": paidBy, "paidByRole": order.PaidByRole,
 		"eventId": order.EventID, "eventName": order.EventName, "lines": lines, "pricingGroups": order.PricingGroups,
 	}

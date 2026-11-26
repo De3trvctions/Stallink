@@ -61,9 +61,7 @@ func TestPayOrderRejectsPartiallyExpiredReservations(t *testing.T) {
 	orderID, payCodeID := integrationID(t, order), integrationID(t, payCode)
 	// allowScheduled=true keeps the focus on reservation expiry: the fixture
 	// event is scheduled, and gating it out first would mask the check under test.
-	// Cash received covers the 300-minor total so settlement passes too.
-	cashReceived := int64(300)
-	_, err = payOrderTx(ctx, tx, shopID, actorID, orderID, payCodeID, &cashReceived, true)
+	_, err = payOrderTx(ctx, tx, shopID, actorID, orderID, payCodeID, true)
 	if !errors.Is(err, ErrReservationExpired) {
 		_ = tx.Rollback(ctx)
 		t.Fatalf("payOrderTx error = %v, want ErrReservationExpired", err)

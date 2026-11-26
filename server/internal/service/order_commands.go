@@ -121,8 +121,6 @@ func orderCommandErrorCode(err error) string {
 		return "not_listed"
 	case errors.Is(err, data.ErrEventNotOpen):
 		return "event_not_open"
-	case errors.Is(err, data.ErrInvalidCashReceived):
-		return "invalid_cash_received"
 	case errors.Is(err, data.ErrPayCode):
 		return "pay_code_required"
 	case errors.Is(err, data.ErrPayCodeCurrencyMismatch):

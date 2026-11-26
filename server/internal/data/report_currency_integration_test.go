@@ -74,3 +74,34 @@ func TestBuildDailyReportSeparatesCurrencies(t *testing.T) {
 		t.Fatalf("SGD event = %+v, want two orders and 4000 minor units", sgd)
 	}
 }
+
+// K-Q7 = B / K-Q10 = A: new payments leave cash_received_minor NULL, so the
+// snapshot's cashOverShortMinor (still used by the PDF) only reflects
+// historical cash-tendered orders.
+func TestBuildDailyReportCashOverShortOnlyCountsHistoricalCash(t *testing.T) {
+	pool, ctx := newIsolatedMigratedIntegrationPool(t, "report_cash_history")
+	var shop, actor, event string
+	if err := pool.QueryRow(ctx, `INSERT INTO shops(name,slug) VALUES ('Cash History','cash-history') RETURNING id::text`).Scan(&shop); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO users(login_name,password_hash,role,shop_id) VALUES ('cashowner','hash','shop_admin',$1) RETURNING id::text`, shop).Scan(&actor); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO events(shop_id,name,starts_on,ends_on,currency,status) VALUES ($1,'Cash Event',CURRENT_DATE,CURRENT_DATE,'MYR','live') RETURNING id::text`, shop).Scan(&event); err != nil {
+		t.Fatal(err)
+	}
+	// Historical cash order: 100 minor over. New-style paid order: no tender recorded.
+	if _, err := pool.Exec(ctx, `INSERT INTO orders(shop_id,event_id,number,status,total_minor,currency,opened_by,opened_by_role,cash_received_minor,cash_change_minor)
+		VALUES ($1,$2,'CASHAA','paid',1000,'MYR',$3,'shop_admin',1100,100),
+		       ($1,$2,'CASHAB','paid',2000,'MYR',$3,'shop_admin',NULL,NULL)`, shop, event, actor); err != nil {
+		t.Fatal(err)
+	}
+	date := time.Now().In(time.FixedZone("MYT", 8*60*60)).Format("2006-01-02")
+	report, err := NewShopStore(pool).BuildDailyReport(ctx, integrationID(t, shop), date, "manual", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.CashOverShortMinor != 100 || len(report.Currencies) != 1 || report.Currencies[0].CashOverShortMinor != 100 {
+		t.Fatalf("cash over/short = %d / %+v, want 100 from the historical order only", report.CashOverShortMinor, report.Currencies)
+	}
+}

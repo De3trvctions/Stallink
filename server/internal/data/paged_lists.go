@@ -11,8 +11,7 @@ func (s *ShopStore) ListOrderPage(ctx context.Context, shopID ID, eventID, date,
 	timezone = NormalizeReportTimezone(timezone)
 	rows, err := s.pool.Query(ctx, `SELECT o.id::text, o.number, o.status, o.booth_name, o.currency, o.pay_code_name,
  opener.login_name, o.opened_by_role, COALESCE(payer.login_name, ''), COALESCE(payer.role, ''),
- o.event_id::text, e.name, o.total_minor, o.state_version, o.created_at, o.reservation_expires_at, o.refunded_at,
- o.cash_received_minor, o.cash_change_minor
+ o.event_id::text, e.name, o.total_minor, o.state_version, o.created_at, o.reservation_expires_at, o.refunded_at
  FROM orders o JOIN users opener ON opener.id=o.opened_by LEFT JOIN users payer ON payer.id=o.paid_by JOIN events e ON e.id=o.event_id
  WHERE o.shop_id=$1 AND ($2='' OR o.event_id::text=$2)
  AND ($4='' OR (o.created_at AT TIME ZONE $7)::date = $4::date)
@@ -26,7 +25,7 @@ func (s *ShopStore) ListOrderPage(ctx context.Context, shopID ID, eventID, date,
 	out := make([]Order, 0, limit+1)
 	for rows.Next() {
 		var o Order
-		if err := rows.Scan(&o.ID, &o.Number, &o.Status, &o.BoothName, &o.Currency, &o.PayCodeName, &o.OpenedByLogin, &o.OpenedByRole, &o.PaidByLogin, &o.PaidByRole, &o.EventID, &o.EventName, &o.TotalMinor, &o.StateVersion, &o.CreatedAt, &o.ReservationExpiresAt, &o.RefundedAt, &o.CashReceivedMinor, &o.CashChangeMinor); err != nil {
+		if err := rows.Scan(&o.ID, &o.Number, &o.Status, &o.BoothName, &o.Currency, &o.PayCodeName, &o.OpenedByLogin, &o.OpenedByRole, &o.PaidByLogin, &o.PaidByRole, &o.EventID, &o.EventName, &o.TotalMinor, &o.StateVersion, &o.CreatedAt, &o.ReservationExpiresAt, &o.RefundedAt); err != nil {
 			return nil, false, fmt.Errorf("scan order page: %w", err)
 		}
 		out = append(out, o)
