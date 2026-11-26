@@ -3,6 +3,8 @@
 package data
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -103,5 +105,87 @@ func TestBuildDailyReportCashOverShortOnlyCountsHistoricalCash(t *testing.T) {
 	}
 	if report.CashOverShortMinor != 100 || len(report.Currencies) != 1 || report.Currencies[0].CashOverShortMinor != 100 {
 		t.Fatalf("cash over/short = %d / %+v, want 100 from the historical order only", report.CashOverShortMinor, report.Currencies)
+	} // K-Q18 = A: the snapshot says how many orders recorded cash received, so
+	// the PDF can tell "even" from "no data".
+	if report.CashTenderedOrders != 1 || report.Currencies[0].CashTenderedOrders != 1 {
+		t.Fatalf("cashTenderedOrders = %d / %+v, want 1 (the historical order only)", report.CashTenderedOrders, report.Currencies)
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shape map[string]any
+	if err := json.Unmarshal(encoded, &shape); err != nil {
+		t.Fatal(err)
+	}
+	if shape["cashTenderedOrders"] != float64(1) || shape["currencies"].([]any)[0].(map[string]any)["cashTenderedOrders"] != float64(1) {
+		t.Fatalf("JSON must carry cashTenderedOrders at the root and per currency: %s", encoded)
+	}
+
+	// A snapshot stored before K-Q18 (no cashTenderedOrders key) is filled on read.
+	store := NewShopStore(pool)
+	var legacy map[string]any
+	if err := json.Unmarshal(encoded, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	delete(legacy, "cashTenderedOrders")
+	for _, c := range legacy["currencies"].([]any) {
+		delete(c.(map[string]any), "cashTenderedOrders")
+	}
+	legacyJSON, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO daily_reports(shop_id, report_date, payload, source) VALUES ($1, $2::date, $3::jsonb, 'scheduled')`, shop, date, legacyJSON); err != nil {
+		t.Fatal(err)
+	}
+	read, err := store.GetDailyReport(ctx, integrationID(t, shop), date, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got DailyReport
+	if err := json.Unmarshal(read, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.CashTenderedOrders != 1 || got.Currencies[0].CashTenderedOrders != 1 || got.CashOverShortMinor != 100 {
+		t.Fatalf("legacy snapshot read: %s", read)
+	}
+	var stillLegacy []byte
+	if err := pool.QueryRow(ctx, `SELECT payload::text FROM daily_reports WHERE shop_id = $1`, shop).Scan(&stillLegacy); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(stillLegacy), "cashTenderedOrders") {
+		t.Fatalf("read-time fill must not write the stored snapshot: %s", stillLegacy)
+	}
+}
+
+// K-Q18 = A: a day with only new (no cash received) orders reports 0.
+func TestBuildDailyReportCashTenderedOrdersZeroForNewOrders(t *testing.T) {
+	pool, ctx := newIsolatedMigratedIntegrationPool(t, "report_cash_tendered_zero")
+	var shop, actor, event string
+	if err := pool.QueryRow(ctx, `INSERT INTO shops(name,slug) VALUES ('No Tender','no-tender') RETURNING id::text`).Scan(&shop); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO users(login_name,password_hash,role,shop_id) VALUES ('notender','hash','shop_admin',$1) RETURNING id::text`, shop).Scan(&actor); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO events(shop_id,name,starts_on,ends_on,currency,status) VALUES ($1,'Event',CURRENT_DATE,CURRENT_DATE,'MYR','live') RETURNING id::text`, shop).Scan(&event); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO orders(shop_id,event_id,number,status,total_minor,currency,opened_by,opened_by_role)
+		VALUES ($1,$2,'NEWAAA','paid',1000,'MYR',$3,'shop_admin'), ($1,$2,'NEWAAB','paid',500,'MYR',$3,'shop_admin')`, shop, event, actor); err != nil {
+		t.Fatal(err)
+	}
+	date := time.Now().In(time.FixedZone("MYT", 8*60*60)).Format("2006-01-02")
+	report, err := NewShopStore(pool).BuildDailyReport(ctx, integrationID(t, shop), date, "manual", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.CashTenderedOrders != 0 || len(report.Currencies) != 1 || report.Currencies[0].CashTenderedOrders != 0 || report.CashOverShortMinor != 0 {
+		t.Fatalf("new-only day: tendered %d / %+v, over/short %d; want 0", report.CashTenderedOrders, report.Currencies, report.CashOverShortMinor)
+	}
+	encoded, _ := json.Marshal(report)
+	if !strings.Contains(string(encoded), `"cashTenderedOrders":0`) {
+		t.Fatalf("0 must still be present in JSON (not omitted): %s", encoded)
 	}
 }

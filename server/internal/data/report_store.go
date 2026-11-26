@@ -52,6 +52,10 @@ type DailyReportCurrency struct {
 	// orders only (orders with cash_received_minor set). Positive is over,
 	// negative is short. Non-cash orders do not participate.
 	CashOverShortMinor int64 `json:"cashOverShortMinor"`
+	// CashTenderedOrders counts the orders behind CashOverShortMinor (same
+	// scope: cash_received_minor set, no status filter). 0 means "no cash
+	// received recorded", which is not the same as an even drawer.
+	CashTenderedOrders int `json:"cashTenderedOrders"`
 }
 
 type DailyReportEvent struct {
@@ -92,6 +96,7 @@ type DailyReport struct {
 	DiscountMinor      int64                 `json:"discountMinor"`
 	RefundMinor        int64                 `json:"refundMinor"`
 	CashOverShortMinor int64                 `json:"cashOverShortMinor"`
+	CashTenderedOrders int                   `json:"cashTenderedOrders"`
 	AverageMinor       int64                 `json:"averageMinor"`
 	Currencies         []DailyReportCurrency `json:"currencies"`
 	Events             []DailyReportEvent    `json:"events"`
@@ -141,7 +146,8 @@ func (s *ShopStore) BuildDailyReport(ctx context.Context, shopID ID, date, sourc
 			COALESCE(sum(d.line_discount) FILTER (WHERE o.status IN ('paid', 'fulfilled')), 0),
 			COALESCE(sum(o.total_minor) FILTER (WHERE o.status = 'refund_required'), 0),
 			COALESCE(sum(o.cash_received_minor) FILTER (WHERE o.cash_received_minor IS NOT NULL), 0)
-				- COALESCE(sum(o.total_minor) FILTER (WHERE o.cash_received_minor IS NOT NULL), 0)
+				- COALESCE(sum(o.total_minor) FILTER (WHERE o.cash_received_minor IS NOT NULL), 0),
+			count(*) FILTER (WHERE o.cash_received_minor IS NOT NULL)
 		FROM orders o
 		LEFT JOIN LATERAL (
 			SELECT COALESCE(sum(l.unit_price_minor * l.qty - l.line_total_minor), 0) AS line_discount
@@ -155,7 +161,7 @@ func (s *ShopStore) BuildDailyReport(ctx context.Context, shopID ID, date, sourc
 	}
 	for rows.Next() {
 		var currency DailyReportCurrency
-		if err := rows.Scan(&currency.Currency, &currency.Orders, &currency.PaidOrders, &currency.RevenueMinor, &currency.DiscountMinor, &currency.RefundMinor, &currency.CashOverShortMinor); err != nil {
+		if err := rows.Scan(&currency.Currency, &currency.Orders, &currency.PaidOrders, &currency.RevenueMinor, &currency.DiscountMinor, &currency.RefundMinor, &currency.CashOverShortMinor, &currency.CashTenderedOrders); err != nil {
 			rows.Close()
 			return DailyReport{}, fmt.Errorf("scan daily currency: %w", err)
 		}
@@ -176,11 +182,12 @@ func (s *ShopStore) BuildDailyReport(ctx context.Context, shopID ID, date, sourc
 			count(*) FILTER (WHERE status = 'refund_required'),
 			COALESCE(sum(total_minor) FILTER (WHERE status = 'refund_required'), 0),
 			COALESCE(sum(cash_received_minor) FILTER (WHERE cash_received_minor IS NOT NULL), 0)
-				- COALESCE(sum(total_minor) FILTER (WHERE cash_received_minor IS NOT NULL), 0)
+				- COALESCE(sum(total_minor) FILTER (WHERE cash_received_minor IS NOT NULL), 0),
+			count(*) FILTER (WHERE cash_received_minor IS NOT NULL)
 		FROM orders
 		WHERE shop_id = $1 AND currency = $4 AND (created_at AT TIME ZONE $2)::date = $3::date`,
 		shopID, timezone, date, report.Currency).
-		Scan(&report.Orders, &report.PaidOrders, &report.PendingOrders, &report.ClosedOrders, &report.RefundOrders, &report.RefundMinor, &report.CashOverShortMinor)
+		Scan(&report.Orders, &report.PaidOrders, &report.PendingOrders, &report.ClosedOrders, &report.RefundOrders, &report.RefundMinor, &report.CashOverShortMinor, &report.CashTenderedOrders)
 	if err != nil {
 		return DailyReport{}, fmt.Errorf("daily totals: %w", err)
 	}
@@ -303,6 +310,7 @@ func applyHeadlineCurrency(report *DailyReport) {
 		report.DiscountMinor = top.DiscountMinor
 		report.RefundMinor = top.RefundMinor
 		report.CashOverShortMinor = top.CashOverShortMinor
+		report.CashTenderedOrders = top.CashTenderedOrders
 		paid = top.PaidOrders
 		revenue = top.RevenueMinor
 	}
@@ -403,7 +411,11 @@ func (s *ShopStore) UpsertDailyReport(ctx context.Context, shopID ID, report Dai
 	return nil
 }
 
-func (s *ShopStore) GetDailyReport(ctx context.Context, shopID ID, date string) (json.RawMessage, error) {
+// GetDailyReport returns the stored snapshot. Snapshots saved before
+// cashTenderedOrders existed lack the key; it is recomputed from orders on read
+// (same scope as BuildDailyReport, nothing is written back) so a missing key is
+// never mistaken for 0 ("no cash received recorded").
+func (s *ShopStore) GetDailyReport(ctx context.Context, shopID ID, date, timezone string) (json.RawMessage, error) {
 	var payload []byte
 	err := s.pool.QueryRow(ctx, `
 		SELECT payload FROM daily_reports WHERE shop_id = $1 AND report_date = $2::date`,
@@ -414,5 +426,132 @@ func (s *ShopStore) GetDailyReport(ctx context.Context, shopID ID, date string) 
 	if err != nil {
 		return nil, fmt.Errorf("read daily report: %w", err)
 	}
-	return json.RawMessage(payload), nil
+	missing, err := snapshotNeedsCashTenderedOrders(payload)
+	if err != nil {
+		return nil, fmt.Errorf("decode daily report: %w", err)
+	}
+	if !missing {
+		return json.RawMessage(payload), nil
+	}
+	counts, err := s.cashTenderedOrdersByCurrency(ctx, shopID, date, timezone)
+	if err != nil {
+		return nil, err
+	}
+	filled, _, err := fillMissingCashTenderedOrders(payload, counts)
+	if err != nil {
+		return nil, fmt.Errorf("fill daily report cash tendered orders: %w", err)
+	}
+	return json.RawMessage(filled), nil
+}
+
+// cashTenderedOrdersByCurrency uses the same order scope as the
+// cashOverShortMinor columns in BuildDailyReport.
+func (s *ShopStore) cashTenderedOrdersByCurrency(ctx context.Context, shopID ID, date, timezone string) (map[string]int, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT currency, count(*) FILTER (WHERE cash_received_minor IS NOT NULL)
+		FROM orders
+		WHERE shop_id = $1 AND (created_at AT TIME ZONE $2)::date = $3::date
+		GROUP BY currency`, shopID, NormalizeReportTimezone(timezone), date)
+	if err != nil {
+		return nil, fmt.Errorf("daily cash tendered orders: %w", err)
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	for rows.Next() {
+		var currency string
+		var count int
+		if err := rows.Scan(&currency, &count); err != nil {
+			return nil, fmt.Errorf("scan daily cash tendered orders: %w", err)
+		}
+		counts[currency] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("daily cash tendered orders: %w", err)
+	}
+	return counts, nil
+}
+
+type snapshotCashTenderedProbe struct {
+	CashTenderedOrders *int `json:"cashTenderedOrders"`
+	Currencies         []struct {
+		CashTenderedOrders *int `json:"cashTenderedOrders"`
+	} `json:"currencies"`
+}
+
+func snapshotNeedsCashTenderedOrders(payload []byte) (bool, error) {
+	var probe snapshotCashTenderedProbe
+	if err := json.Unmarshal(payload, &probe); err != nil {
+		return false, err
+	}
+	if probe.CashTenderedOrders == nil {
+		return true, nil
+	}
+	for _, currency := range probe.Currencies {
+		if currency.CashTenderedOrders == nil {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// fillMissingCashTenderedOrders adds cashTenderedOrders where the key is
+// absent (root uses the snapshot's headline currency) and leaves every other
+// field, including keys that are already present, untouched.
+func fillMissingCashTenderedOrders(payload []byte, counts map[string]int) ([]byte, bool, error) {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &root); err != nil {
+		return nil, false, err
+	}
+	changed := false
+	countJSON := func(currency json.RawMessage) (json.RawMessage, error) {
+		var code string
+		if len(currency) > 0 {
+			if err := json.Unmarshal(currency, &code); err != nil {
+				return nil, err
+			}
+		}
+		return json.Marshal(counts[code])
+	}
+	if _, ok := root["cashTenderedOrders"]; !ok {
+		value, err := countJSON(root["currency"])
+		if err != nil {
+			return nil, false, err
+		}
+		root["cashTenderedOrders"] = value
+		changed = true
+	}
+	if raw, ok := root["currencies"]; ok && string(raw) != "null" {
+		var currencies []map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &currencies); err != nil {
+			return nil, false, err
+		}
+		currenciesChanged := false
+		for _, currency := range currencies {
+			if _, ok := currency["cashTenderedOrders"]; ok {
+				continue
+			}
+			value, err := countJSON(currency["currency"])
+			if err != nil {
+				return nil, false, err
+			}
+			currency["cashTenderedOrders"] = value
+			currenciesChanged = true
+		}
+		if currenciesChanged {
+			encoded, err := json.Marshal(currencies)
+			if err != nil {
+				return nil, false, err
+			}
+			root["currencies"] = encoded
+			changed = true
+		}
+	}
+	if !changed {
+		return payload, false, nil
+	}
+	out, err := json.Marshal(root)
+	if err != nil {
+		return nil, false, err
+	}
+	return out, true, nil
 }

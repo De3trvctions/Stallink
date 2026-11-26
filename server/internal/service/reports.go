@@ -190,7 +190,7 @@ func (a *API) GetDailyReport(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_date")
 		return
 	}
-	payload, err := a.DB.GetDailyReport(r.Context(), *account.ShopID, date)
+	payload, err := a.DB.GetDailyReport(r.Context(), *account.ShopID, date, a.ReportTimezone)
 	if errors.Is(err, data.ErrNotFound) {
 		writeErr(w, http.StatusNotFound, "report_not_generated")
 		return
@@ -250,7 +250,7 @@ func (a *API) ExportDailyReport(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_currency")
 		return
 	}
-	snapshot, err := a.DB.GetDailyReport(r.Context(), *account.ShopID, date)
+	snapshot, err := a.DB.GetDailyReport(r.Context(), *account.ShopID, date, a.ReportTimezone)
 	if errors.Is(err, data.ErrNotFound) {
 		writeErr(w, http.StatusNotFound, "report_not_generated")
 		return

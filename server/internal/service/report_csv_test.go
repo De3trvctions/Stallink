@@ -22,9 +22,10 @@ func sampleReport() data.DailyReport {
 		DiscountMinor:      120,
 		RefundMinor:        200,
 		CashOverShortMinor: 50,
+		CashTenderedOrders: 1,
 		AverageMinor:       750,
 		Currencies: []data.DailyReportCurrency{
-			{Currency: "MYR", Orders: 5, PaidOrders: 2, RevenueMinor: 1500, DiscountMinor: 120, RefundMinor: 200, CashOverShortMinor: 50},
+			{Currency: "MYR", Orders: 5, PaidOrders: 2, RevenueMinor: 1500, DiscountMinor: 120, RefundMinor: 200, CashOverShortMinor: 50, CashTenderedOrders: 1},
 			{Currency: "SGD", Orders: 1, PaidOrders: 1, RevenueMinor: 800, DiscountMinor: 30, RefundMinor: 0},
 		},
 		Events: []data.DailyReportEvent{
@@ -82,8 +83,8 @@ func TestRenderDailyReportCSVHeaderAndGroups(t *testing.T) {
 		if len(row) != 5 {
 			t.Fatalf("every row must have 5 columns, got %v", row)
 		}
-		if strings.Contains(row[2], "长短款") {
-			t.Fatalf("cash over/short must not be exported (C-2 = A): %v", row)
+		if strings.Contains(row[2], "长短款") || strings.Contains(row[2], "实收") {
+			t.Fatalf("cash over/short and cash tendered orders must not be exported (C-2 = A, K-Q18 = A): %v", row)
 		}
 	}
 }
