@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stallink · 平台外观 · 原型</title>
+<!--
+  设计原型：对应 docs/superpowers/specs/2026-11-26-stallink-platform-appearance-design.md
+  用法：?state=ready|loading|load-error|dirty|confirm|saving|save-error|forbidden|offline|published ；加 &shot=1 隐藏原型控制条。
+  界面按 classic 编辑式基线绘制；接入代码后，颜色、圆角、阴影全部取当前风格的 token。
+-->
+<style>
+:root{
+  --canvas:#faf8f3;--surface:#fffdf8;--surface-soft:#f0ece2;--ink:#16171a;--ink-soft:#3c3d42;--muted:#6b685f;
+  --line:#dad3c3;--line-strong:#c6bdaa;--accent:#1e36a8;--accent-dark:#16171a;--accent-soft:#e9edfb;--warning:#b23a18;--success:#315942;--success-soft:#edf5ed;
+  --font-ui:"PingFang SC","Hiragino Sans GB","Noto Sans SC",system-ui,sans-serif;
+  --font-display:"Songti SC","Noto Serif SC","Source Han Serif SC","STSong",serif;
+  --font-mono:"SF Mono","Menlo","IBM Plex Mono",ui-monospace,monospace;
+  --radius-control:0;--radius-card:0;--radius-panel:0;--radius-pill:999px;
+  --touch:44px;--dur-2:180ms;--dur-3:240ms;--ease-out:cubic-bezier(.2,.7,.2,1);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{min-height:100dvh;background:var(--canvas);color:var(--ink);font:15px/1.55 var(--font-ui);-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;cursor:pointer}
+h1,h2,h3,p{margin:0}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+/* 顶栏 */
+.site-header{display:flex;align-items:center;gap:20px;height:64px;padding:0 28px;border-bottom:1px solid var(--line);background:#fffefaf0}
+.site-brand{display:flex;align-items:center;gap:8px;font:700 1.3rem/1 var(--font-display);letter-spacing:-.05em}
+.site-brand i{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--accent);border-radius:50%;color:var(--accent);font:700 .8rem/1 var(--font-ui);font-style:normal}
+.site-header small{color:var(--muted);font-size:.78rem}
+.site-header nav{margin-left:auto;display:flex;gap:16px;align-items:center;font-size:.86rem;color:var(--muted)}
+.site-header nav a{display:flex;align-items:center;min-height:44px}
+/* 外壳 */
+.shell{display:grid;grid-template-columns:220px minmax(0,1fr);width:min(1280px,calc(100% - 48px));margin:20px auto;border:1px solid var(--line);background:var(--surface)}
+.rail{display:flex;flex-direction:column;border-right:1px solid var(--line);padding:16px 0}
+.rail__head{padding:0 16px 12px;border-bottom:1px solid var(--line)}
+.rail__head small{font:400 .66rem/1.4 var(--font-mono);letter-spacing:.14em;color:var(--accent)}
+.rail__head h2{margin-top:4px;font:500 1.2rem/1.3 var(--font-display)}
+.rail__head p{font-size:.76rem;color:var(--muted)}
+.rail nav{padding-top:8px}
+.rail__label{display:block;padding:12px 16px 6px;font:400 .66rem/1 var(--font-mono);letter-spacing:.16em;color:var(--muted)}
+.rail a.link{display:flex;align-items:center;gap:12px;min-height:44px;padding:0 16px;border-bottom:1px solid var(--line);font-size:.9rem}
+.rail a.link .n{font:400 .7rem/1 var(--font-mono);color:var(--muted);width:20px}
+.rail a.link[aria-current]{background:var(--accent-soft);box-shadow:inset 3px 0 var(--accent);font-weight:600}
+.rail__foot{margin-top:auto;padding:12px 16px 0;border-top:1px solid var(--line);font:400 .74rem/1 var(--font-mono);letter-spacing:.06em;color:var(--muted)}
+.rail__foot a{display:flex;align-items:center;min-height:44px}
+.main{min-width:0;padding:32px clamp(16px,3vw,40px) 48px}
+.eyebrow{font:400 .7rem/1 var(--font-mono);letter-spacing:.16em;color:var(--accent)}
+h1{margin-top:10px;font:500 clamp(2rem,4vw,3rem)/1.15 var(--font-display);letter-spacing:-.03em}
+.lead{margin-top:10px;max-width:42em;color:var(--ink-soft)}
+/* 当前状态条 */
+.status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-top:24px;padding:12px 16px;border:1px solid var(--line);background:var(--surface-soft);font-size:.86rem}
+.status strong{font-weight:600}
+.status .dot{width:8px;height:8px;border-radius:50%;background:var(--success)}
+.status .meta{color:var(--muted)}
+.status .by{color:var(--ink-soft)} /* Kel 已定（2026-11-26）Q9：updatedAt / updatedBy，需要后端提供 */
+/* Kel 已定（2026-11-26）Q12：读取外观失败、退回 classic 时，只给平台管理员看的提醒 */
+.fallback{display:flex;gap:12px;align-items:flex-start;margin:0 0 20px;padding:12px 14px;border:1px solid #e6b5a6;background:#fbefe9;font-size:.88rem}
+.fallback .ico{flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--warning);color:#fff;font:700 .8rem/1 var(--font-ui)}
+.fallback strong{display:block;color:var(--warning);font-weight:600}
+.fallback p{margin-top:2px;color:var(--ink-soft)}
+.fallback button{margin-left:auto;flex:none;min-height:44px;padding:0 14px;border:1px solid var(--ink);background:transparent;font-size:.86rem}
+@media (max-width:767px){.fallback{flex-wrap:wrap}.fallback button{margin-left:34px}}
+.status .front{margin-left:auto;display:inline-flex;align-items:center;min-height:44px;color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:3px}
+@media (min-width:768px){.status .front{display:none}}
+/* 风格卡 */
+.options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:20px 0 0;padding:0;border:0}
+.opt{position:relative;display:flex;flex-direction:column;border:1px solid var(--line);background:var(--surface);cursor:pointer;transition:border-color var(--dur-2) var(--ease-out),box-shadow var(--dur-2) var(--ease-out)}
+.opt:hover{border-color:var(--line-strong)}
+.opt:has(input:checked){border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.opt:has(input:focus-visible){outline:3px solid var(--accent);outline-offset:3px}
+.opt input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.opt__body{display:grid;gap:8px;padding:14px 16px 16px}
+.opt__title{display:flex;align-items:center;gap:10px}
+.radio{flex:0 0 auto;width:20px;height:20px;border:1.5px solid var(--line-strong);border-radius:50%;display:grid;place-items:center;background:var(--surface)}
+.opt:has(input:checked) .radio{border-color:var(--accent)}
+.opt:has(input:checked) .radio::after{content:"";width:10px;height:10px;border-radius:50%;background:var(--accent)}
+.opt__title strong{font:600 1.05rem/1.3 var(--font-ui)}
+.tag{margin-left:auto;padding:2px 8px;border:1px solid currentColor;border-radius:var(--radius-pill);font-size:.72rem;white-space:nowrap}
+.tag--live{color:var(--success);background:var(--success-soft)}
+.tag--draft{color:var(--accent);background:var(--accent-soft)}
+.opt__detail{font-size:.84rem;color:var(--ink-soft)}
+.swatches{display:flex;gap:6px;align-items:center;font:400 .7rem/1 var(--font-mono);color:var(--muted)}
+.swatches i{width:18px;height:18px;border:1px solid #0000001f;border-radius:50%}
+.swatches span{margin-left:4px}
+/* 双面预览：左顾客端、右工作台 */
+.dual{display:grid;grid-template-columns:1.15fr 1fr;height:150px;border-bottom:1px solid var(--line);overflow:hidden}
+.dual > div{position:relative;overflow:hidden;padding:10px}
+.dual small{position:absolute;left:8px;bottom:6px;padding:1px 6px;font:500 .62rem/1.5 var(--font-ui);border-radius:3px;background:#ffffffd9;color:#16171a}
+.pv-c-classic{background:#f5f1e8;color:#17181b}
+.pv-c-classic b{display:block;margin-top:14px;font:700 1.7rem/1 Georgia,serif;letter-spacing:-.04em}
+.pv-c-classic i{display:block;height:1px;background:#aaa59b;margin-top:10px}
+.pv-c-classic em{display:block;width:60%;height:6px;margin-top:8px;background:#1e36a8}
+.pv-w-classic{background:#fffdf8;border-left:1px solid var(--line)}
+.pv-w-classic .r{position:absolute;inset:0 auto 0 0;width:26%;border-right:1px solid #dad3c3;background:#fffdf8}
+.pv-w-classic .r::before{content:"";position:absolute;top:22px;left:0;right:0;height:10px;background:#e9edfb;box-shadow:inset 2px 0 #1e36a8}
+.pv-w-classic .c{position:absolute;left:32%;right:8px;top:14px;height:14px;background:#16171a}
+.pv-w-classic .l{position:absolute;left:32%;right:8px;top:40px;height:58px;background:repeating-linear-gradient(#fffdf8 0 13px,#dad3c3 13px 14px)}
+.pv-c-exhibition{background:linear-gradient(80deg,#101412ee,#26282066),repeating-linear-gradient(135deg,#3a3d33 0 8px,#2c2e27 8px 16px);color:#e3f7a2}
+.pv-c-exhibition::before{content:"";position:absolute;inset:0 auto 0 0;width:14px;background:#262820;border-right:1px solid #f4f0e655}
+.pv-c-exhibition b{display:block;margin:20px 0 0 14px;font:italic 900 1.6rem/.9 Arial,sans-serif;letter-spacing:-.07em}
+.pv-c-exhibition em{display:block;width:44%;height:12px;margin:12px 0 0 14px;background:#8c3c2d}
+.pv-w-exhibition{background:radial-gradient(ellipse at 82% -6%,#d5e6df 0,transparent 60%),#edf3f1}
+.pv-w-exhibition .r{position:absolute;inset:0 auto 0 0;width:26%;background:linear-gradient(180deg,#143e46,#0e3036)}
+.pv-w-exhibition .r::before{content:"";position:absolute;top:24px;left:4px;right:4px;height:10px;border-radius:2px;background:#ffffff26;box-shadow:inset 2px 0 #e3f7a2}
+.pv-w-exhibition .c{position:absolute;left:32%;right:8px;top:12px;height:26px;border-radius:5px;background:linear-gradient(115deg,#123740,#215e58)}
+.pv-w-exhibition .l{position:absolute;left:32%;right:8px;top:46px;height:52px;border-radius:5px;background:#fff;box-shadow:0 2px 6px #142e3214}
+.pv-c-shop{background:#f2f4f5;color:#000}
+.pv-c-shop::before{content:"";position:absolute;top:16px;left:14px;width:8px;height:8px;border-radius:50%;background:#5433eb;box-shadow:0 2px 10px #4524db66}
+.pv-c-shop b{display:block;margin:8px 0 0 18px;font:600 1.3rem/1 var(--font-ui);letter-spacing:-.02em}
+.pv-c-shop em{display:block;margin:14px 0 0 4px;height:22px;width:80%;border-radius:999px;background:#fff;box-shadow:0 2px 8px #0000000f}
+.pv-w-shop{background:#f2f4f5}
+.pv-w-shop .r{position:absolute;top:8px;bottom:8px;left:6px;width:24%;border-radius:10px;background:#fff;box-shadow:0 2px 6px #0000001a}
+.pv-w-shop .r::before{content:"";position:absolute;top:18px;left:4px;right:4px;height:9px;border-radius:9px;background:#f2f4f5}
+.pv-w-shop .c{position:absolute;left:36%;top:12px;width:34%;height:16px;border-radius:999px;background:#5433eb;box-shadow:0 3px 12px #4524db55}
+.pv-w-shop .l{position:absolute;left:36%;right:8px;top:38px;height:60px;border-radius:12px;background:#fff;box-shadow:0 2px 6px #0000001a}
+/* 骨架 */
+.skel .dual,.skel .opt__body > *{background:linear-gradient(90deg,var(--surface-soft),#f7f4ec,var(--surface-soft));background-size:200% 100%;animation:shimmer 1.4s linear infinite;color:transparent!important;border-color:transparent}
+.skel .opt__body > *{min-height:14px}
+.skel .dual > div,.skel .swatches i,.skel .radio,.skel .tag{visibility:hidden}
+@keyframes shimmer{to{background-position:-200% 0}}
+/* 操作区 */
+.actions{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:20px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:var(--touch);padding:0 20px;border:1px solid transparent;border-radius:var(--radius-control);font-weight:600;white-space:nowrap}
+.btn--dark{background:var(--accent-dark);color:#fffdf8}
+.btn--dark:hover:not(:disabled){background:var(--accent)}
+.btn--outline{border-color:var(--line-strong);background:var(--surface)}
+.btn--text{padding:0 8px;background:none;border:0;color:var(--ink-soft);text-decoration:underline;text-underline-offset:3px}
+.btn:disabled{cursor:not-allowed;background:var(--surface-soft);color:var(--muted);border-color:var(--line)}
+.spin{width:14px;height:14px;border:2px solid #ffffff66;border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(1turn)}}
+.hint{font-size:.8rem;color:var(--muted)}
+/* 提示 */
+.msg{display:flex;gap:12px;align-items:flex-start;margin-top:16px;padding:12px 14px;border:1px solid;font-size:.88rem}
+.msg strong{display:block;font-weight:600}
+.msg p{color:var(--ink-soft)}
+.msg .ico{flex:0 0 auto;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;font:700 .8rem/1 var(--font-ui);color:#fff}
+.msg--error{border-color:#e6b5a6;background:#fbefe9}
+.msg--error .ico{background:var(--warning)}
+.msg--ok{border-color:#bfd2c1;background:var(--success-soft)}
+.msg--ok .ico{background:var(--success)}
+.msg--info{border-color:var(--line-strong);background:var(--surface-soft)}
+.msg--info .ico{background:var(--ink-soft)}
+.msg .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.msg .btn{min-height:40px;padding:0 14px;font-size:.84rem}
+/* 断网横幅 */
+.offline{display:flex;align-items:center;gap:10px;padding:10px 28px;background:#2b2a26;color:#fffdf8;font-size:.86rem}
+.offline i{width:8px;height:8px;border-radius:50%;background:#f0b35a}
+/* 无权限 */
+.gate{display:grid;justify-items:start;gap:10px;max-width:34rem;margin-top:28px;padding:24px;border:1px solid var(--line);background:var(--surface-soft)}
+.gate .ico{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--ink);color:#fff;font-weight:700}
+/* 确认弹窗 */
+.backdrop{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:16px;background:#16171a66}
+.dialog{width:min(30rem,100%);border:1px solid var(--line-strong);background:var(--surface);box-shadow:0 18px 40px #16171a29}
+.dialog header{padding:20px 22px 0}
+.dialog h2{margin-top:8px;font:500 1.5rem/1.25 var(--font-display)}
+.dialog ul{margin:12px 0 0;padding:0 22px 0 40px;color:var(--ink-soft);font-size:.9rem}
+.dialog li{margin-top:6px}
+.dialog footer{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding:14px 22px;border-top:1px solid var(--line)}
+/* 原型控制 */
+.proto{position:fixed;left:50%;bottom:10px;z-index:99;transform:translateX(-50%);display:flex;flex-wrap:wrap;gap:4px;max-width:calc(100% - 20px);padding:6px;border-radius:10px;background:#111d;font:11px/1 var(--font-mono)}
+.proto a{padding:6px 7px;border-radius:6px;color:#fff}
+.proto a[aria-current]{background:#fff;color:#000}
+body.shot .proto{display:none}
+/* 响应式 */
+@media (max-width:1099px){.options{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:900px){
+  .shell{grid-template-columns:minmax(0,1fr);width:100%;margin:0;border:0}
+  .rail{flex-direction:row;flex-wrap:wrap;align-items:center;padding:0;border-right:0;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10;background:var(--surface)}
+  .rail__head{display:none}
+  .rail nav{display:flex;width:100%;padding:0 8px;overflow-x:auto;scrollbar-width:none}
+  .rail__label,.rail__foot,.rail a.link .n{display:none}
+  .rail a.link{flex:0 0 auto;border-bottom:0;padding:0 14px;white-space:nowrap}
+  .rail a.link[aria-current]{box-shadow:inset 0 -3px var(--accent)}
+  .site-header{height:56px;padding:0 16px}
+  .site-header small,.site-header nav .hide-sm{display:none}
+}
+@media (max-width:767px){
+  .options{grid-template-columns:minmax(0,1fr)}
+  .dual{height:120px}
+  .main{padding:20px 16px 120px}
+  .actions{position:fixed;z-index:20;left:0;right:0;bottom:0;margin:0;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -6px 18px #16171a14}
+  .actions .btn--dark{flex:1;min-height:48px}
+  .actions .hint,.actions a.btn--outline{display:none}
+  .status .front{margin-left:0}
+  .offline{padding:10px 16px}
+  .dialog footer{flex-direction:column-reverse}
+  .dialog footer .btn{width:100%;min-height:48px}
+}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const qs=new URLSearchParams(location.search);
+const states=[['ready','已读取'],['loading','读取中'],['load-error','读取失败'],['dirty','已改未发布'],['confirm','发布确认'],['saving','发布中'],['save-error','发布失败'],['forbidden','无权限'],['offline','断网'],['published','已发布'],['fallback','读取降级提醒']];
+const state=states.some(s=>s[0]===qs.get('state'))?qs.get('state'):'dirty';
+if(qs.get('shot'))document.body.classList.add('shot');
+const live=(state==='published'||state==='fallback')?'exhibition':'classic';
+const selected=['dirty','confirm','saving','save-error','offline','published','fallback'].includes(state)?'exhibition':'classic';
+const opts=[
+ {v:'classic',name:'现有风格',detail:'纸白底、编辑式排版、钴蓝强调。顾客端与工作台同一套色。',sw:['#faf8f3','#16171a','#1e36a8','#dad3c3'],hex:'纸白 · 墨黑 · 钴蓝'},
+ {v:'exhibition',name:'展场风格',detail:'顾客端是展场海报：炭黑竖栏、赭红与柠绿。工作台用深青侧栏和浅青底。',sw:['#f4f0e6','#262820','#8c3c2d','#e3f7a2','#215e58'],hex:'纸色 · 炭黑 · 赭红 · 柠绿 · 深青'},
+ {v:'shop',name:'店面风格',detail:'白底浮卡、大圆角、胶囊按钮。紫色只用于标识和主操作。',sw:['#f2f4f5','#ffffff','#000000','#5433eb'],hex:'浅灰 · 白 · 黑 · 紫'},
+];
+const names={classic:'现有风格',exhibition:'展场风格',shop:'店面风格'};
+const loading=state==='loading';
+const blocked=state==='load-error'||state==='forbidden';
+const disabled=loading||blocked||state==='saving';
+const card=o=>`<label class="opt">
+ <input type="radio" name="storefront-theme" value="${o.v}" ${o.v===selected&&!loading&&!blocked?'checked':''} ${disabled?'disabled':''} aria-describedby="d-${o.v}">
+ <span class="dual" aria-hidden="true"><div class="pv-c-${o.v}"><i></i><b>${o.v==='classic'?'Stallink.':o.v==='exhibition'?'Artist Alley.':'Stallink'}</b><em></em><small>顾客端</small></div><div class="pv-w-${o.v}"><span class="r"></span><span class="c"></span><span class="l"></span><small>工作台</small></div></span>
+ <span class="opt__body"><span class="opt__title"><span class="radio" aria-hidden="true"></span><strong>${o.name}</strong>${!loading&&!blocked&&o.v===live?'<span class="tag tag--live">使用中</span>':''}${!loading&&!blocked&&o.v===selected&&o.v!==live?'<span class="tag tag--draft">已选 · 未发布</span>':''}</span>
+ <span class="opt__detail" id="d-${o.v}">${o.detail}</span>
+ <span class="swatches">${o.sw.map(c=>`<i style="background:${c}"></i>`).join('')}<span>${o.hex}</span></span></span></label>`;
+let statusBar='';
+if(loading) statusBar=`<div class="status" role="status"><span class="spin" style="border-color:#16171a33;border-top-color:#16171a"></span><span>正在读取当前风格…</span></div>`;
+else if(!blocked) statusBar=`<div class="status"><span class="dot" aria-hidden="true"></span><span>当前使用：<strong>${names[live]}</strong></span><span class="by">上次发布：${state==='published'?'你 · 刚刚':'林雅 · 11月23日 18:40'}</span><span class="meta">发布后，顾客端和所有工作台在下次打开或刷新页面时切换。</span><a class="front" href="#" target="_blank" rel="noopener">查看前台 ↗</a></div>`;
+let msg='';
+if(state==='load-error') msg=`<div class="msg msg--error" role="alert"><span class="ico" aria-hidden="true">!</span><div><strong>没能读取当前风格</strong><p>无法连接服务，请检查网络后重试。读取成功前不能发布，以免覆盖别人刚发布的设置。</p><div class="row"><button class="btn btn--outline" type="button">重新读取</button></div></div></div>`;
+if(state==='save-error') msg=`<div class="msg msg--error" role="alert"><span class="ico" aria-hidden="true">!</span><div><strong>发布没有成功，前台仍是「现有风格」</strong><p>服务暂时不可用，请稍后重试。你的选择已保留。</p><div class="row"><button class="btn btn--outline" type="button">重新发布</button></div></div></div>`;
+if(state==='published') msg=`<div class="msg msg--ok" role="status"><span class="ico" aria-hidden="true">✓</span><div><strong>已发布「展场风格」</strong><p>本页已换成新风格。顾客和工作人员下次打开或刷新页面时生效，正在收银的页面不会被打断。</p><div class="row"><a class="btn btn--outline" href="#" target="_blank" rel="noopener">在新标签页查看前台 ↗</a></div></div></div>`;
+if(state==='offline') msg=`<div class="msg msg--info" role="status"><span class="ico" aria-hidden="true">i</span><div><strong>当前离线，暂时不能发布</strong><p>你的选择已保留。网络恢复后会自动重新读取当前风格，再发布即可。</p></div></div>`;
+const canPublish=['dirty','confirm','save-error'].includes(state);
+const publishBtn=state==='saving'?`<button class="btn btn--dark" type="button" disabled aria-disabled="true" style="background:var(--accent-dark);color:#fffdf8"><span class="spin" aria-hidden="true"></span>发布中…</button>`:`<button class="btn btn--dark" type="submit" ${canPublish?'':'disabled'}>发布所选风格</button>`;
+const actions=blocked?'':`<div class="actions">${publishBtn}${['dirty','confirm','save-error','offline'].includes(state)?'<button class="btn btn--text" type="button">还原为当前风格</button>':''}<a class="btn btn--outline" href="#" target="_blank" rel="noopener">查看前台 ↗</a><span class="hint">${state==='ready'?'选择与当前不同的风格后才能发布。':state==='saving'?'正在发布，请勿关闭页面。':''}</span></div>`;
+const live_region=`<p class="sr-only" role="status" aria-live="polite">${state==='saving'?'正在发布展场风格':''}</p>`;
+let main;
+if(state==='forbidden'){
+ main=`<p class="eyebrow">平台</p><h1>平台外观</h1><div class="gate" role="alert"><span class="ico" aria-hidden="true">!</span><strong>只有平台管理员可以修改平台外观</strong><p class="lead" style="margin:0">你的账号没有这项权限，或者登录身份已变更。请换用平台管理员账号登录。</p><div class="actions" style="position:static;padding:0;border:0;box-shadow:none;background:none"><a class="btn btn--dark" href="#">重新登录</a><a class="btn btn--outline" href="#">返回 Stallink</a></div></div>`;
+}else{
+ main=`${state==='fallback'?'<div class="fallback" role="status"><span class="ico" aria-hidden="true">!</span><div><strong>外观设置暂时读取失败，全站临时使用「现有风格」</strong><p>保存的设置「展场风格」没有丢，通常是外观服务短暂超时，刷新后会重新读取。这条提醒只有平台管理员能看到，顾客和摊主看不到。</p></div><button type="button">重新检查</button></div>':''}<p class="eyebrow">平台</p><h1>平台外观</h1><p class="lead">选择全平台使用的界面风格。发布后会应用到顾客逛展、摊主管理、现场收银和平台工作台。</p>
+ ${statusBar}
+ <form onsubmit="return false" aria-busy="${state==='saving'||loading}"><fieldset class="options ${loading?'skel':''}" ${disabled?'disabled':''}><legend class="sr-only">选择平台风格</legend>${opts.map(card).join('')}</fieldset>${msg}${actions}${live_region}</form>`;
+}
+const dialog=state==='confirm'?`<div class="backdrop"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-t"><header><p class="eyebrow">发布确认</p><h2 id="dlg-t">把全平台换成「展场风格」？</h2></header><ul><li>顾客端、摊主工作台、现场收银和平台工作台都会换成新风格。</li><li>已打开的页面不会被打断，刷新或重新打开后生效。</li><li>可以随时回到这里改回「现有风格」。</li></ul><footer><button class="btn btn--outline" type="button" autofocus>取消</button><button class="btn btn--dark" type="button">确认发布</button></footer></div></div>`:'';
+document.getElementById('root').innerHTML=`${state==='offline'?'<div class="offline" role="status"><i aria-hidden="true"></i>网络已断开，恢复后会自动重新读取。</div>':''}
+<header class="site-header"><a class="site-brand" href="#"><i>s.</i>Stallink</a><small>店铺管理 · 平台工作台</small><nav aria-label="账号导航"><a class="hide-sm" href="#">关于</a><a href="#">退出</a></nav></header>
+<div class="shell"><aside class="rail"><div class="rail__head"><small>STALLINK / PLATFORM</small><h2>平台工作台</h2><p>店铺管理与商品审核</p></div><nav aria-label="平台工作台导航"><span class="rail__label">平台</span><a class="link" href="#"><span class="n" aria-hidden="true">01</span>店铺管理</a><a class="link" href="#"><span class="n" aria-hidden="true">02</span>商品审核</a><a class="link" href="#" aria-current="page"><span class="n" aria-hidden="true">03</span>平台外观</a></nav><div class="rail__foot"><a href="#">← 返回 Stallink</a><a href="#">退出登录</a></div></aside>
+<main class="main" id="main-content">${main}</main></div>${dialog}
+<nav class="proto" aria-hidden="true">${states.map(([k,l])=>`<a href="?state=${k}" ${k===state?'aria-current="true"':''}>${l}</a>`).join('')}</nav>`;
+</script>
+</body>
+</html>

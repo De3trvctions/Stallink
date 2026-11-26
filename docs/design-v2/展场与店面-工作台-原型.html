@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stallink · 展场与店面风格 · 工作台目标稿</title>
+<!--
+  设计原型：对应 docs/superpowers/specs/2026-11-26-stallink-theme-exhibition-shop-design.md
+  用法：?theme=exhibition|shop & page=overview|reports|counter ；加 &shot=1 隐藏原型控制条。
+  编号按 Kel 已定 A（K-Q15）：管理项 01–08，现场收银组不编号，总览 8 张卡。
+  仅表达目标视觉与布局，不含真实数据与接口。token 名称与 web/src/app/*.css 保持一致。
+-->
+<style>
+/* ───────── 共用基线（与 globals.css 同名 token） ───────── */
+:root{
+  --font-ui:"PingFang SC","Hiragino Sans GB","Noto Sans SC",system-ui,sans-serif;
+  --font-mono:"SF Mono","Menlo","IBM Plex Mono",ui-monospace,monospace;
+  --touch:44px;
+  --space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:24px;--space-6:32px;--space-7:48px;
+  --dur-1:120ms;--dur-2:180ms;--dur-3:240ms;--ease-out:cubic-bezier(.2,.7,.2,1);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{min-height:100dvh;font:15px/1.55 var(--font-ui);-webkit-font-smoothing:antialiased;background:var(--canvas);color:var(--ink)}
+a{color:inherit;text-decoration:none}
+button,input,select{font:inherit;color:inherit}
+h1,h2,h3,p{margin:0}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+svg.i{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+
+/* ───────── 展场工作台 token（目标值） ───────── */
+[data-theme="exhibition"]{
+  --canvas:#edf3f1;--surface:#ffffff;--surface-soft:#e2ece8;
+  --ink:#142e32;--ink-soft:#345253;--muted:#4b6465;
+  --line:#d0dfda;--line-strong:#8ca29d;--line-control:#6f8681;--expo-charcoal:#262820;
+  --accent:#215e58;--accent-dark:#123b40;--accent-soft:#dcebe3;--accent-light:#e3f7a2;
+  --brand-mark:#8c3c2d;--warning:#a03a2b;--focus:#215e58;
+  --font-display:"Songti SC","Noto Serif SC","STSong","Noto Serif CJK SC",Georgia,serif; /* Kel 已定（2026-11-26）Q1=A：跟顾客端 --expo-serif 相同；"Noto Serif CJK SC" 只为原型在 Linux 渲染机上取到衬线 */
+  --radius-control:6px;--radius-card:10px;--radius-panel:13px;--radius-pill:999px;
+  --shadow-1:0 1px 2px #142e3210;--shadow-2:0 1px 2px #142e3210,0 10px 26px #142e320d;--shadow-rail:6px 0 24px #0e30361a;
+  --rail:224px;
+  background:radial-gradient(ellipse at 82% -6%,#d5e6df 0,transparent 46%),var(--canvas);
+}
+/* ───────── 店面工作台 token（目标值） ───────── */
+[data-theme="shop"]{
+  --canvas:#f2f4f5;--surface:#ffffff;--surface-soft:#f2f4f5;
+  --ink:#000000;--ink-soft:#332f2d;--muted:#726f6e;--muted-strong:#625f5e;
+  --line:#ebebeb;--line-strong:#dedfe0;--line-control:#8f8c8b;
+  --accent:#5433eb;--accent-dark:#4524db;--accent-soft:#f2f4f5;--accent-light:#c0b5f3;
+  --warning:#b42318;--warning-soft:#fef3f2;--focus:#5433eb;
+  --font-display:var(--font-ui);--font-mono:var(--font-ui);
+  --radius-control:14px;--radius-card:20px;--radius-panel:28px;--radius-pill:9999px;
+  --shadow-1:rgba(0,0,0,.06) 0 2px 8px;--shadow-2:rgba(0,0,0,.1) 0 4px 6px -1px,rgba(0,0,0,.1) 0 2px 4px -2px;--shadow-brand:rgba(69,36,219,.34) 0 4px 24px;
+  --rail:240px;
+}
+
+/* ───────── 原型控制条（不属于产品界面） ───────── */
+.proto-bar{position:fixed;right:12px;bottom:12px;z-index:99;display:flex;gap:6px;padding:6px;border-radius:10px;background:#111c;color:#fff;font:12px/1 var(--font-mono)}
+.proto-bar a{padding:6px 8px;border-radius:6px}
+.proto-bar a[aria-current]{background:#fff;color:#000}
+body.shot .proto-bar{display:none}
+
+/* ───────── 外壳 ───────── */
+.shell{display:grid;grid-template-columns:var(--rail) minmax(0,1fr);min-height:100dvh}
+.rail{position:sticky;top:0;height:100dvh;display:flex;flex-direction:column;gap:var(--space-2)}
+.rail__brand{display:flex;align-items:center;gap:10px;min-height:var(--touch)}
+.rail__logo{display:grid;place-items:center;width:30px;height:30px;font:800 15px/1 Georgia,serif}
+.rail__wordmark strong{display:block;font:800 .92rem/1 var(--font-ui);letter-spacing:.04em}
+.rail__wordmark small{display:block;margin-top:3px;font-size:.66rem;letter-spacing:.12em}
+.rail__nav{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.rail__label{display:block;padding:12px 10px 4px;font-size:.7rem;letter-spacing:.12em}
+.rail__link{display:flex;align-items:center;gap:10px;min-height:var(--touch);padding:0 10px;border-radius:var(--radius-control);transition:background var(--dur-2) var(--ease-out),color var(--dur-2) var(--ease-out)}
+.rail__link .t{flex:1}
+/* Kel 已定（2026-11-26）：展场和店面侧栏不显示编号，编号只在总览卡片上 */
+.rail__foot{flex:0 0 auto;display:grid;gap:6px;padding-top:var(--space-2)}
+.rail__back{display:flex;align-items:center;gap:6px;min-height:var(--touch);padding:0 10px;font-size:.82rem}
+.rail__logout{min-height:var(--touch);border-radius:var(--radius-control);background:transparent;cursor:pointer;font-size:.82rem}
+
+[data-theme="exhibition"] .rail{padding:16px 12px 12px;background:linear-gradient(180deg,#143e46,#123740 48%,#0e3036);color:#ebf3ef;box-shadow:var(--shadow-rail)}
+[data-theme="exhibition"] .rail__logo{position:relative;border-radius:6px;background:linear-gradient(150deg,#49827a,#215e58);color:#fff;font-family:var(--font-display)}
+[data-theme="exhibition"] .rail__logo::after{content:"";position:absolute;top:-3px;right:-3px;width:8px;height:8px;border-radius:2px;background:var(--brand-mark);box-shadow:0 0 0 2px #f4f0e6} /* 赭红角标，装饰 */
+[data-theme="exhibition"] .rail__wordmark small{color:#b9cdc8}
+[data-theme="exhibition"] .rail__identity{padding:10px;border:1px solid #ffffff1a;border-radius:var(--radius-card);background:#ffffff08}
+[data-theme="exhibition"] .rail__identity strong{display:block;font:650 .95rem/1.3 var(--font-display)}
+[data-theme="exhibition"] .rail__identity span{font-size:.72rem;color:#b9cdc8}
+[data-theme="exhibition"] .rail__label{color:#b9cdc8}
+[data-theme="exhibition"] .rail__link{color:#d7e5e0}
+[data-theme="exhibition"] .rail__link:hover{background:#ffffff14;color:#fff}
+[data-theme="exhibition"] .rail__link[aria-current]{background:linear-gradient(100deg,#b5e2cc26,#d6f1e51f);color:#fff;box-shadow:inset 3px 0 var(--accent-light)}
+[data-theme="exhibition"] .rail :focus-visible{outline-color:var(--accent-light)}
+[data-theme="exhibition"] .rail__foot{border-top:1px solid #ffffff1f}
+[data-theme="exhibition"] .rail__back{color:#ebf3ef}
+[data-theme="exhibition"] .rail__logout{border:1px solid #ffffff33;color:#ebf3ef}
+
+[data-theme="shop"] .site-header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:20px;height:72px;padding:0 32px;background:#fff;box-shadow:var(--shadow-1)}
+[data-theme="shop"] .site-header .brand{display:flex;align-items:center;gap:10px;font:600 20px/1 var(--font-ui);letter-spacing:-.02em}
+[data-theme="shop"] .site-header .brand i{width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:var(--shadow-brand)}
+[data-theme="shop"] .site-header .note{color:var(--muted-strong);font-size:14px}
+[data-theme="shop"] .site-header .act{margin-left:auto;display:flex;align-items:center;gap:16px;font-size:14px;color:var(--muted-strong)}
+[data-theme="shop"] .site-header .act a{min-height:44px;display:flex;align-items:center}
+[data-theme="shop"] .site-header .act .pill{white-space:nowrap;padding:0 18px;border-radius:var(--radius-pill);background:var(--accent);color:#fff;box-shadow:var(--shadow-brand)}
+[data-theme="shop"] .shell{gap:32px;width:min(1200px,calc(100% - 64px));margin:24px auto 0;min-height:auto}
+[data-theme="shop"] .rail{top:96px;height:auto;max-height:calc(100dvh - 112px);padding:16px 12px 12px;border-radius:var(--radius-panel);background:#fff;box-shadow:var(--shadow-2)}
+[data-theme="shop"] .rail__brand{padding:0 8px}
+[data-theme="shop"] .rail__logo{width:8px;height:8px;border-radius:50%;background:var(--accent);font-size:0}
+[data-theme="shop"] .rail__wordmark small{color:var(--muted-strong);letter-spacing:0;font-size:12px}
+[data-theme="shop"] .rail__identity{display:none}
+[data-theme="shop"] .rail__label{color:var(--muted-strong);font-size:12px;letter-spacing:0}
+[data-theme="shop"] .rail__link{border-radius:var(--radius-pill);padding:0 16px;font-size:15px}
+[data-theme="shop"] .rail__link:hover{background:var(--surface-soft)}
+[data-theme="shop"] .rail__link[aria-current]{background:var(--surface-soft);font-weight:600}
+[data-theme="shop"] .rail__foot{border-top:1px solid var(--line)}
+[data-theme="shop"] .rail__back{color:var(--ink-soft);padding:0 16px}
+[data-theme="shop"] .rail__logout{border:1px solid var(--line-strong);border-radius:var(--radius-pill);background:#fff}
+
+/* ───────── 主区域公共 ───────── */
+.main{min-width:0;padding:clamp(20px,3vw,40px) clamp(16px,3.4vw,48px) 64px}
+[data-theme="shop"] .main{padding:8px 0 64px}
+.eyebrow{font-size:.76rem;letter-spacing:.08em;color:var(--muted)}
+.page-head h1{margin-top:6px;font:650 clamp(2.05rem,4vw,3.4rem)/1.15 var(--font-display);letter-spacing:-.03em}
+.page-head p{margin-top:8px;max-width:44em;color:var(--ink-soft);font-size:.92rem}
+[data-theme="shop"] .eyebrow{font-size:14px;letter-spacing:0;color:var(--muted-strong)}
+[data-theme="shop"] .page-head h1{font:600 28px/1.3 var(--font-ui);letter-spacing:0}
+[data-theme="shop"] .page-head p{font-size:16px;line-height:1.6;color:var(--muted-strong)}
+.panel{border:1px solid var(--line);border-radius:var(--radius-panel);background:var(--surface);box-shadow:var(--shadow-2)}
+[data-theme="exhibition"] .panel{border-color:#dae5df;background:linear-gradient(135deg,#fffffff5,#f4faf6e8)}
+[data-theme="shop"] .panel{border:0}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:var(--touch);padding:0 18px;border:1px solid transparent;border-radius:var(--radius-control);font-weight:600;font-size:.9rem;white-space:nowrap;cursor:pointer;transition:background var(--dur-2) var(--ease-out),transform var(--dur-1) var(--ease-out)}
+.btn:active{transform:scale(.98)}
+.btn--primary{background:var(--accent-dark);color:#fff}
+.btn--primary:hover{background:var(--accent)}
+.btn--outline{border-color:var(--line-strong);background:var(--surface);color:var(--ink)}
+.btn:disabled{cursor:not-allowed}
+[data-theme="exhibition"] .btn--primary:disabled{background:var(--surface-soft);color:var(--ink-soft)}
+[data-theme="shop"] .btn{border-radius:var(--radius-pill);font-weight:500;font-size:15px}
+[data-theme="shop"] .btn--primary{background:var(--accent);box-shadow:var(--shadow-brand)}
+[data-theme="shop"] .btn--primary:hover{background:var(--accent-dark)}
+[data-theme="shop"] .btn--primary:disabled{background:#ebebeb;color:var(--muted-strong);box-shadow:none}
+.field{display:grid;gap:6px;font-size:.82rem;color:var(--ink-soft)}
+.field b{font-weight:600;color:var(--ink)}
+.control{min-height:var(--touch);width:100%;padding:0 12px;border:1px solid var(--line-strong);border-radius:var(--radius-control);background:var(--surface);color:var(--ink);font-size:.92rem}
+[data-theme="shop"] .control{border-color:var(--line-control);font-size:16px}
+[data-theme="exhibition"] :is(.control,.prod .add,.step){border-color:var(--line-control)} /* 3.64:1，原 #8ca29d 2.70 */
+
+/* ───────── 总览 ───────── */
+.ov-hero{padding:clamp(20px,3vw,32px);border-radius:var(--radius-panel)}
+[data-theme="exhibition"] .ov-hero{background:linear-gradient(115deg,#123740,#215e58);color:#fff}
+[data-theme="exhibition"] .ov-hero .eyebrow{color:var(--accent-light)}
+[data-theme="exhibition"] .ov-hero p{color:#dcebe3}
+.ov-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px;padding:12px 16px}
+.ov-actions .status{display:flex;align-items:center;gap:8px;font-size:.8rem;color:var(--ink-soft)}
+.ov-actions .status i{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+[data-theme="shop"] .ov-actions{padding:0;margin-top:20px;background:none;box-shadow:none}
+.ov-group{margin-top:28px}
+.ov-group h2{display:flex;align-items:baseline;gap:10px;margin-bottom:10px;font:600 .8rem/1 var(--font-ui);letter-spacing:.1em;color:var(--muted)}
+[data-theme="shop"] .ov-group h2{font-size:14px;letter-spacing:0;color:var(--muted-strong)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,13.5rem),1fr));gap:12px}
+[data-theme="shop"] .cards{grid-template-columns:repeat(auto-fill,minmax(min(100%,20rem),1fr));gap:16px}
+.card{position:relative;display:grid;align-content:start;gap:6px;min-height:132px;padding:16px;transition:transform var(--dur-2) var(--ease-out),box-shadow var(--dur-2) var(--ease-out)}
+.card:hover{transform:translateY(-2px)}
+.card .n{font:500 .72rem/1 var(--font-mono);color:var(--muted)}
+.card h3{font:600 1.18rem/1.3 var(--font-display)}
+.card p{font-size:.82rem;color:var(--muted)}
+.card .arrow{position:absolute;top:14px;right:14px;color:var(--accent)}
+[data-theme="shop"] .card{min-height:150px;padding:22px}
+[data-theme="shop"] .card h3{font-size:18px}
+[data-theme="shop"] .card p{font-size:14px;color:var(--muted-strong)}
+[data-theme="shop"] .card .arrow{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:var(--surface-soft);color:var(--ink);top:18px;right:18px}
+.tip{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:28px;padding:16px 20px}
+.tip p{font-size:.84rem;color:var(--ink-soft)}
+.tip a{display:inline-flex;align-items:center;min-height:var(--touch);font-weight:600;color:var(--accent)}
+[data-theme="shop"] .tip a{color:var(--ink)}
+
+/* ───────── 销售日报 ───────── */
+.rp-toolbar{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px 24px;margin-top:20px;padding:16px}
+.rp-toolbar .grp{display:flex;align-items:end;gap:10px;flex-wrap:nowrap}
+.rp-toolbar .field{width:9.5rem}
+.rp-toolbar .field.cur{width:10.5rem}
+.rp-hint{margin-top:8px;font-size:.78rem;color:var(--muted)}
+.sheet{margin-top:20px;padding:clamp(16px,2.4vw,28px)}
+.sheet__head{display:flex;justify-content:space-between;align-items:end;gap:12px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid var(--line-strong)}
+.sheet__head h2{font:650 1.6rem/1.2 var(--font-display)}
+.sheet__head small{color:var(--muted);font-size:.78rem}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;margin-top:16px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--line);overflow:hidden}
+.metric{padding:14px;background:var(--surface)}
+.metric span{display:block;font-size:.74rem;color:var(--muted)}
+.metric strong{display:block;margin-top:6px;font:600 1.45rem/1.1 var(--font-display)}
+.metric small{display:block;margin-top:4px;font-size:.74rem;color:var(--muted)}
+.metric--lead{grid-row:span 2;background:var(--accent-soft)}
+.metric--lead strong{font-size:clamp(1.8rem,3vw,2.3rem);white-space:nowrap}
+.metric--warn strong{color:var(--warning)}
+[data-theme="shop"] .metric--lead{background:#f5f3fe}
+[data-theme="shop"] .metric strong{font-weight:600}
+.sec{margin-top:24px}
+.sec__h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px}
+.sec__h h3{font:650 1.1rem/1.3 var(--font-display)}
+.sec__h small{font-size:.74rem;color:var(--muted)}
+.cols{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+table{width:100%;border-collapse:collapse;font-size:.86rem}
+th{padding:8px 6px;border-bottom:1px solid var(--line-strong);font-size:.74rem;font-weight:500;color:var(--muted);text-align:left}
+td{padding:9px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+td.r,th.r{text-align:right;white-space:nowrap}
+td.name{min-width:8em;word-break:keep-all;overflow-wrap:anywhere}
+tr.cur td{padding-top:14px;font-size:.72rem;letter-spacing:.1em;color:var(--muted);border-bottom:0}
+
+/* ───────── 收银台 ───────── */
+.ct-context{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px;margin-top:20px;padding:16px}
+.ct-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,360px);gap:16px;margin-top:16px;align-items:start}
+.ct-catalog,.ct-summary{padding:16px}
+.ct-summary{position:sticky;top:16px}
+[data-theme="shop"] .ct-summary{top:96px}
+.sec-h2{display:flex;justify-content:space-between;align-items:end;margin-bottom:12px}
+.sec-h2 h2{font:650 1.35rem/1.2 var(--font-display)}
+[data-theme="shop"] .sec-h2 h2{font-size:20px;font-weight:600}
+.sec-h2 span{font-size:.76rem;color:var(--muted)}
+.ct-search{display:flex;gap:8px;margin-bottom:12px}
+.ct-search .control{flex:1}
+.seg{display:flex;gap:4px;padding:3px;border:1px solid var(--line);border-radius:calc(var(--radius-control) + 3px);background:var(--surface-soft)}
+.seg button{min-height:38px;min-width:56px;padding:0 12px;border:0;border-radius:var(--radius-control);background:transparent;font-size:.84rem;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--surface);font-weight:600;box-shadow:var(--shadow-1)}
+[data-theme="exhibition"] .seg button[aria-pressed="true"]{background:var(--accent-light);color:var(--expo-charcoal)}
+[data-theme="shop"] .seg{border:0;border-radius:var(--radius-pill)}
+[data-theme="shop"] .seg button{border-radius:var(--radius-pill)}
+[data-theme="shop"] .seg button[aria-pressed="true"]{background:#000;color:#fff}
+.plist{display:grid;gap:8px;list-style:none;margin:0;padding:0}
+.prod{display:grid;grid-template-columns:48px minmax(0,1fr) auto 44px;align-items:center;gap:12px;min-height:72px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--radius-card);background:var(--surface)}
+.prod .thumb{width:48px;height:48px;border-radius:calc(var(--radius-card) - 4px)}
+.prod .nm{font-weight:600;font-size:.95rem;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.prod .meta{font-size:.76rem;color:var(--muted)}
+.prod .meta .low{color:var(--warning);font-weight:600}
+.prod .price{font:600 .95rem/1 var(--font-mono);text-align:right;white-space:nowrap}
+.prod .add{width:44px;height:44px;border:1px solid var(--line-strong);border-radius:var(--radius-control);background:var(--surface);font-size:20px;line-height:1;cursor:pointer;color:var(--accent)}
+.prod[aria-disabled="true"]{background:var(--surface-soft)}
+.prod[aria-disabled="true"] .nm,.prod[aria-disabled="true"] .price{color:var(--ink-soft)}
+.prod .badge{display:inline-block;padding:1px 6px;border-radius:var(--radius-pill);background:var(--surface);border:1px solid var(--line-strong);font-size:.7rem;color:var(--ink-soft)}
+.prod .qty{display:inline-grid;place-items:center;min-width:22px;height:22px;margin-left:6px;border-radius:var(--radius-pill);background:var(--accent);color:#fff;font-size:.72rem;vertical-align:1px}
+[data-theme="exhibition"] .prod .qty{background:var(--accent-light);color:var(--expo-charcoal)}
+[data-theme="shop"] .prod{border:0;background:var(--surface-soft)}
+[data-theme="shop"] .prod .price{color:var(--accent)}
+[data-theme="shop"] .prod .add{border-radius:50%;border-color:var(--line-strong)}
+.cart{list-style:none;margin:0;padding:0}
+.cart .step{justify-self:start}
+.cart li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 10px;padding:12px 0;border-bottom:1px solid var(--line)}
+.cart .nm{font-weight:600;font-size:.9rem}
+.cart .amt{font:600 .9rem/1.4 var(--font-mono);text-align:right}
+.step{display:inline-flex;align-items:center;border:1px solid var(--line-strong);border-radius:var(--radius-control);overflow:hidden}
+.step button{width:44px;height:40px;border:0;background:var(--surface);font-size:18px;cursor:pointer}
+.step span{min-width:32px;text-align:center;font:600 .9rem/1 var(--font-mono)}
+[data-theme="shop"] .step{border-radius:var(--radius-pill)}
+.sum{display:grid;gap:6px;margin-top:12px;font-size:.86rem}
+.sum div{display:flex;justify-content:space-between}
+.sum .disc{color:var(--accent)}
+[data-theme="exhibition"] .sum .disc{color:var(--accent)}
+.sum .total{margin-top:6px;padding-top:10px;border-top:1px solid var(--line-strong);font-size:1rem;font-weight:600}
+.sum .total strong{font:650 1.6rem/1 var(--font-display)}
+.ct-submit{width:100%;min-height:52px;margin-top:14px;font-size:1rem}
+.ct-bar{display:none}
+
+/* ───────── 平板 768–1099：收银摘要改底栏 ───────── */
+@media (max-width:1099px){
+  .ct-grid{grid-template-columns:minmax(0,1fr)}
+  .ct-summary{display:none}
+  .ct-bar{display:flex;position:fixed;z-index:30;left:var(--rail);right:0;bottom:0;align-items:center;gap:12px;padding:10px clamp(12px,3vw,24px) calc(10px + env(safe-area-inset-bottom));background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -6px 20px #0000000f}
+  .ct-bar .info{flex:1;min-width:0;display:grid;min-height:var(--touch);align-content:center;text-align:left;background:none;border:0;cursor:pointer}
+  .ct-bar .info small{font-size:.76rem;color:var(--muted)}
+  .ct-bar .info strong{font:650 1.25rem/1.2 var(--font-display)}
+  .ct-bar .btn{min-height:52px;min-width:9.5rem;font-size:1rem}
+  .main.has-bar{padding-bottom:110px}
+  [data-theme="shop"] .ct-bar{left:0}
+  .metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+/* ───────── 导航 ≤900：顶部横向滑动（展场、店面统一，验收口径要求横滑） ───────── */
+@media (max-width:900px){
+  [data-theme="shop"]{--shop-header-height:72px}
+  .shell{grid-template-columns:minmax(0,1fr)}
+  [data-theme="exhibition"]{--rail:0px}
+  .rail{position:sticky;top:0;z-index:25;height:auto;flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:8px 12px}
+  [data-theme="exhibition"] .rail{padding:8px 12px 6px}
+  .rail__brand{min-height:36px}
+  .rail__identity{display:none}
+  .rail__wordmark small{display:none}
+  .rail .shopname{display:block}
+  .rail__foot{order:1;padding:0;border:0!important;margin-left:auto}
+  .rail__brand{order:0}
+  .rail__nav{order:2}
+  .rail__back{display:none}
+  .rail__logout{padding:0 14px}
+  .rail__nav{flex:1 0 100%;display:flex;gap:4px;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;scrollbar-width:none;mask-image:linear-gradient(90deg,#000 88%,transparent)}
+  .rail__nav::-webkit-scrollbar{display:none}
+  .rail__group{display:contents}
+  .rail__label{display:none}
+  .rail__link{flex:0 0 auto;scroll-snap-align:center;padding:0 14px;white-space:nowrap}
+  .rail__link svg{display:none}
+  [data-theme="exhibition"] .rail__link[aria-current]{box-shadow:inset 0 -3px var(--accent-light);border-radius:var(--radius-control) var(--radius-control) 0 0}
+  [data-theme="shop"] .shell{width:100%;margin:0;gap:0}
+  /* Kel 已定 2026-11-26 15:13：≤900 吸顶 top 跟页头高度走（72px，≤640 为 64px），>900 仍是 96px；56px 作废。Kel 已定 15:01：保留「退出登录」，只修 D9 底色错位：白底和文字在同一个盒子上 */
+  [data-theme="shop"] .rail{top:var(--shop-header-height);max-height:none;border-radius:0;box-shadow:0 1px 0 var(--line)}
+  [data-theme="shop"] .rail__brand{display:none}
+  [data-theme="shop"] .rail__foot{display:contents}
+  [data-theme="shop"] .rail{flex-wrap:nowrap}
+  [data-theme="shop"] .rail__nav{flex:1 1 0;min-width:0}
+  [data-theme="shop"] .rail__logout{order:3;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;flex:0 0 auto;margin:0 0 0 8px;min-height:44px;min-width:44px;padding:0 12px;white-space:nowrap;border:0;border-radius:var(--radius-pill);background:#fff;color:var(--ink);box-shadow:rgba(0,0,0,.06) 0 2px 8px}
+  [data-theme="shop"] .rail__link{background:var(--surface-soft);font-size:14px}
+  [data-theme="shop"] .rail__link[aria-current]{background:#000;color:#fff}
+  [data-theme="shop"] .main{padding:16px 16px 64px}
+  [data-theme="shop"] .site-header{height:var(--shop-header-height);padding:0 16px;gap:12px}
+  [data-theme="shop"] .site-header .note,[data-theme="shop"] .site-header .act .hide-sm{display:none}
+  .ct-bar{left:0!important}
+}
+/* ───────── 手机 ≤767 ───────── */
+@media (max-width:767px){
+  .page-head h1{font-size:clamp(1.75rem,7vw,2.3rem)}
+  [data-theme="shop"] .page-head h1{font-size:24px}
+  .cards{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
+  [data-theme="shop"] .cards{grid-template-columns:minmax(0,1fr);gap:12px}
+  .card{min-height:0;padding:12px}
+  .card h3{font-size:1.02rem}
+  .card p{display:none}
+  [data-theme="shop"] .card{min-height:0;padding:18px 20px;grid-template-columns:auto 1fr;column-gap:12px}
+  [data-theme="shop"] .card p{display:block;grid-column:2}
+  [data-theme="shop"] .card .n{grid-row:span 2;align-self:center}
+  .ov-actions .btn{width:100%}
+  .ct-context{grid-template-columns:minmax(0,1fr);gap:10px}
+  .ct-search{flex-wrap:wrap}
+  .seg{width:100%}
+  .seg button{flex:1}
+  .prod{grid-template-columns:44px minmax(0,1fr) 44px;grid-template-areas:"t n a" "t p a";row-gap:2px}
+  .prod .thumb{grid-area:t;width:44px;height:44px}
+  .prod .info{grid-area:n}
+  .prod .price{grid-area:p;text-align:left}
+  .prod .add{grid-area:a}
+  .rp-toolbar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:end}
+  .rp-toolbar .control{min-width:0}
+  .rp-toolbar .grp{display:contents}
+  .rp-toolbar .field,.rp-toolbar .field.cur{width:auto}
+  .rp-toolbar .field.cur{grid-column:1/-1}
+  .rp-toolbar .q{grid-column:1/-1}
+  .rp-toolbar .actions{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+  .rp-toolbar .actions .btn{padding:0 8px;font-size:.84rem}
+  .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .metric--lead{grid-column:1/-1;grid-row:auto}
+  .metric--lead strong{font-size:2rem}
+  .cols{grid-template-columns:minmax(0,1fr)}
+  .main{padding-inline:12px}
+}
+@media (max-width:640px){
+  [data-theme="shop"]{--shop-header-height:64px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:.01ms!important;animation-duration:.01ms!important;scroll-behavior:auto!important}
+  .card:hover{transform:none}
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const qs=new URLSearchParams(location.search);
+const theme=qs.get('theme')==='shop'?'shop':'exhibition';
+const page=['overview','reports','counter'].includes(qs.get('page'))?qs.get('page'):'overview';
+if(qs.get('shot'))document.body.classList.add('shot');
+document.body.dataset.theme=theme;
+const I={grid:"M4 4h7v7H4z M13 4h7v7h-7z M4 13h7v7H4z M13 13h7v7h-7z",calendar:"M4 6h16v14H4z M8 3v6 M16 3v6 M4 11h16",box:"M3 8l9-5 9 5v8l-9 5-9-5z M3 8l9 5 9-5 M12 13v8",receipt:"M6 3h12v18l-3-2-3 2-3-2-3 2z M9 8h6 M9 12h6",chart:"M4 20V10 M10 20V4 M16 20V13 M2 20h20",scan:"M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 16h6 M17 13v6",bag:"M6 8h12l-1 12H7z M9 8a3 3 0 0 1 6 0",card:"M3 7h18v10H3z M3 11h18",users:"M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M3 20v-2a5 5 0 0 1 10 0v2",store:"M4 9l1-5h14l1 5 M4 9h16v11H4z M9 20v-6h6v6",history:"M4 12a8 8 0 1 0 3-6.2 M4 4v4h4 M12 8v4l3 2",arrow:"M5 12h14 M13 6l6 6-6 6"};
+const icon=n=>`<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="${I[n]}"/></svg>`;
+const nav=[
+ {g:'经营',items:[['overview','总览','','grid'],['events','活动','01','calendar'],['goods','商品','02','box'],['orders','订单记录','03','receipt'],['reports','销售日报','04','chart']]},
+ {g:'现场收银',items:[['counter','现场开单','','scan'],['counter-orders','本场订单','','bag']]},
+ {g:'店铺',items:[['pay','收款方式','05','card'],['sales','销售账号','06','users'],['shop','店铺资料','07','store'],['audit','操作记录','08','history']]},
+];
+const desc={events:'设置时间、场馆与摊位号，决定这一场卖什么。',goods:'维护说明、价格、活动库存与组合优惠。',orders:'核对全部订单、商品明细与收款状态。',reports:'按日期和币种看实收、优惠与热销，导出 PDF / CSV。',counter:'选择场次，点选商品生成订单并收款。','counter-orders':'查看本场已开的订单，补收款或取消。',pay:'上传收款码，设定现场默认使用的那一个。',sales:'给现场同事开账号，限定他们能做的事。',shop:'店名、公告与对外分享链接，顾客看到的就是这些。',audit:'谁在什么时候改了什么，按对象查看。'};
+const cur=page;
+const rail=`<aside class="rail" aria-label="店铺工作台">
+ <a class="rail__brand" href="#"><span class="rail__logo" aria-hidden="true">S</span><span class="rail__wordmark"><strong>STALLINK</strong><small>店铺工作台</small></span></a>
+ <div class="rail__identity"><strong>海雾工作室</strong><span>店铺 · 现场运营</span></div>
+ <nav class="rail__nav" aria-label="店铺工作台导航">${nav.map(g=>`<div class="rail__group"><span class="rail__label">${g.g}</span>${g.items.map(([k,l,n,ic])=>`<a class="rail__link" href="?theme=${theme}&page=${['overview','reports','counter'].includes(k)?k:cur}" ${k===cur?'aria-current="page"':''}>${icon(ic)}<span class="t">${l}</span></a>`).join('')}</div>`).join('')}</nav>
+ <div class="rail__foot"><a class="rail__back" href="#"><span aria-hidden="true">←</span> 返回 Stallink</a><button class="rail__logout" type="button">退出登录</button></div>
+</aside>`;
+const header=theme==='shop'?`<header class="site-header"><a class="brand" href="#"><i aria-hidden="true"></i>Stallink</a><span class="note">现场订单 · 库存管理</span><nav class="act" aria-label="账号导航"><a class="hide-sm" href="#">关于</a><a class="hide-sm" href="#">查看店铺</a><a class="pill" href="#">店铺工作台 ↗</a><a href="#">退出</a></nav></header>`:'';
+function overview(){
+ return `<div class="ov-hero ${theme==='shop'?'':''} page-head"><p class="eyebrow">店铺工作台</p><h1>开摊之前，把清单过一遍。</h1><p>活动定场地，商品定货架，收款码定结账方式。三项确认完，现场就能直接开单。</p></div>
+ <div class="ov-actions panel"><span class="status"><i aria-hidden="true"></i>本店工作台已连接 · Comic Fiesta 2026 进行中</span><a class="btn btn--primary" href="?theme=${theme}&page=counter">打开现场收银 <span aria-hidden="true">→</span></a></div>
+ ${nav.map(g=>{const items=g.items.filter(i=>i[2]);if(!items.length)return '';return `<section class="ov-group" aria-labelledby="g-${g.g}"><h2 id="g-${g.g}">${g.g}</h2><div class="cards">${items.map(([k,l,n])=>`<a class="card panel" href="#"><span class="n">${n}</span><h3>${l}</h3><p>${desc[k]}</p><span class="arrow" aria-hidden="true">${icon('arrow')}</span></a>`).join('')}</div></section>`}).join('')}
+ <div class="tip panel"><div><strong>开摊前检查</strong><p>活动时间与摊位号对得上、商品可售数量够卖、收款码能正常打开。</p></div><a href="#">先看活动 <span aria-hidden="true">→</span></a></div>`;
+}
+function reports(){
+ const hot=[['MYR'],['亚克力立牌·海雾','12','RM 300.00'],['镭射票根套组','5','RM 75.00'],['明信片六枚（秋季限定版）','3','RM 45.00'],['SGD'],['布偶挂件','6','S$ 180.00'],['CNY'],['布偶挂件','4','¥ 588.00']];
+ return `<div class="page-head"><p class="eyebrow">经营</p><h1>销售日报</h1></div>
+ <form class="rp-toolbar panel" onsubmit="return false"><div class="grp"><label class="field"><b>起始日期</b><input class="control num" type="date" value="2026-11-26"></label><label class="field"><b>结束日期</b><input class="control num" type="date" value="2026-11-26"></label><label class="field cur"><b>币种</b><select class="control"><option>全部币种</option></select></label><button class="btn btn--primary q">查询日报</button></div>
+ <div class="grp actions"><button class="btn btn--outline" type="button">重新生成</button><button class="btn btn--outline" type="button">导出 CSV</button><button class="btn btn--outline" type="button">导出 PDF</button></div></form>
+ <p class="rp-hint">每次最多查 31 天。选择「全部币种」时 PDF 包含全部币种，CSV 只导出主币种 MYR。</p>
+ <article class="sheet panel" aria-labelledby="sheet-h"><div class="sheet__head"><div><p class="eyebrow num">2026-11-26 · 全部币种</p><h2 id="sheet-h">当日订单与收款</h2></div><small class="num">生成于 2026/11/26 21:30</small></div>
+ <div class="metrics"><div class="metric metric--lead"><span>实收金额（MYR）</span><strong class="num">RM 1,280.50</strong><small>17 笔已收款 · 0 笔待付款</small></div><div class="metric"><span>订单数</span><strong class="num">18</strong><small>已关闭 1 · 退款 1</small></div><div class="metric"><span>售出件数</span><strong class="num">46</strong><small>平均每单 RM 75.32</small></div><div class="metric"><span>优惠金额（MYR）</span><strong class="num">RM 45.00</strong><small>数量优惠与套餐优惠合计</small></div><div class="metric"><span>待退金额（MYR）</span><strong class="num">RM 25.00</strong><small>待确认退款的订单</small></div><div class="metric metric--warn"><span>现金长短款（MYR）</span><strong class="num">短款 RM 1.50</strong><small>正数长款，负数短款</small></div><div class="metric"><span>收款笔数</span><strong class="num">29</strong><small>现金 18 · 扫码 11</small></div></div>
+ <section class="sec"><div class="sec__h"><h3>分币种汇总</h3><small>各币种独立合计，不跨币种相加</small></div><table><thead><tr><th>币种</th><th class="r">订单</th><th class="r">优惠</th><th class="r">退款</th><th class="r">实收</th></tr></thead><tbody class="num"><tr><td>MYR</td><td class="r">18</td><td class="r">RM 45.00</td><td class="r">RM 25.00</td><td class="r">RM 1,280.50</td></tr><tr><td>SGD</td><td class="r">7</td><td class="r">S$ 8.00</td><td class="r">S$ 0.00</td><td class="r">S$ 312.00</td></tr><tr><td>CNY</td><td class="r">4</td><td class="r">¥ 0.00</td><td class="r">¥ 0.00</td><td class="r">¥ 588.00</td></tr></tbody></table></section>
+ <div class="cols"><section class="sec"><div class="sec__h"><h3>热销商品</h3><small>按币种分组</small></div><table><thead><tr><th>商品</th><th class="r">件数</th><th class="r">金额</th></tr></thead><tbody>${hot.map(r=>r.length===1?`<tr class="cur"><td colspan="3">${r[0]}</td></tr>`:`<tr><td class="name">${r[0]}</td><td class="r num">${r[1]}</td><td class="r num">${r[2]}</td></tr>`).join('')}</tbody></table></section>
+ <section class="sec"><div class="sec__h"><h3>收款方式</h3><small>按币种分组</small></div><table><thead><tr><th>方式</th><th class="r">笔数</th><th class="r">金额</th></tr></thead><tbody class="num"><tr class="cur"><td colspan="3">MYR</td></tr><tr><td>现金</td><td class="r">10</td><td class="r">RM 700.00</td></tr><tr><td>DuitNow 二维码</td><td class="r">8</td><td class="r">RM 580.50</td></tr><tr class="cur"><td colspan="3">SGD</td></tr><tr><td>PayNow</td><td class="r">7</td><td class="r">S$ 312.00</td></tr><tr class="cur"><td colspan="3">CNY</td></tr><tr><td>微信支付</td><td class="r">4</td><td class="r">¥ 588.00</td></tr></tbody></table></section></div>
+ </article>`;
+}
+function counter(){
+ const ps=[['亚克力立牌·海雾','#c9d6ff','RM 25.00','可售 · 本场剩 12 件',2],['镭射票根套组','#ffd6c9','RM 25.00','可售 · 本场剩 12 件',0],['布偶挂件','#d3f9c9','RM 25.00','<span class="low">仅剩 2 件</span>',1],['明信片六枚（秋季限定版）','#e7dcff','RM 25.00','<span class="badge">本场已售完</span>',0,true],['秋季三件套 · 套餐','#f3e6c4','RM 60.00','立牌 + 票根 + 挂件 · 共用库存',0]];
+ return `<div class="page-head"><p class="eyebrow">现场收银</p><h1>现场开单</h1><p>点选商品即可加一。服务器实时计算数量优惠和固定套餐，自动选择顾客最省的组合。</p></div>
+ <div class="ct-context panel"><label class="field"><b>活动场次</b><select class="control"><option>Comic Fiesta 2026 · B-12（进行中）</option></select></label><label class="field"><b>顾客称呼 <span style="font-weight:400;color:var(--muted)">选填</span></b><input class="control" placeholder="方便现场叫号"></label></div>
+ <div class="ct-grid"><section class="ct-catalog panel" aria-labelledby="cat-h"><div class="sec-h2"><div><p class="eyebrow">活动商品</p><h2 id="cat-h">点选加货</h2></div><span>5 件</span></div>
+ <div class="ct-search"><input class="control" type="search" placeholder="搜索商品或套餐名称" aria-label="搜索商品或套餐"><div class="seg" role="group" aria-label="筛选"><button aria-pressed="true">全部</button><button aria-pressed="false">单品</button><button aria-pressed="false">套餐</button></div></div>
+ <ul class="plist">${ps.map(([n,c,p,m,q,dis])=>`<li class="prod" ${dis?'aria-disabled="true"':''}><span class="thumb" style="background:${c}" aria-hidden="true"></span><div class="info"><div class="nm">${n}${q?`<span class="qty" aria-label="已选 ${q} 件">${q}</span>`:''}</div><div class="meta">${m}</div></div><span class="price num">${p}</span><button class="add" type="button" aria-label="加一件${n}" ${dis?'disabled':''}>+</button></li>`).join('')}</ul></section>
+ <aside class="ct-summary panel" aria-label="订单预览"><div class="sec-h2"><div><p class="eyebrow">购物车</p><h2>订单预览</h2></div><span>3 件</span></div>
+ <ul class="cart"><li><span class="nm">亚克力立牌·海雾</span><span class="amt num">RM 50.00</span><span class="step"><button aria-label="减一件">−</button><span>2</span><button aria-label="加一件">+</button></span></li><li><span class="nm">布偶挂件</span><span class="amt num">RM 25.00</span><span class="step"><button aria-label="减一件">−</button><span>1</span><button aria-label="加一件">+</button></span></li></ul>
+ <div class="sum num"><div><span>小计</span><span>RM 75.00</span></div><div class="disc"><span>满 3 件优惠</span><span>− RM 5.00</span></div><div class="total"><span>应付总额（MYR）</span><strong>RM 70.00</strong></div></div>
+ <button class="btn btn--primary ct-submit" type="button">生成订单</button></aside></div>
+ <div class="ct-bar"><button class="info" type="button" aria-controls="sheet" aria-expanded="false"><small>已选 3 件 · 查看明细</small><strong class="num">RM 70.00</strong></button><button class="btn btn--primary" type="button">生成订单</button></div>`;
+}
+const body={overview,reports,counter}[page]();
+document.getElementById('root').innerHTML=`${header}<div class="shell">${rail}<main class="main ${page==='counter'?'has-bar':''}" id="main-content">${body}</main></div>
+<div class="proto-bar" aria-hidden="true">${['exhibition','shop'].map(t=>`<a href="?theme=${t}&page=${page}" ${t===theme?'aria-current="true"':''}>${t==='shop'?'店面':'展场'}</a>`).join('')}｜${[['overview','总览'],['reports','销售日报'],['counter','收银台']].map(([k,l])=>`<a href="?theme=${theme}&page=${k}" ${k===page?'aria-current="true"':''}>${l}</a>`).join('')}</div>`;
+</script>
+</body>
+</html>
