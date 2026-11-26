@@ -275,7 +275,8 @@ func (a *API) AdminAudit(w http.ResponseWriter, r *http.Request) {
 	for _, entry := range entries {
 		out = append(out, map[string]string{
 			"action": entry.Action, "actorLogin": entry.ActorLogin,
-			"subjectType": entry.SubjectType, "subjectId": entry.SubjectID.String(), "createdAt": entry.CreatedAt,
+			"subjectType": entry.SubjectType, "subjectId": entry.SubjectID.String(),
+			"subjectLabel": entry.SubjectLabel, "createdAt": entry.CreatedAt.Format(time.RFC3339),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": out, "page": page, "hasMore": more})

@@ -60,11 +60,12 @@ type PayCode struct {
 }
 
 type AuditEntry struct {
-	Action      string
-	ActorLogin  string
-	SubjectType string
-	SubjectID   ID
-	CreatedAt   string
+	Action       string
+	ActorLogin   string
+	SubjectType  string
+	SubjectID    ID
+	SubjectLabel string
+	CreatedAt    time.Time
 }
 
 func (s *ShopStore) CreateOrderCommand(ctx context.Context, identity CommandIdentity, clientOrderID string, quoteID ID, expectedTotal int64, boothName string, reservationsEnabled bool, reservationTTL time.Duration, allowScheduled bool) (OrderCommandResult, error) {
@@ -856,7 +857,7 @@ func (s *ShopStore) orderLines(ctx context.Context, orderID ID) ([]OrderLine, er
 
 func (s *ShopStore) ListAudit(ctx context.Context, shopID ID) ([]AuditEntry, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT a.action, u.login_name, a.subject_type, a.subject_id::text, to_char(a.created_at, 'YYYY-MM-DD HH24:MI')
+		SELECT a.action, u.login_name, a.subject_type, a.subject_id::text, a.created_at
 		FROM audit_logs a JOIN users u ON u.id = a.actor_id
 		WHERE a.shop_id = $1 ORDER BY a.created_at DESC LIMIT 100`, shopID)
 	if err != nil {

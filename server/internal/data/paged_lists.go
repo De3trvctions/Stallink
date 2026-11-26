@@ -47,12 +47,49 @@ func (s *ShopStore) ListOrderPage(ctx context.Context, shopID ID, eventID, date,
 	return out, more, nil
 }
 
+// auditSubjectSnapshotLabel is the slot for the write-time snapshot
+// detail->'subject'->>'label' (K-Q5 = C, read path prefers the snapshot).
+// audit_logs.detail only arrives with the review-fix plan's migration 014;
+// until then the slot is NULL and every row falls back to the live name.
+// S3 phase 2 replaces it with `a.detail->'subject'->>'label'`.
+const auditSubjectSnapshotLabel = `NULL::text`
+
+// auditSubjectLabelSQL resolves a display name for each audit subject from
+// rows of the same shop: order number, good name, bundle name, or
+// "good · event" for a listing. Unknown types and missing rows yield an empty string.
+const auditSubjectLabelSQL = `COALESCE(` + auditSubjectSnapshotLabel + `, CASE a.subject_type
+      WHEN 'order'   THEN (SELECT o.number FROM orders o WHERE o.id = a.subject_id AND o.shop_id = a.shop_id)
+      WHEN 'good'    THEN (SELECT g.name FROM goods g WHERE g.id = a.subject_id AND g.shop_id = a.shop_id)
+      WHEN 'bundle'  THEN (SELECT b.name FROM bundles b WHERE b.id = a.subject_id AND b.shop_id = a.shop_id)
+      WHEN 'listing' THEN (SELECT g.name || ' · ' || e.name FROM event_listings el
+                             JOIN goods g ON g.id = el.good_id AND g.shop_id = el.shop_id
+                             JOIN events e ON e.id = el.event_id AND e.shop_id = el.shop_id
+                            WHERE el.id = a.subject_id AND el.shop_id = a.shop_id)
+    END, '')`
+
 func (s *ShopStore) ListAuditPage(ctx context.Context, shopID ID, search string, limit, offset int) ([]AuditEntry, bool, error) {
-	rows, err := s.pool.Query(ctx, `SELECT a.action,u.login_name,a.subject_type,a.subject_id::text,to_char(a.created_at,'YYYY-MM-DD HH24:MI')
- FROM audit_logs a JOIN users u ON u.id=a.actor_id
- WHERE a.shop_id=$1 AND ($2='' OR strpos(lower(a.action),lower($2))>0 OR strpos(lower(u.login_name),lower($2))>0 OR strpos(lower(a.subject_type),lower($2))>0 OR strpos(a.subject_id::text,lower($2))>0 OR strpos(
- CASE a.action WHEN 'bundle.approve' THEN '审核通过套餐' WHEN 'bundle.create' THEN '创建套餐' WHEN 'bundle.update' THEN '编辑套餐' WHEN 'bundle.reject' THEN '拒绝套餐' WHEN 'good.approve' THEN '审核通过商品' WHEN 'good.reject' THEN '拒绝商品' WHEN 'good.image.add' THEN '添加商品图片' WHEN 'good.image.delete' THEN '删除商品图片' WHEN 'good.image.reorder' THEN '调整商品图片顺序' WHEN 'listing.create' THEN '上架商品' WHEN 'listing.update' THEN '修改商品上架信息' WHEN 'stock.update' THEN '调整商品库存' WHEN 'order.create' THEN '创建订单' WHEN 'order.pay' THEN '确认收款' WHEN 'order.cancel' THEN '取消订单' WHEN 'order.refund_required' THEN '收款后取消待退款' WHEN 'order.refund_confirm' THEN '确认退款' WHEN 'order.fulfill' THEN '完成交付' WHEN 'order.expire' THEN '订单预留过期' ELSE '' END, $2)>0)
- ORDER BY a.created_at DESC,a.id DESC LIMIT $3 OFFSET $4`, shopID, search, limit+1, offset)
+	rows, err := s.pool.Query(ctx, `
+WITH labelled AS (
+  SELECT a.id, a.action, u.login_name, a.subject_type, a.subject_id, a.created_at,
+    `+auditSubjectLabelSQL+` AS label
+  FROM audit_logs a JOIN users u ON u.id = a.actor_id
+  WHERE a.shop_id = $1
+)
+SELECT action, login_name, subject_type, subject_id::text, label, created_at
+FROM labelled
+WHERE ($2 = '' OR strpos(lower(action), lower($2)) > 0 OR strpos(lower(login_name), lower($2)) > 0
+   OR strpos(lower(subject_type), lower($2)) > 0 OR strpos(subject_id::text, lower($2)) > 0
+   OR strpos(lower(label), lower($2)) > 0
+   OR strpos(CASE action
+        WHEN 'bundle.approve' THEN '审核通过套餐' WHEN 'bundle.create' THEN '创建套餐' WHEN 'bundle.update' THEN '编辑套餐'
+        WHEN 'bundle.reject' THEN '拒绝套餐' WHEN 'good.approve' THEN '审核通过商品' WHEN 'good.reject' THEN '拒绝商品'
+        WHEN 'good.image.add' THEN '添加商品图片' WHEN 'good.image.delete' THEN '删除商品图片'
+        WHEN 'good.image.reorder' THEN '调整商品图片顺序' WHEN 'listing.create' THEN '上架商品'
+        WHEN 'listing.update' THEN '修改商品上架信息' WHEN 'stock.update' THEN '调整商品库存'
+        WHEN 'order.create' THEN '创建订单' WHEN 'order.pay' THEN '确认收款' WHEN 'order.cancel' THEN '取消订单'
+        WHEN 'order.refund_required' THEN '收款后取消待退款' WHEN 'order.refund_confirm' THEN '确认退款'
+        WHEN 'order.fulfill' THEN '完成交付' WHEN 'order.expire' THEN '订单预留过期' ELSE '' END, $2) > 0)
+ORDER BY created_at DESC, id DESC LIMIT $3 OFFSET $4`, shopID, search, limit+1, offset)
 	if err != nil {
 		return nil, false, fmt.Errorf("list audit page: %w", err)
 	}
@@ -60,7 +97,7 @@ func (s *ShopStore) ListAuditPage(ctx context.Context, shopID ID, search string,
 	out := make([]AuditEntry, 0, limit+1)
 	for rows.Next() {
 		var e AuditEntry
-		if err := rows.Scan(&e.Action, &e.ActorLogin, &e.SubjectType, &e.SubjectID, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.Action, &e.ActorLogin, &e.SubjectType, &e.SubjectID, &e.SubjectLabel, &e.CreatedAt); err != nil {
 			return nil, false, fmt.Errorf("scan audit page: %w", err)
 		}
 		out = append(out, e)
