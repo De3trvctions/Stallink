@@ -45,7 +45,14 @@ type ListingDraft = { price: string; tiers: TierDraft[]; isListed: boolean };
 type GoodDraft = { name: string; description: string; listings: Record<string, ListingDraft> };
 type EventGoodsGroup = { event: EventRow; listings: Listing[]; bundles: Bundle[] };
 
-const emptyEvent: FreshEvent = { name: "", startsOn: "", endsOn: "", city: "", venue: "", boothNumber: "", currency: "MYR", status: "scheduled" };
+const emptyEventBase: FreshEvent = { name: "", startsOn: "", endsOn: "", city: "", venue: "", boothNumber: "", currency: "MYR", status: "scheduled" };
+function emptyEventFromShop(shop?: { boothNumber?: string; defaultCurrency?: string | null }): FreshEvent {
+  return {
+    ...emptyEventBase,
+    boothNumber: shop?.boothNumber ?? "",
+    currency: shop?.defaultCurrency || "MYR",
+  };
+}
 const tierDraft = (tier?: PriceTier): TierDraft => ({ quantity: tier ? String(tier.quantity) : "", totalPrice: tier ? (tier.totalPriceMinor / 100).toFixed(2) : "" });
 const minorInput = (minor: number) => (minor / 100).toFixed(2);
 const formatUploadSize = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
@@ -58,7 +65,7 @@ function imageSelectionError(files: File[], existing: number, limit: number): st
   if (invalid) return `图片“${invalid.name}”格式不支持或文件为空，请选择 JPG、PNG 或 WebP 图片。`;
   return "";
 }
-const pickerStyle: React.CSSProperties = { position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "fit-content", minWidth: 116, minHeight: 44, padding: "0 1rem", border: "1px solid var(--line-strong)", borderRadius: 9, background: "var(--surface)", color: "var(--ink)", cursor: "pointer" };
+const pickerStyle: React.CSSProperties = { position: "relative", display: "inline-flex", alignItems: "center", justifyContent: "center", width: "fit-content", minWidth: 116, minHeight: 44, padding: "0 1rem", border: "1px solid var(--line-control)", borderRadius: 9, background: "var(--surface)", color: "var(--ink)", cursor: "pointer" };
 const pickerInputStyle: React.CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0, cursor: "pointer" };
 
 function parseTiers(drafts: TierDraft[], unitPriceMinor: number): PriceTier[] | null {
@@ -179,7 +186,27 @@ export default function GoodsPage() {
   const [pending, setPending] = useState(false);
   const [imagePending, setImagePending] = useState("");
   const [imageDeleteTarget, setImageDeleteTarget] = useState<{ good: ShopGood; image: ProductImage } | null>(null);
-  const [fresh, setFresh] = useState<FreshEvent>(emptyEvent);
+  const [fresh, setFresh] = useState<FreshEvent>(emptyEventFromShop());
+  const [shopDefaults, setShopDefaults] = useState<{ boothNumber: string; defaultCurrency: string }>({ boothNumber: "", defaultCurrency: "MYR" });
+
+  useEffect(() => {
+    let active = true;
+    void browserJSON("/api/admin/shop").then((res) => {
+      if (!active || !res.ok) return;
+      const boothNumber = String(res.data.boothNumber ?? "");
+      const defaultCurrency = typeof res.data.defaultCurrency === "string" && res.data.defaultCurrency ? String(res.data.defaultCurrency) : "MYR";
+      setShopDefaults({ boothNumber, defaultCurrency });
+      setFresh((current) => {
+        const pristine = !current.name && !current.startsOn && !current.endsOn && !current.city && !current.venue && !current.boothNumber && current.currency === "MYR";
+        if (!pristine) return current;
+        return { ...current, boothNumber, currency: defaultCurrency };
+      });
+    }).catch(() => {
+      // 预填失败时保留本地默认值，店主仍可手动填写。
+    });
+    return () => { active = false; };
+  }, []);
+
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [editingGoodId, setEditingGoodId] = useState<string | null>(null);
@@ -399,7 +426,7 @@ export default function GoodsPage() {
         const createdEvent = String(result.eventId ?? "");
         if (createdEvent) setEventId(createdEvent);
         setCreateEvent(false);
-        setFresh(emptyEvent);
+        setFresh(emptyEventFromShop(shopDefaults));
       }
       setAddOpen(false);
     } catch {
@@ -721,7 +748,7 @@ export default function GoodsPage() {
   }
 
   return (
-    <main>
+    <main className="workspace-subpage">
       <p className="eyebrow">目录与库存</p>
       <h1>商品与优惠</h1>
       <p>一件商品只维护一份资料，全店库存共享；同一件商品可以参加多场活动，各活动单独定价与分配。商品内容和价格调整后需要平台审核，库存数量变化即时保存。</p>
