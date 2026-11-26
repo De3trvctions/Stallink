@@ -1,0 +1,22 @@
+Stallink sales-report PDF fonts
+================================
+
+noto-sans-sc-regular.subset.ttf
+  Subset of Noto Sans SC (variable font pinned at wght 400, hinting removed).
+  Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'.
+  Source: https://github.com/google/fonts/tree/a85815a42757630ce188fdad368c2dfc444d4773/ofl/notosanssc
+  License: SIL Open Font License 1.1 (see OFL.txt).
+
+noto-serif-sc-regular.subset.ttf
+  Subset of Noto Serif SC (variable font pinned at wght 400, hinting removed).
+  Copyright 2012 Google Inc. All Rights Reserved.
+  Source: https://github.com/google/fonts/tree/8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5/ofl/notoserifsc
+  License: SIL Open Font License 1.1 (see OFL.txt).
+
+Both files are Modified Versions under the OFL. They keep the upstream family
+names ("Noto Sans SC", "Noto Serif SC"); neither uses the Reserved Font Name
+"Source". They are not sold separately and remain under the OFL.
+
+coverage.json (code-point ranges) is derived from the kTGH field of the Unicode
+Character Database, Unihan 17.0.0. Copyright © 1991-2026 Unicode, Inc.
+License: Unicode License V3 (see UNICODE-LICENSE.txt).
