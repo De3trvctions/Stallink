@@ -45,67 +45,92 @@ func spreadsheetText(value string) string {
 	}
 }
 
+// dailyReportCSVHeader is the fixed five-column layout (design note §8.3, R2).
+// 数量 is an order count or an item count depending on 项目.
+var dailyReportCSVHeader = []string{"分组", "币种", "项目", "数量", "金额"}
+
 // renderDailyReportCSV turns a built report into the export CSV. currency
 // filters detail rows to one currency; an empty value keeps the headline
 // currency. Amounts are expressed in major units, never raw minor integers.
+// Cells that do not apply to a row stay empty instead of 0. Cash over/short is
+// deliberately not exported (C-2 = A); the snapshot still keeps it for the PDF.
 func renderDailyReportCSV(report data.DailyReport, currency string) []byte {
 	if currency == "" {
 		currency = report.Currency
 	}
-	var headline data.DailyReportCurrency
-	headline.Orders = report.Orders
-	headline.PaidOrders = report.PaidOrders
-	headline.RevenueMinor = report.RevenueMinor
-	headline.RefundMinor = report.RefundMinor
-	headline.Currency = report.Currency
-	for _, c := range report.Currencies {
-		if c.Currency == currency {
-			headline = c
-			break
-		}
-	}
-
 	var rows [][]string
-	add := func(group, curr, item string, orders int, amountMinor int64) {
-		rows = append(rows, []string{group, curr, spreadsheetText(item), strconv.Itoa(orders), minorToMajor(amountMinor)})
+	add := func(group, curr, item string, quantity, amountMinor *int64) {
+		qty, amount := "", ""
+		if quantity != nil {
+			qty = strconv.FormatInt(*quantity, 10)
+		}
+		if amountMinor != nil {
+			amount = minorToMajor(*amountMinor)
+		}
+		rows = append(rows, []string{group, curr, spreadsheetText(item), qty, amount})
 	}
+	count := func(n int) *int64 {
+		v := int64(n)
+		return &v
+	}
+	money := func(minor int64) *int64 { return &minor }
 
-	add("总览", headline.Currency, "已付款订单", headline.PaidOrders, headline.RevenueMinor)
+	if currency == report.Currency {
+		add("总览", currency, "收款总额", count(report.PaidOrders), money(report.RevenueMinor))
+		add("总览", currency, "订单数", count(report.Orders), nil)
+		add("总览", currency, "待付款订单", count(report.PendingOrders), nil)
+		add("总览", currency, "已关闭订单", count(report.ClosedOrders), nil)
+		add("总览", currency, "退款订单", count(report.RefundOrders), nil)
+		add("总览", currency, "售出件数", count(report.ItemsSold), nil)
+		add("总览", currency, "平均每单", nil, money(report.AverageMinor))
+		add("总览", currency, "优惠金额", nil, money(report.DiscountMinor))
+		add("总览", currency, "待退金额", nil, money(report.RefundMinor))
+	} else {
+		// Non-primary currencies only carry the per-currency fields; rows
+		// without a field are omitted rather than guessed (design note issue 11).
+		selected := data.DailyReportCurrency{Currency: currency}
+		for _, c := range report.Currencies {
+			if c.Currency == currency {
+				selected = c
+				break
+			}
+		}
+		add("总览", currency, "收款总额", count(selected.PaidOrders), money(selected.RevenueMinor))
+		add("总览", currency, "订单数", count(selected.Orders), nil)
+		add("总览", currency, "优惠金额", nil, money(selected.DiscountMinor))
+		add("总览", currency, "待退金额", nil, money(selected.RefundMinor))
+	}
 	// The currency breakdown always lists every currency; the selected-currency
 	// filter applies to the event/good/pay-code detail rows below.
 	for _, c := range report.Currencies {
-		add("按币种", c.Currency, "全部订单", c.Orders, c.RevenueMinor)
+		add("按币种", c.Currency, "全部订单", count(c.Orders), money(c.RevenueMinor))
+		add("按币种", c.Currency, "已付款订单", count(c.PaidOrders), nil)
+		add("按币种", c.Currency, "优惠金额", nil, money(c.DiscountMinor))
+		add("按币种", c.Currency, "待退金额", nil, money(c.RefundMinor))
 	}
 	for _, e := range report.Events {
-		if currency != "" && e.Currency != currency {
+		if e.Currency != currency {
 			continue
 		}
-		add("按活动", e.Currency, e.Name, e.Orders, e.RevenueMinor)
+		add("按活动", e.Currency, e.Name, count(e.Orders), money(e.RevenueMinor))
+		add("按活动", e.Currency, e.Name+" 优惠", nil, money(e.DiscountMinor))
 	}
 	for _, g := range report.TopGoods {
-		if currency != "" && g.Currency != currency {
+		if g.Currency != currency {
 			continue
 		}
-		add("按商品", g.Currency, g.Name, g.Quantity, g.RevenueMinor)
+		add("按商品", g.Currency, g.Name, count(g.Quantity), money(g.RevenueMinor))
 	}
 	for _, p := range report.PayCodes {
-		if currency != "" && p.Currency != currency {
+		if p.Currency != currency {
 			continue
 		}
-		add("按收款方式", p.Currency, p.Name, p.Orders, p.RevenueMinor)
-	}
-	for _, c := range report.Currencies {
-		if currency != "" && c.Currency != currency {
-			continue
-		}
-		if c.RefundMinor != 0 {
-			add("退款待处理", c.Currency, "待退金额", 0, c.RefundMinor)
-		}
+		add("按收款方式", p.Currency, p.Name, count(p.Orders), money(p.RevenueMinor))
 	}
 
 	var buf strings.Builder
 	writer := csv.NewWriter(&buf)
-	_ = writer.Write([]string{"分组", "币种", "项目", "订单数", "金额"})
+	_ = writer.Write(dailyReportCSVHeader)
 	for _, row := range rows {
 		_ = writer.Write(row)
 	}
@@ -118,9 +143,30 @@ func renderDailyReportCSV(report data.DailyReport, currency string) []byte {
 // invalid configured zone falls back to the KL fixed offset used historically.
 var reportLocation = data.ReportLocation("")
 
+// reportTimezoneName is the IANA name reported to clients next to the report
+// "today"; an empty or invalid configured zone reports the default zone.
+var reportTimezoneName = data.NormalizeReportTimezone("")
+
 // ConfigureReportLocation applies the configured report zone.
 func ConfigureReportLocation(name string) {
 	reportLocation = data.ReportLocation(name)
+	reportTimezoneName = data.NormalizeReportTimezone(name)
+}
+
+// reportToday is the newest date the daily report endpoints accept, computed
+// in the report zone, together with that zone's IANA name.
+func reportToday() (today, timezone string) {
+	return time.Now().In(reportLocation).Format("2006-01-02"), reportTimezoneName
+}
+
+// DailyReportToday exposes the server-side report "today" so the workspace
+// does not default to the browser's local date (design note R4 / §8.4).
+func (a *API) DailyReportToday(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.shopAdmin(w, r); !ok {
+		return
+	}
+	today, timezone := reportToday()
+	writeJSON(w, http.StatusOK, map[string]string{"today": today, "timezone": timezone})
 }
 
 func reportDate(value string) (string, bool) {

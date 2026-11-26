@@ -90,6 +90,7 @@ func NewHTTP(addr, serviceName string, api *service.API) *khttp.Server {
 	route(r, http.MethodPost, "/api/admin/daily-reports", api.GenerateDailyReport)
 	route(r, http.MethodGet, "/api/admin/daily-reports/export", api.ExportDailyReport)
 	route(r, http.MethodGet, "/api/admin/sales", api.ListSales)
+	route(r, http.MethodGet, "/api/admin/daily-reports/today", api.DailyReportToday)
 	route(r, http.MethodPost, "/api/admin/sales", api.CreateSales)
 	route(r, http.MethodPost, "/api/admin/sales/{userID}/disable", api.DisableSales, "userID")
 	route(r, http.MethodPost, "/api/admin/sales/{userID}/enable", api.EnableSales, "userID")
