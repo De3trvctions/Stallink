@@ -19,6 +19,9 @@ var schema = []string{
 		slug text NOT NULL UNIQUE CHECK (slug ~ '^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$'),
 		is_enabled boolean NOT NULL DEFAULT true,
 		created_at timestamptz NOT NULL DEFAULT now(),
+		contact text NOT NULL DEFAULT '' CONSTRAINT shops_contact_check CHECK (char_length(contact) <= 120 AND contact !~ '[[:cntrl:]]'),
+		booth_number text NOT NULL DEFAULT '' CONSTRAINT shops_booth_number_check CHECK (char_length(booth_number) <= 40 AND booth_number !~ '[[:cntrl:]]' AND booth_number = btrim(booth_number)),
+		default_currency text CONSTRAINT shops_default_currency_check CHECK (default_currency IS NULL OR default_currency IN ('MYR', 'SGD', 'CNY')),
 		updated_at timestamptz NOT NULL DEFAULT now()
 	)`,
 	`CREATE TABLE IF NOT EXISTS users (
