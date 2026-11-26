@@ -12,6 +12,15 @@
   --expo-gutter: clamp(1rem, 4.2vw, 4.5rem);
   --expo-rail: 106px;
   --expo-serif: "Songti SC", "Noto Serif SC", "STSong", Georgia, serif;
+  --radius-control: 0;
+  --radius-card: 0;
+  --radius-panel: 0;
+  --shadow-1: none;
+  --shadow-2: none;
+  --focus: #262820;
+  --brand-mark: #8c3c2d;
+  --warning-soft: #f3e1d8;
+  --success: #3d5a2a;
 }
 
 [data-storefront-theme="exhibition"]:has(> .exhibition-nav) > #main-content {
@@ -30,6 +39,7 @@
   --muted: #605c50;
   --line: #c9c2b3;
   --line-strong: #999281;
+  --line-control: #857e6e;
   --accent: var(--expo-red);
   --accent-dark: var(--expo-charcoal);
   --accent-soft: #eee5d4;
@@ -66,6 +76,10 @@
   font: italic 700 1.06rem/1 Georgia, serif;
   letter-spacing: -.06em;
   white-space: nowrap;
+}
+
+[data-storefront-theme="exhibition"] .exhibition-nav__brand-short {
+  display: none;
 }
 
 [data-storefront-theme="exhibition"] .exhibition-nav__brand::before {
@@ -352,7 +366,7 @@
   justify-content: flex-end;
   align-items: flex-start;
   padding: 16px;
-  background: #1e36a8;
+  background: var(--expo-charcoal);
   color: #fffdf8;
 }
 
@@ -537,19 +551,6 @@
 }
 
 [data-storefront-theme="exhibition"] .product-page {
-  --canvas: #faf8f3;
-  --surface: #fffdf8;
-  --ink: #16171a;
-  --ink-soft: #3c3d42;
-  --muted: #6b685f;
-  --line: #dad3c3;
-  --line-strong: #c6bdaa;
-  --accent: #1e36a8;
-  background: #faf8f3;
-  color: #16171a;
-}
-
-[data-storefront-theme="exhibition"] .product-page {
   width: 100%;
   max-width: none;
   min-block-size: 100dvh;
@@ -589,7 +590,7 @@
   justify-content: flex-end;
   align-items: flex-start;
   padding: 24px;
-  background: #1e36a8;
+  background: var(--expo-charcoal);
   color: #fffdf8;
 }
 
@@ -613,7 +614,7 @@
   align-items: center;
   gap: 10px;
   margin: 0 0 12px;
-  color: #1e36a8;
+  color: var(--accent);
   font-family: "SF Mono", Menlo, ui-monospace, monospace;
   font-size: 12px;
   letter-spacing: .14em;
@@ -623,7 +624,7 @@
   content: "";
   width: 28px;
   height: 1px;
-  background: #1e36a8;
+  background: var(--accent);
 }
 
 [data-storefront-theme="exhibition"] .product-lead-price {
@@ -688,8 +689,8 @@
 }
 
 [data-storefront-theme="exhibition"]:has(> .exhibition-nav) #main-content .product-page .product-buy:hover {
-  border-color: #1e36a8;
-  background: #1e36a8;
+  border-color: var(--accent);
+  background: var(--accent);
   color: #fffdf8;
 }
 
@@ -802,16 +803,24 @@
 
 @media (max-width: 620px) {
   [data-storefront-theme="exhibition"] {
-    --expo-rail: 67px;
+    --expo-rail: 52px;
     --expo-gutter: clamp(.65rem, 3vw, 1rem);
   }
 
   [data-storefront-theme="exhibition"] .exhibition-nav {
-    padding: .5rem .22rem;
+    padding: .5rem 0;
   }
 
   [data-storefront-theme="exhibition"] .exhibition-nav__brand {
-    font-size: .95rem;
+    font-size: 1.15rem;
+  }
+
+  [data-storefront-theme="exhibition"] .exhibition-nav__brand-full {
+    display: none;
+  }
+
+  [data-storefront-theme="exhibition"] .exhibition-nav__brand-short {
+    display: inline;
   }
 
   [data-storefront-theme="exhibition"] .exhibition-nav__brand::before {
@@ -819,7 +828,24 @@
   }
 
   [data-storefront-theme="exhibition"] .exhibition-nav :is(nav, .exhibition-nav__settings) :is(a, button, select) {
-    font-size: .7rem;
+    font-size: .75rem;
+    width: 52px;
+    min-height: 44px;
+    padding-inline: 0;
+    border-radius: 0;
+    color: #f4f0e6;
+  }
+
+  [data-storefront-theme="exhibition"] .exhibition-nav :is(nav, .exhibition-nav__settings) :is(a, button, select):focus-visible {
+    outline: 2px solid var(--expo-lime);
+    outline-offset: -2px;
+  }
+
+  [data-storefront-theme="exhibition"] .exhibition-nav__settings {
+    position: sticky;
+    bottom: 0;
+    background: var(--expo-charcoal);
+    padding-bottom: max(.5rem, env(safe-area-inset-bottom));
   }
 
   [data-storefront-theme="exhibition"] .exhibition-poster {
@@ -856,6 +882,7 @@
   --muted: #605c50;
   --line: #c9c2b3;
   --line-strong: #999281;
+  --line-control: #857e6e;
   --accent: #8c3c2d;
   --accent-dark: #262820;
   --accent-soft: #eee5d4;

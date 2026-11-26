@@ -40,10 +40,11 @@ const railIcons = {
   about: "M12 10v7 M12 7v.2 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
   shop: "M4 10v11h16V10 M2 10l3-7h14l3 7z M9 21v-7h6v7",
   account: "M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0z M4 21v-2a8 8 0 0 1 16 0v2",
+  logout: "M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9",
 };
 
-function RailIcon({ name }: { name: keyof typeof railIcons }) {
-  return <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round"><path d={railIcons[name]} /></svg>;
+function RailIcon({ name, size = 20 }: { name: keyof typeof railIcons; size?: number }) {
+  return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round"><path d={railIcons[name]} /></svg>;
 }
 
 export function AppNav({ storefrontTheme, isWorkspace }: { storefrontTheme: StorefrontTheme; isWorkspace: boolean }) {
@@ -134,7 +135,7 @@ export function AppNav({ storefrontTheme, isWorkspace }: { storefrontTheme: Stor
     const HomeLink = pathname === "/" ? "a" : Link;
     return (
       <header className="exhibition-nav">
-        <Link href="/" className="exhibition-nav__brand" aria-label="Stallink 首页">Stallink<span aria-hidden="true">.</span></Link>
+        <Link href="/" className="exhibition-nav__brand" aria-label="Stallink 首页"><span className="exhibition-nav__brand-full">Stallink</span><span className="exhibition-nav__brand-short" aria-hidden="true">S</span><span aria-hidden="true">.</span></Link>
         <nav className="exhibition-nav__links" aria-label="展场导航">
           <HomeLink href={pathname === "/" ? "#" : "/"} aria-current={pathname === "/" && hash !== "#catalog" ? "page" : undefined}><RailIcon name="home" /><span>逛展</span></HomeLink>
           <HomeLink href={pathname === "/" ? "#catalog" : "/#catalog"} aria-current={pathname === "/" && hash === "#catalog" ? "location" : undefined}><RailIcon name="catalog" /><span>作品</span></HomeLink>
@@ -145,7 +146,7 @@ export function AppNav({ storefrontTheme, isWorkspace }: { storefrontTheme: Stor
           {account === undefined ? <span className="sr-only" role="status">正在加载账号…</span> : account ? (
             <>
               {destination ? <Link href={destination.href} aria-current={pathname === destination.href ? "page" : undefined}><RailIcon name="account" /><span>{account.role === "customer" ? "我的" : "工作台"}</span></Link> : null}
-              <button type="button" disabled={loading} onClick={logout}>{loading ? "退出中" : "退出"}</button>
+              <button type="button" disabled={loading} onClick={logout}><RailIcon name="logout" size={18} /><span>{loading ? "退出中" : "退出"}</span></button>
             </>
           ) : (
             <>
@@ -166,9 +167,9 @@ export function AppNav({ storefrontTheme, isWorkspace }: { storefrontTheme: Stor
           <span className="site-brand__mark" aria-hidden="true">s.</span>
           <span>Stallink</span>
         </Link>
-        <p className="site-header__note">{isWorkspace ? "现场订单 · 库存管理" : "独立摊位 · 现场好找"}</p>
+        <p className="site-header__note">{isWorkspace ? "本场订单 · 库存管理" : "独立摊位 · 现场好找"}</p>
         <nav className="site-header__actions" aria-label="账号导航">
-          {storefrontTheme === "shop" ? null : (
+          {storefrontTheme !== "classic" ? null : (
             <button type="button" className="theme-toggle" onClick={toggleTheme}>
               <span className="theme-toggle__to-light"><span className="sr-only">切换至</span>浅色<span className="sr-only">模式</span></span>
               <span className="theme-toggle__to-dark"><span className="sr-only">切换至</span>深色<span className="sr-only">模式</span></span>

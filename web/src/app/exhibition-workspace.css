@@ -25,24 +25,36 @@
     --surface-soft: #e2ece8;
     --ink: #142e32;
     --ink-soft: #345253;
-    --muted: #526c6d;
+        /* 工作台辅助灰：E1 终值 #4b6465，在渐变最深处 #d5e6df 上约 4.90:1。 */
+    --muted: #4b6465;
     --accent: #215e58;
     --accent-dark: #123b40;
     --accent-soft: #dcebe3;
-    --accent-light: #d6ef9f;
+    --accent-light: #e3f7a2;
     --line: #d0dfda;
     --line-strong: #8ca29d;
+    --line-control: #6f8681;
     --warning: #a03a2b;
+    --radius-control: 6px;
+    --radius-card: 10px;
+    --radius-panel: 13px;
+    --shadow-1: 0 1px 2px #142e3210;
+    --shadow-2: 0 1px 2px #142e3210, 0 10px 26px #142e320d;
+    --shadow-rail: 6px 0 24px #0e30361a;
+    --brand-mark: #8c3c2d;
+    --warning-soft: #f6e4e0;
+    --success: #215e58;
+    --expo-charcoal: #262820;
   }
 
   [data-storefront-theme="exhibition"][data-surface="workspace"] {
     --workspace-rail: 224px;
     --workspace-gutter: clamp(1rem, 3.4vw, 3rem);
     --workspace-header: 0px;
-    --font-display: Georgia, "Songti SC", "Noto Serif SC", "STSong", serif;
+    --font-display: "Songti SC", "Noto Serif SC", "STSong", Georgia, serif;
     --workspace-glass: linear-gradient(135deg, #fffffff5, #f4faf6e8);
     --workspace-panel-border: 1px solid #dae5df;
-    --workspace-panel-shadow: 0 1px 2px #0f1f3310, 0 10px 26px #0f1f330d;
+    --workspace-panel-shadow: var(--shadow-2);
     min-height: 100dvh;
     background: radial-gradient(ellipse at 82% -6%, #d5e6df 0, transparent 46%), var(--canvas);
     color: var(--ink);
@@ -79,7 +91,7 @@
       border-right: 1px solid #ffffff1f;
       background: linear-gradient(180deg, #143e46, #123740 48%, #0e3036);
       color: #ebf3ef;
-      box-shadow: 6px 0 24px #0b16281a;
+      box-shadow: var(--shadow-rail);
     }
 
     .workspace-sidebar__brand {
@@ -95,14 +107,27 @@
     .workspace-sidebar__logo {
       display: grid;
       place-items: center;
+      position: relative;
       flex: 0 0 auto;
       width: 30px;
       height: 30px;
-      border-radius: 6px;
+      border-radius: var(--radius-control);
       background: linear-gradient(150deg, #49827a, #215e58);
       color: #fff;
-      font: 800 15px/1 Georgia, serif;
+      font: 800 15px/1 var(--font-display);
       box-shadow: 0 4px 10px #215e5833;
+    }
+
+    .workspace-sidebar__logo::after {
+      content: "";
+      position: absolute;
+      top: -3px;
+      right: -3px;
+      width: 8px;
+      height: 8px;
+      border-radius: 2px;
+      background: var(--brand-mark);
+      box-shadow: 0 0 0 2px #f4f0e6;
     }
 
     .workspace-sidebar__wordmark {
@@ -128,7 +153,7 @@
       margin: .1rem 0 .25rem;
       padding: .7rem .6rem .75rem;
       border: 1px solid #ffffff1a;
-      border-radius: .6rem;
+      border-radius: var(--radius-card);
       background: #ffffff08;
     }
 
@@ -186,7 +211,8 @@
       min-width: 0;
       margin: 0;
       padding: .15rem .15rem .25rem;
-      overflow: hidden auto;
+      overflow-x: hidden;
+      overflow-y: auto;
       overscroll-behavior: contain;
       scrollbar-width: thin;
       scrollbar-color: #88a9a3 transparent;
@@ -207,7 +233,7 @@
 
     .workspace-nav__group:has(> a[href="/counter"]) {
       border: 1px solid #ffffff26;
-      border-radius: .55rem;
+      border-radius: var(--radius-card);
       background: #ffffff0a;
     }
 
@@ -226,7 +252,7 @@
       min-height: 44px;
       padding: .35rem .5rem;
       border: 1px solid transparent;
-      border-radius: .38rem;
+      border-radius: var(--radius-control);
       background: transparent;
       color: #ebf3ef;
       font-size: .84rem;
@@ -246,7 +272,7 @@
       border-color: #aad0c966;
       background: linear-gradient(100deg, #b5e2cc26, #d6f1e51f);
       color: #fff;
-      box-shadow: inset 3px 0 #d8f69a;
+      box-shadow: inset 3px 0 var(--accent-light);
     }
 
     .workspace-sidebar :focus-visible {
@@ -271,16 +297,24 @@
       color: var(--accent-light);
     }
 
+    .workspace-sidebar__foot {
+      flex: 0 0 auto;
+      display: grid;
+      gap: 6px;
+      border-top: 1px solid #ffffff1f;
+      padding-top: 8px;
+    }
+
     .workspace-sidebar__logout {
       display: flex;
       align-items: center;
       justify-content: center;
       flex: 0 0 auto;
-      min-height: 36px;
+      min-height: var(--touch);
       margin: 0;
       padding: .2rem .45rem;
       border: 1px solid #ffffff26;
-      border-radius: .38rem;
+      border-radius: var(--radius-control);
       background: transparent;
       color: #c8d4ea;
       font-size: .7rem;
@@ -319,7 +353,7 @@
       .confirm-dialog, .workspace-tip
     ) {
       border: var(--workspace-panel-border);
-      border-radius: .8rem;
+      border-radius: var(--radius-panel);
       background: var(--workspace-glass);
       box-shadow: var(--workspace-panel-shadow);
     }
@@ -358,7 +392,7 @@
     }
 
     .workspace-shell .workspace-card__index {
-      display: none;
+      grid-column: 1;
     }
 
     .workspace-shell .workspace-card h2 {
@@ -368,6 +402,8 @@
 
     .workspace-shell .workspace-card__arrow {
       grid-column: 2;
+      grid-row: 1 / span 2;
+      align-self: center;
     }
 
     .workspace-shell .workspace-card p {
@@ -375,12 +411,12 @@
     }
 
     .workspace-shell :is(.button, .select-menu__trigger, .counter-catalog-filter button, .counter-sheet__close) {
-      border-radius: .4rem;
+      border-radius: var(--radius-control);
     }
 
     .workspace-page :is(input:not([type="checkbox"], [type="radio"], [type="file"]), textarea, select) {
       min-width: 0;
-      border-radius: .4rem;
+      border-radius: var(--radius-control);
     }
 
     .workspace-page :is(input, textarea)::placeholder {
@@ -400,9 +436,9 @@
     }
 
     .workspace-page :is(.counter-catalog-filter button[data-active="true"], .review-filter button[data-active="true"]) {
-      border-color: var(--line-strong);
+      border-color: var(--line-control);
       background: var(--accent-light);
-      color: var(--ink);
+      color: var(--expo-charcoal);
     }
 
     .counter-page .counter-context {
@@ -411,7 +447,7 @@
 
     .counter-page form button.counter-product {
       gap: .5rem;
-      border-radius: .6rem;
+      border-radius: var(--radius-card);
       background: var(--surface);
     }
 
@@ -420,7 +456,7 @@
     }
 
     .counter-page form button.counter-product:has(.counter-product__count) {
-      border-color: var(--line-strong);
+      border-color: var(--line-control);
       background: var(--accent-soft);
     }
 
@@ -431,7 +467,8 @@
 
     .counter-page .counter-product__copy {
       flex: 1;
-      overflow-wrap: anywhere;
+      min-width: 0;
+      overflow-wrap: break-word;
     }
 
     .counter-page .counter-product__copy strong {
@@ -440,7 +477,7 @@
     }
 
     .counter-page .counter-product__thumb {
-      border-radius: .38rem;
+      border-radius: var(--radius-control);
     }
 
     .counter-page .counter-summary {
@@ -448,7 +485,7 @@
     }
 
     .workspace-shell :is(.goods-modal, .confirm-dialog, .pay-dialog__panel) {
-      border-radius: .85rem;
+      border-radius: var(--radius-panel);
     }
 
     .workspace-shell .workspace-tip {
@@ -462,7 +499,7 @@
 
     .workspace-shell .review-switch__track {
       border-radius: 999px;
-      border-color: var(--line-strong);
+      border-color: var(--line-control);
       background: var(--surface-soft);
     }
 
@@ -488,7 +525,11 @@
       --workspace-rail: 152px;
     }
 
-    @media (min-width: 1100px) and (max-width: 1330px) {
+    .counter-page .counter-products {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+        @media (min-width: 1100px) and (max-width: 1330px) {
       .counter-page .counter-products {
         grid-template-columns: minmax(0, 1fr);
       }
@@ -510,72 +551,7 @@
     }
 
     @media (max-width: 760px) {
-      --workspace-rail: 74px;
       --workspace-gutter: clamp(.55rem, 2.5vw, .95rem);
-
-      .workspace-sidebar {
-        gap: .35rem;
-        padding: .45rem .2rem .25rem;
-      }
-
-      .workspace-sidebar__brand {
-        justify-content: center;
-        padding-inline: .1rem;
-      }
-
-      .workspace-sidebar__wordmark {
-        display: none;
-      }
-
-      .workspace-sidebar__identity {
-        padding-inline: .25rem;
-        text-align: center;
-      }
-
-      .workspace-sidebar__identity strong {
-        font-size: .72rem;
-      }
-
-      .workspace-sidebar__identity span {
-        display: none;
-      }
-
-      .workspace-nav__icon {
-        display: none;
-      }
-
-      .workspace-sidebar__heading {
-        padding-inline: .1rem;
-        text-align: center;
-      }
-
-      .workspace-sidebar__heading h2 {
-        font-size: .65rem;
-      }
-
-      .workspace-nav__group {
-        padding-inline: .1rem;
-      }
-
-      .workspace-nav__label {
-        padding-inline: 0;
-        font-size: .6rem;
-        text-align: center;
-      }
-
-      .workspace-nav__link {
-        justify-content: center;
-        padding-inline: .1rem;
-        font-size: .72rem;
-        text-align: center;
-      }
-
-      .workspace-sidebar__back {
-        justify-content: center;
-        padding-inline: .1rem;
-        font-size: .64rem;
-        text-align: center;
-      }
 
       .site-header__inner {
         flex-wrap: wrap;
@@ -639,6 +615,119 @@
         text-align: left;
       }
     }
+
+    /* 900px 及以下：横向滑动导航，与 classic 一致；取消左侧竖向窄栏，也避免日报被挤出视口。 */
+    @media (max-width: 900px) {
+      --workspace-rail: 0px;
+
+      .workspace-sidebar {
+        position: sticky;
+        top: 0;
+        inset: auto;
+        z-index: 21;
+        width: 100%;
+        height: auto;
+        max-height: none;
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .4rem .75rem;
+        padding: .45rem .7rem .55rem;
+        overflow: visible;
+        border-right: 0;
+        border-bottom: 1px solid #ffffff1f;
+      }
+
+      .workspace-sidebar__brand {
+        min-height: 36px;
+        padding-inline: 0;
+      }
+
+      .workspace-sidebar__identity {
+        padding-inline: 0;
+      }
+
+      .workspace-sidebar__identity span,
+      .workspace-sidebar__heading,
+      .workspace-sidebar__back,
+      .workspace-nav-toggle,
+      .workspace-nav__label,
+      .workspace-nav__icon,
+      .workspace-nav__index {
+        display: none;
+      }
+
+      .workspace-sidebar__foot {
+        display: contents;
+      }
+
+      .workspace-sidebar__logout {
+        margin-inline-start: auto;
+        margin-top: 0;
+        min-height: var(--touch);
+        padding: .35rem .6rem;
+      }
+
+      .workspace-nav {
+        display: flex;
+        flex: 1 0 100%;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: .3rem;
+        min-height: 0;
+        margin: 0;
+        padding: .1rem 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        overscroll-behavior-x: contain;
+        scrollbar-width: thin;
+        scrollbar-color: #88a9a3 transparent;
+      }
+
+      .workspace-nav__group {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        flex-shrink: 0;
+        gap: .3rem;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: none;
+      }
+
+      .workspace-nav__group:has(> a[href="/counter"]) {
+        border: 0;
+        border-radius: 0;
+        background: none;
+      }
+
+      .workspace-nav__link {
+        flex: 0 0 auto;
+        justify-content: center;
+        min-height: 38px;
+        padding: 0 .7rem;
+        border: 1px solid #ffffff26;
+        border-radius: var(--radius-control);
+        font-size: .75rem;
+        white-space: nowrap;
+      }
+
+      .workspace-nav__link[aria-current="page"] {
+        box-shadow: inset 0 -3px 0 var(--accent-light);
+      }
+
+      .report-page,
+      .workspace-main,
+      .workspace-page,
+      .report-hero,
+      .report-metric {
+        min-width: 0;
+        max-width: 100%;
+      }
+    }
   }
 }
 
@@ -647,21 +736,24 @@
     .workspace-shell .workspace-overview__heading {
       max-inline-size: none;
       padding: clamp(1rem, 3vw, 2rem);
-      border-radius: .85rem;
-      background: linear-gradient(115deg, #0e203a, #22467c);
+      border-radius: var(--radius-panel);
+      background: linear-gradient(115deg, #123740, #215e58);
       color: #fff;
     }
 
-    .workspace-overview__heading .eyebrow,
+    .workspace-overview__heading .eyebrow {
+      color: var(--accent-light);
+    }
+
     .workspace-overview__heading > p:last-child {
-      color: #d7e4fb;
+      color: #dcebe3;
     }
 
     .workspace-overview .overview-actions {
       margin-block-start: .75rem;
       padding: .7rem .85rem;
       border: var(--workspace-panel-border);
-      border-radius: .65rem;
+      border-radius: var(--radius-card);
       background: var(--surface);
     }
 
@@ -686,19 +778,19 @@
       align-items: center;
       padding: .65rem;
       border: var(--workspace-panel-border);
-      border-radius: .65rem;
+      border-radius: var(--radius-card);
       background: var(--surface);
     }
 
     .workspace-shell :is(.workspace-toolbar, .review-toolbar, .goods-view-tabs) button {
-      border-radius: .4rem;
+      border-radius: var(--radius-control);
     }
 
-    .workspace-shell :is(.shop-link-preview, .platform-appearance, .pay-cash-toggle) {
+    .workspace-shell :is(.shop-link-preview, .platform-appearance) {
       flex-wrap: wrap;
       padding: .85rem;
       border: 1px solid var(--line);
-      border-radius: .6rem;
+      border-radius: var(--radius-card);
       background: var(--accent-soft);
     }
 
@@ -729,7 +821,7 @@
     }
 
     .workspace-shell :is(.sales-row__avatar, .pay-code-row__thumb, .listing-admin-card__thumb, .review-bundle__component) {
-      border-radius: .4rem;
+      border-radius: var(--radius-control);
     }
 
     .workspace-shell :is(.order-row, .audit-row) {
@@ -775,12 +867,12 @@
 
     .workspace-shell :is(.goods-card, .listing-admin-card, .bundle-admin-card, .review-good, .review-bundle) {
       border: 1px solid var(--line);
-      border-radius: .65rem;
+      border-radius: var(--radius-card);
       background: var(--surface);
     }
 
     .workspace-shell .goods-card__media {
-      border-radius: .6rem .6rem 0 0;
+      border-radius: var(--radius-card) var(--radius-card) 0 0;
     }
 
     .workspace-shell :is(.goods-card__name, .listing-admin-card__heading h3, .review-good__heading h3, .review-shop__heading h2) {
@@ -833,7 +925,7 @@
 
     .workspace-shell :is(.listing-admin-section, .goods-image-editor, .goods-image-item, .goods-event-fields, .good-listing-editor, .tier-editor, .bundle-component-draft, .bundle-existing-picker) {
       min-inline-size: 0;
-      border-radius: .55rem;
+      border-radius: var(--radius-card);
     }
 
     .workspace-shell :is(.goods-image-editor__heading, .goods-image-item figcaption, .goods-image-item figcaption > div, .good-listing-editor__heading) {
@@ -874,9 +966,8 @@
     }
 
     .workspace-shell .pay-dialog__cash {
-      gap: .65rem;
       padding: 1rem;
-      border-radius: .55rem;
+      border-radius: var(--radius-card);
     }
 
     @media (max-width: 1099px) {
