@@ -6,22 +6,13 @@ import { describeRequest } from "@/lib/errors";
 import { formatMoney } from "@/lib/pricing";
 import { messageClass, useMessage } from "@/lib/message";
 import SelectMenu from "@/components/select-menu";
+import { buildReportDocument } from "@/lib/reports/document-model";
+import type { Report } from "@/lib/reports/report-types";
+import type { ExportStage } from "@/lib/reports/pdf/export-report-pdf";
+import { isStorefrontTheme } from "@/lib/storefront-theme";
 import { inclusiveReportDates, MAX_REPORT_DAYS } from "./report-dates";
 import "./reports.css";
 
-type CurrencyRow = {
-  currency: string; orders: number; paidOrders: number; revenueMinor: number;
-  discountMinor: number; refundMinor: number; cashOverShortMinor: number;
-};
-type EventRow = { eventId: string; name: string; currency: string; orders: number; revenueMinor: number; discountMinor: number };
-type GoodRow = { currency: string; name: string; quantity: number; revenueMinor: number };
-type PayCodeRow = { currency: string; name: string; orders: number; revenueMinor: number };
-type Report = {
-  date: string; generatedAt: string; source: string; currency: string;
-  orders: number; paidOrders: number; pendingOrders: number; closedOrders: number; refundOrders: number;
-  itemsSold: number; revenueMinor: number; discountMinor: number; refundMinor: number; cashOverShortMinor: number;
-  averageMinor: number; currencies: CurrencyRow[]; events: EventRow[]; topGoods: GoodRow[]; payCodes: PayCodeRow[];
-};
 type ReportDay = {
   date: string;
   report: Report | null;
@@ -30,11 +21,19 @@ type ReportDay = {
 
 const REPORT_QUERY_BATCH_SIZE = 4;
 
-function localToday() {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${now.getFullYear()}-${month}-${day}`;
+function currentStorefrontTheme(): string {
+  const theme = document.getElementById("storefront-shell")?.dataset.storefrontTheme;
+  return isStorefrontTheme(theme) ? theme : "classic";
+}
+
+function megabytes(bytes: number): string {
+  return (bytes / 1_000_000).toFixed(1);
+}
+
+function pdfStageText(stage: ExportStage): string {
+  if (stage.kind === "library") return "正在加载 PDF 组件…";
+  if (stage.kind === "render") return "正在生成 PDF…";
+  return `正在下载字体 ${megabytes(stage.loaded)} / ${megabytes(stage.total)} MB（首次导出需下载，之后会使用缓存）`;
 }
 
 function groupByCurrency<T extends { currency: string }>(rows: T[]): [string, T[]][] {
@@ -45,12 +44,6 @@ function groupByCurrency<T extends { currency: string }>(rows: T[]): [string, T[
     map.set(row.currency, list);
   });
   return [...map.entries()];
-}
-
-function overShortLabel(currency: string, minor: number): string {
-  if (minor === 0) return `${formatMoney(currency, 0)} 持平`;
-  if (minor > 0) return `长款 ${formatMoney(currency, minor)}`;
-  return `短款 ${formatMoney(currency, -minor)}`;
 }
 
 async function readReportDay(date: string): Promise<ReportDay> {
@@ -64,12 +57,17 @@ async function readReportDay(date: string): Promise<ReportDay> {
 export default function AdminReportsPage() {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
+  const [today, setToday] = useState("");
+  const [timezone, setTimezone] = useState("");
+  const [todayError, setTodayError] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const [currency, setCurrency] = useState("");
   const [days, setDays] = useState<ReportDay[]>([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [pdfStage, setPdfStage] = useState<ExportStage | null>(null);
+  const pdfExporting = useRef(false);
   const requestSequence = useRef(0);
   const startInput = useRef<HTMLInputElement>(null);
   const endInput = useRef<HTMLInputElement>(null);
@@ -101,20 +99,43 @@ export default function AdminReportsPage() {
     setLoading(false);
   }, [setError]);
 
+  const loadToday = useCallback(async () => {
+    setTodayError("");
+    setLoading(true);
+    try {
+      const res = await browserJSON("/api/admin/daily-reports/today");
+      if (!res.ok) {
+        setTodayError(describeRequest(res));
+        setLoading(false);
+        return;
+      }
+      const nextToday = String(res.data.today ?? "");
+      const nextTimezone = String(res.data.timezone ?? "");
+      if (!nextToday) {
+        setTodayError("无法读取服务端今天的日期，请重试。");
+        setLoading(false);
+        return;
+      }
+      setToday(nextToday);
+      setTimezone(nextTimezone);
+      setStart(nextToday);
+      setEnd(nextToday);
+      await load([nextToday]);
+    } catch {
+      setTodayError("无法连接服务，请检查网络后重试。");
+      setLoading(false);
+    }
+  }, [load]);
+
   useEffect(() => {
     const sequence = requestSequence;
-    const timer = window.setTimeout(() => {
-      const today = localToday();
-      setStart(today);
-      setEnd(today);
-      void load([today]);
-    }, 0);
+    const timer = window.setTimeout(() => { void loadToday(); }, 0);
     return () => { window.clearTimeout(timer); sequence.current++; };
-  }, [load]);
+  }, [loadToday]);
 
   const selectedDay = days.find((day) => day.date === selectedDate);
   const report = selectedDay?.report ?? null;
-  const busy = loading || generating || exporting;
+  const busy = loading || generating || exporting || pdfStage !== null;
   const range = days.length > 1;
 
   function search(event: FormEvent<HTMLFormElement>) {
@@ -193,35 +214,78 @@ export default function AdminReportsPage() {
     }
   }
 
+  async function exportPdf() {
+    if (!report || busy || pdfExporting.current) return;
+    pdfExporting.current = true;
+    const { date } = report;
+    setPdfStage({ kind: "library" });
+    setError(null);
+    let describeExportError: ((error: unknown) => string) | null = null;
+    try {
+      // A one-day export is a one-day range; the model already handles more.
+      const doc = buildReportDocument({ days: [{ date, report }], currency });
+      const pdf = await import("@/lib/reports/pdf/export-report-pdf");
+      describeExportError = pdf.describeExportError;
+      const { filename, replacedGlyphs } = await pdf.exportReportPdf(doc, currentStorefrontTheme(), setPdfStage);
+      setSuccess(replacedGlyphs > 0
+        ? `${filename} 已开始下载。有 ${replacedGlyphs} 个字符字体未收录，已显示为 □。`
+        : `${filename} 已开始下载。`);
+    } catch (error) {
+      setError(describeExportError ? describeExportError(error) : "无法加载 PDF 组件，请检查网络后重试。");
+    } finally {
+      pdfExporting.current = false;
+      setPdfStage(null);
+    }
+  }
+
   const currencyOptions = (report?.currencies ?? []).map((row) => ({ value: row.currency, label: row.currency }));
   const retry = () => void load(days.map(({ date }) => date));
 
   return (
     <main className="workspace-page report-page">
       <header className="workspace-page__heading">
-        <h1>经营日报</h1>
+        <p className="eyebrow">经营</p>
+        <h1>销售日报</h1>
       </header>
+
+      {todayError ? (
+        <div className="empty-state" role="alert">
+          <p>{todayError}</p>
+          <button type="button" className="button button--dark" onClick={() => void loadToday()}>重试</button>
+        </div>
+      ) : null}
 
       <search className="report-range-search" aria-label="查询日报">
         <form className="report-toolbar report-range-filters" onSubmit={search}>
           <div className="field">
             <label htmlFor="report-start">起始日期</label>
             <input id="report-start" ref={startInput} name="start" type="date" required
-              min="0001-01-01" max="9999-12-31" value={start} disabled={busy} aria-describedby="report-date-hint"
+              min="0001-01-01" max={today} value={start} disabled={busy} aria-describedby="report-date-hint"
               onChange={(event) => { endInput.current?.setCustomValidity(""); setStart(event.target.value); }} />
           </div>
           <div className="field">
             <label htmlFor="report-end">结束日期</label>
             <input id="report-end" ref={endInput} name="end" type="date" required
-              min="0001-01-01" max="9999-12-31" value={end} disabled={busy} aria-describedby="report-date-hint"
+              min="0001-01-01" max={today} value={end} disabled={busy} aria-describedby="report-date-hint"
               onChange={(event) => { event.currentTarget.setCustomValidity(""); setEnd(event.target.value); }} />
           </div>
           <button type="submit" className="button button--dark" disabled={busy}>{loading ? "正在查询…" : "查询日报"}</button>
         </form>
-        <p id="report-date-hint" className="field-hint">含起止日期，每次最多查询 {MAX_REPORT_DAYS} 天。</p>
+        <p id="report-date-hint" className="field-hint">{today ? `今天 ${today} 由服务端按店铺时区 ${timezone} 提供。` : "今天的日期由服务端按店铺时区提供。"}含起止日期，每次最多查询 {MAX_REPORT_DAYS} 天。</p>
       </search>
 
-      {loading ? <p className="empty-state" role="status">正在读取日报…</p> : null}
+      {loading ? (
+        <>
+          <p className="empty-state" role="status">正在读取日报…</p>
+          <div className="report-hero" aria-hidden="true">
+            <div className="report-metric report-metric--lead report-metric--skeleton" />
+            <div className="report-metric report-metric--skeleton" />
+            <div className="report-metric report-metric--skeleton" />
+            <div className="report-metric report-metric--skeleton" />
+            <div className="report-metric report-metric--skeleton" />
+          </div>
+        </>
+      ) : null}
 
       {!loading && range ? (
         <section className="report-range-results" aria-labelledby="report-range-heading">
@@ -256,29 +320,43 @@ export default function AdminReportsPage() {
             <strong><time dateTime={selectedDay.date}>{selectedDay.date}</time> 日报</strong>
             <div className="report-toolbar__actions">
               {!selectedDay.error ? (
-                <button type="button" className="button button--outline" disabled={busy} onClick={() => void generate()}>
-                  {generating ? "正在生成…" : report ? "重新生成日报" : "生成日报"}
-                </button>
+                <div className="report-toolbar__group">
+                  <button type="button" className="button button--outline" disabled={busy} onClick={() => void generate()}>
+                    {generating ? "正在生成…" : report ? "重新生成日报" : "生成日报"}
+                  </button>
+                </div>
               ) : null}
               {report ? (
-                <>
+                <div className="report-toolbar__group">
                   {currencyOptions.length > 1 ? (
-                    <SelectMenu
-                      value={currency}
-                      onChange={setCurrency}
-                      ariaLabel="选择导出明细币种"
-                      placeholder="导出主币种明细"
-                      options={[{ value: "", label: "导出主币种明细" }, ...currencyOptions]}
-                      disabled={busy}
-                    />
+                    <label className="report-export-currency">
+                      <span>导出币种</span>
+                      <SelectMenu
+                        compact
+                        value={currency}
+                        onChange={setCurrency}
+                        ariaLabel="导出币种"
+                        placeholder="全部币种"
+                        options={[{ value: "", label: "全部币种" }, ...currencyOptions]}
+                        disabled={busy}
+                      />
+                    </label>
                   ) : null}
                   <button type="button" className="button button--outline" disabled={busy} onClick={() => void exportCsv()}>
                     {exporting ? "正在导出…" : "导出当日 CSV"}
                   </button>
-                </>
+                  <button type="button" className="button button--outline" disabled={busy} aria-busy={pdfStage !== null}
+                    onClick={() => void exportPdf()}>
+                    {pdfStage ? "正在导出 PDF…" : "导出 PDF"}
+                  </button>
+                </div>
               ) : null}
             </div>
           </div>
+          {report && currencyOptions.length > 1 && !currency ? (
+            <p className="field-hint report-export-hint">选择「全部币种」时，PDF 包含全部币种，CSV 只导出主币种 {report.currency} 的明细。</p>
+          ) : null}
+          {pdfStage ? <p className="field-hint report-export-hint" role="status">{pdfStageText(pdfStage)}</p> : null}
           {message ? <p className={messageClass(message)} role="status">{message.text}</p> : null}
           {selectedDay.error ? (
             <div className="empty-state">
@@ -336,27 +414,23 @@ function DailyReportSheet({ report }: { report: Report }) {
           <strong>{formatMoney(report.currency, report.refundMinor)}</strong>
           <small>待确认退款的金额</small>
         </div>
-        <div className="report-metric">
-          <span>现金长短款（{report.currency}）</span>
-          <strong>{overShortLabel(report.currency, report.cashOverShortMinor)}</strong>
-          <small>正数长款 · 负数短款</small>
-        </div>
       </div>
 
       {(report.currencies?.length ?? 0) > 1 ? (
         <section className="report-block" aria-label="分币种汇总">
           <div className="report-block__head"><h3>分币种汇总</h3><span>各币种独立合计，不跨币种相加</span></div>
-          <ul className="report-table">
+          <ul className="report-table report-table--currency">
             {report.currencies?.map((row) => (
               <li key={row.currency}>
                 <span>{row.currency}</span>
                 <span>{row.orders} 笔 · 已收款 {row.paidOrders}</span>
-                <span>退款 {formatMoney(row.currency, row.refundMinor)}</span>
-                <span>{overShortLabel(row.currency, row.cashOverShortMinor)}</span>
+                <span>优惠 {formatMoney(row.currency, row.discountMinor)}</span>
+                <span>待退 {formatMoney(row.currency, row.refundMinor)}</span>
                 <strong>{formatMoney(row.currency, row.revenueMinor)}</strong>
               </li>
             ))}
           </ul>
+          <p className="field-hint">售出件数、待付款、已关闭和退款笔数只按主币种 {report.currency} 统计，不按其他币种拆分。</p>
         </section>
       ) : null}
 
@@ -366,7 +440,7 @@ function DailyReportSheet({ report }: { report: Report }) {
           {groupByCurrency(report.events).map(([currency, rows]) => (
             <div className="report-currency-group" key={currency}>
               <p className="report-currency-group__label">{currency}</p>
-              <ul className="report-table">
+              <ul className="report-table report-table--four">
                 {rows.map((event) => (
                   <li key={event.eventId}>
                     <span>{event.name}</span>
@@ -389,8 +463,9 @@ function DailyReportSheet({ report }: { report: Report }) {
               <ul className="report-rank">
                 {rows.map((good, index) => (
                   <li key={`${currency}-${good.name}-${index}`}>
-                    <span>{index + 1}. {good.name}</span>
-                    <span>{good.quantity} 件</span>
+                    <em>{index + 1}</em>
+                    <span>{good.name}</span>
+                    <small>{good.quantity} 件</small>
                     <strong>{formatMoney(currency, good.revenueMinor)}</strong>
                   </li>
                 ))}
