@@ -81,7 +81,7 @@ export default function SalesPage() {
   }
 
   return (
-    <main>
+    <main className="workspace-subpage">
       <p className="eyebrow">团队与权限</p>
       <h1>销售账号</h1>
       <p>为现场工作人员开设独立账号。每位销售只能处理自己店铺的现场订单。</p>

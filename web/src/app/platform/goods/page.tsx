@@ -107,6 +107,7 @@ export default function PlatformGoodsPage() {
     bundles: kindFilter === "good" ? [] : shop.bundles.filter((bundle) => filter === "all" || bundle.reviewStatus === filter),
   })), [shops, filter, kindFilter]);
   const pendingCount = shops.reduce((count, shop) => count + shop.goods.filter((good) => good.reviewStatus === "pending").length + shop.bundles.filter((bundle) => bundle.reviewStatus === "pending").length, 0);
+  const hasMatches = visibleShops.some((shop) => shop.goods.length > 0 || shop.bundles.length > 0);
 
   async function review(good: Good, status: "approved" | "rejected", reason = "") {
     setSaving(true);
@@ -195,8 +196,15 @@ export default function PlatformGoodsPage() {
           <p className="review-loading" role="alert">{loadError} <button type="button" className="button button--outline" onClick={() => void load()}>重试</button></p>
         ) : visibleShops.length === 0 ? <p className="review-loading">还没有店铺。</p> : (
           <div className="review-shops">
+            {!hasMatches ? (
+              <div className="shop-only review-empty" role="status">
+                <h2>{filter === "pending" ? "没有符合筛选的待审核项目" : "没有符合筛选的商品或套餐"}</h2>
+                <p>可切换审核状态或商品类型，查看其他项目。</p>
+                <button type="button" className="button button--outline" onClick={() => { setFilter("all"); setKindFilter("all"); }}>查看全部项目</button>
+              </div>
+            ) : null}
             {visibleShops.map((shop) => (
-              <section className="review-shop" key={shop.shopId}>
+              <section className="review-shop" data-empty={shop.goods.length === 0 && shop.bundles.length === 0} key={shop.shopId}>
                 <header className="review-shop__heading">
                   <div><p className="eyebrow">/c/{shop.shopSlug}</p><h2>{shop.shopName}</h2></div>
                   <span>{shop.goods.length} 件商品 · {shop.bundles.length} 套套餐</span>

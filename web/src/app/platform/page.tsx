@@ -80,7 +80,7 @@ export default function PlatformPage() {
 
   return (
     <>
-      <main>
+      <main className="workspace-subpage">
         <p className="eyebrow">创作者入驻</p>
         <h1>开设店铺</h1>
         <p>为一位创作者建立独立摊位链接和第一位店铺管理员。</p>

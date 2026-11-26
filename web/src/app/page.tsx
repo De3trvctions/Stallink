@@ -17,7 +17,7 @@ async function CatalogData() {
       <div className="exhibition-only exhibition-catalog__head">
         <h2>展场里的作品</h2>
       </div>
-      <CatalogExplorer initialGoods={goods} initialUnavailable={unavailable} />
+      <CatalogExplorer initialGoods={goods} initialUnavailable={unavailable} shopLanding />
     </>
   );
 }

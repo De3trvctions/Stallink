@@ -1,8 +1,61 @@
 import Link from "next/link";
+import Image from "next/image";
+
+const shopSteps = [
+  { when: "展前", title: "整理这场要卖的作品", copy: "摊主按活动上架商品和套餐，设置价格，填好场馆与摊位号。" },
+  { when: "开展", title: "看好作品，再去摊位", copy: "顾客从目录或摊位链接查看价格和余量，按活动地点与摊位号找到创作者。" },
+  { when: "现场", title: "开单、收款和交付", copy: "工作人员在收银台记录订单，库存随交易更新，收摊后可查订单和销售日报。" },
+];
+
+function ShopAbout() {
+  return (
+    <div className="shop-only shop-about">
+      <header className="shop-about__hero">
+        <div className="shop-about__copy">
+          <p className="shop-about__meta">关于 Stallink</p>
+          <h1>一家摊，一个链接。</h1>
+          <p>Stallink 是给漫展和市集摊位用的店铺和收银工具。顾客可以先看作品、价格和余量，摊主可以用同一个工作台管理活动、库存与订单。</p>
+          <Link className="button button--dark" href="/#catalog">浏览商品 <span aria-hidden="true">→</span></Link>
+        </div>
+        <Image className="shop-about__photo" src="/images/artist-alley-booth.webp" alt="创作者在市集摊位陈列印刷作品" width={1440} height={960} sizes="(max-width: 760px) 100vw, 50vw" />
+      </header>
+
+      <section aria-labelledby="shop-about-steps">
+        <h2 id="shop-about-steps">从展前上架到现场交付</h2>
+        <ol className="shop-about__steps" role="list">
+          {shopSteps.map(({ when, title, copy }) => (
+            <li key={when} className="shop-about__card">
+              <p className="shop-about__meta">{when}</p>
+              <h3>{title}</h3>
+              <p>{copy}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <section aria-labelledby="shop-about-entry">
+        <h2 id="shop-about-entry">顾客与摊主入口</h2>
+        <div className="shop-about__entries">
+          <article className="shop-about__card">
+            <h3>逛展顾客</h3>
+            <p>打开摊位链接即可浏览商品。创建顾客账号后，可以保存你的称呼和联系方式。</p>
+            <Link className="button button--outline" href="/register">注册顾客账号 <span aria-hidden="true">→</span></Link>
+          </article>
+          <article className="shop-about__card">
+            <h3>摊主与工作人员</h3>
+            <p>使用你的工作账号登录，进入店铺管理或现场收银。</p>
+            <Link className="button button--outline" href="/login">登录工作台 <span aria-hidden="true">→</span></Link>
+          </article>
+        </div>
+      </section>
+    </div>
+  );
+}
 
 export default function AboutPage() {
   return (
     <main className="ed-frame ed-about">
+      <ShopAbout />
       <div className="ed-crumb">
         <span className="ed-mono">关于</span>
         <span className="ed-mono ed-sep" aria-hidden="true">/</span>

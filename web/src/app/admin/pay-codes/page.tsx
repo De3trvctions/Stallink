@@ -144,7 +144,7 @@ export default function AdminPayCodesPage() {
   }
 
   return (
-    <main className="workspace-page">
+    <main className="workspace-page workspace-subpage">
       <header className="workspace-page__heading">
         <p className="eyebrow">付款配置</p>
         <h1>收款方式</h1>
