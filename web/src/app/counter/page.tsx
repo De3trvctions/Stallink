@@ -5,10 +5,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { browserJSON, type RequestResult } from "@/lib/api";
 import { describeRequest } from "@/lib/errors";
-import { formatMoney, majorToMinor, type PriceTier } from "@/lib/pricing";
+import { formatMoney, type PriceTier } from "@/lib/pricing";
 import { clearCounterDraft, clearPendingCounterOrder, loadCounterDraft, loadPendingCounterOrder, saveCounterDraft, savePendingCounterOrder, type CounterDraftScope } from "@/lib/counter-draft";
 import { clearPendingOrderCommand, newClientOrderId, pendingOrderCommand, sendOrderCommand } from "@/lib/order-command";
 import { messageClass, useMessage } from "@/lib/message";
+import { payCommandBody } from "@/lib/order-actions";
 import SelectMenu from "@/components/select-menu";
 
 type EventRow = { id: string; name: string; boothNumber: string; currency: string; status?: string; endsOn?: string };
@@ -90,10 +91,6 @@ function bundleGroup(kind: string) {
   return "单品";
 }
 
-function toMinor(amount: string): number | null {
-  return majorToMinor(amount);
-}
-
 export default function CounterPage() {
   const router = useRouter();
   const [events, setEvents] = useState<EventRow[]>([]);
@@ -123,9 +120,10 @@ export default function CounterPage() {
   const [catalogNoticeVersion, setCatalogNoticeVersion] = useState(0);
   const [initError, setInitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // 同步写锁：状态尚未重渲染前的连点也只发一次开单 / 收款 / 交付请求。
+  const writeLock = useRef(false);
   const [cartVersion, setCartVersion] = useState(0);
   const [cartOpen, setCartOpen] = useState(false);
-  const [cashReceived, setCashReceived] = useState("");
   const [paidReceipt, setPaidReceipt] = useState<PaidReceipt | null>(null);
   const [fulfilling, setFulfilling] = useState(false);
 
@@ -201,6 +199,10 @@ export default function CounterPage() {
   }, [loadInitial]);
 
   useEffect(() => {
+    document.title = "现场开单";
+  }, []);
+
+  useEffect(() => {
     let active = true;
     if (!eventId) return () => { active = false; };
     void Promise.all([
@@ -259,11 +261,8 @@ export default function CounterPage() {
       setOrderTotalMinor(total);
       setOrderPriceLabel(String(res.data.priceLabel ?? formatMoney(orderCurrency, total)));
       setReservationExpiresAt(res.data.reservationExpiresAt ? String(res.data.reservationExpiresAt) : "");
-      const pending = pendingOrderCommand<{ payCodeId: string; cashReceivedMinor?: number }>(`pay:${me.id}:${me.shopId}:${resumeId}`);
-      if (pending) {
-        setPayCodeId(pending.body.payCodeId);
-        setCashReceived(pending.body.cashReceivedMinor !== undefined ? (pending.body.cashReceivedMinor / 100).toFixed(2) : "");
-      }
+      const pending = pendingOrderCommand<{ payCodeId: string }>(`pay:${me.id}:${me.shopId}:${resumeId}`);
+      if (pending) setPayCodeId(pending.body.payCodeId);
       setPayOpen(true);
     });
     return () => { active = false; };
@@ -297,9 +296,8 @@ export default function CounterPage() {
       const list = Array.isArray(codesRes.data) ? codesRes.data as PayCode[] : [];
       setCodes(list);
       const payScope = `pay:${me.id}:${me.shopId}:${saved.id}`;
-      const savedPay = pendingOrderCommand<{ payCodeId: string; cashReceivedMinor?: number }>(payScope);
+      const savedPay = pendingOrderCommand<{ payCodeId: string }>(payScope);
       setPayCodeId(savedPay?.body.payCodeId ?? list.find((code) => code.isDefault)?.id ?? list[0]?.id ?? "");
-      if (savedPay?.body.cashReceivedMinor !== undefined) setCashReceived((savedPay.body.cashReceivedMinor / 100).toFixed(2));
       setMessage({ kind: "success", text: "已恢复上一笔待付款订单，可继续收款。" });
     }).catch(() => {
       // Keep the checkout marker and retry recovery on the next page load.
@@ -606,6 +604,8 @@ export default function CounterPage() {
     const body = saved?.body ?? {
       clientOrderId: newClientOrderId(), quoteId: quote.id, expectedTotalMinor: quote.totalMinor, boothName,
     };
+    if (writeLock.current) return;
+    writeLock.current = true;
     setSubmitting(true);
     setMessage(null);
     try {
@@ -639,13 +639,13 @@ export default function CounterPage() {
       const list = Array.isArray(codesRes.data) ? codesRes.data as PayCode[] : [];
       setCodes(list);
       setPayCodeId(list.find((code) => code.isDefault)?.id ?? list[0]?.id ?? "");
-      setCashReceived("");
       setCartOpen(false);
       void refreshCatalog();
       setMessage({ kind: "success", text: `订单 ${String(result.number)} 已生成，待付款。` });
     } catch {
       setMessage({ kind: "error", text: "无法连接服务，请重试同一笔开单以安全恢复结果。" });
     } finally {
+      writeLock.current = false;
       setSubmitting(false);
     }
   }
@@ -665,32 +665,45 @@ export default function CounterPage() {
     setMessage({ kind: "error", text: describeRequest(res) });
   }
 
+  function markPaymentSucceeded() {
+    // 收款成功：清掉草稿与待付单标记，弹出取货凭证。
+    if (me?.id && me.shopId) {
+      const draftScope = { accountId: me.id, shopId: me.shopId, eventId };
+      if (loadPendingCounterOrder(draftScope)?.id === orderId) clearPendingCounterOrder(draftScope);
+      if (!resumedOrder) clearCounterDraft(draftScope);
+    }
+    if (!resumedOrder) {
+      setQty({});
+      setBundleQty({});
+      setBoothName("");
+      setQuote(null);
+    }
+    if (resumedOrder) window.history.replaceState(null, "", "/counter");
+    setResumedOrder(false);
+    setPaidReceipt({
+      id: orderId,
+      number: orderNumber,
+      totalMinor: orderTotalMinor,
+      currency: orderCurrency,
+    });
+    clearPendingOrderMarker();
+    void refreshCatalog();
+  }
+
   async function confirm() {
     if (!orderId || !me?.id || !me.shopId) return;
     const scope = `pay:${me.id}:${me.shopId}:${orderId}`;
-    const saved = pendingOrderCommand<{ payCodeId: string; cashReceivedMinor?: number }>(scope);
+    const saved = pendingOrderCommand<{ payCodeId: string }>(scope);
     const activeCode = codes.find((code) => code.id === payCodeId);
     if (!saved && !activeCode) return;
-    let cashReceivedMinor: number | undefined;
-    if (!saved && activeCode?.kind === "cash") {
-      const received = toMinor(cashReceived);
-      if (received === null) {
-        setMessage({ kind: "error", text: "请填写实收现金金额。" });
-        return;
-      }
-      if (received < orderTotalMinor) {
-        setMessage({ kind: "error", text: `实收金额不能少于订单总额 ${formatMoney(orderCurrency, orderTotalMinor)}。` });
-        return;
-      }
-      cashReceivedMinor = received;
-    }
+    if (writeLock.current) return;
+    writeLock.current = true;
     setSubmitting(true);
     try {
-      const res = await sendOrderCommand(scope, `/api/staff/orders/${orderId}/pay`, {
-        payCodeId,
-        ...(cashReceivedMinor !== undefined ? { cashReceivedMinor } : {}),
-        ...(saved?.body ?? {}),
-      });
+      // 只提交 payCodeId；未确认的旧指令原样重放，幂等键不变。上线前存下、上线后才重放的命令若带已删除字段，会走幂等冲突处理。
+      const body = saved?.body ?? (activeCode ? payCommandBody(activeCode) : null);
+      if (!body) return;
+      const res = await sendOrderCommand(scope, `/api/staff/orders/${orderId}/pay`, body);
       if (res.status === 409 && res.data.error === "reservation_expired") {
         resetAfterFailedPayment(res);
         return;
@@ -699,41 +712,33 @@ export default function CounterPage() {
         resetAfterFailedPayment(res);
         return;
       }
+      if (res.status === 409 && (res.errorCode === "idempotency_conflict" || res.data.error === "idempotency_conflict")) {
+        const latest = await browserJSON(`/api/staff/orders/${orderId}`);
+        clearPendingOrderCommand(scope);
+        if (latest.ok && String(latest.data.status) === "paid") {
+          markPaymentSucceeded();
+          return;
+        }
+        setMessage({ kind: "error", text: "这笔收款可能已经提交，请到订单记录里核对" });
+        return;
+      }
       if (!res.ok) {
         setMessage({ kind: "error", text: describeRequest(res) });
         return;
       }
-      // 收款成功：清掉草稿与待付单标记，弹出取货凭证。
-      if (me?.id && me.shopId) {
-        const scope = { accountId: me.id, shopId: me.shopId, eventId };
-        if (loadPendingCounterOrder(scope)?.id === orderId) clearPendingCounterOrder(scope);
-        if (!resumedOrder) clearCounterDraft(scope);
-      }
-      if (!resumedOrder) {
-        setQty({});
-        setBundleQty({});
-        setBoothName("");
-        setQuote(null);
-      }
-      if (resumedOrder) window.history.replaceState(null, "", "/counter");
-      setResumedOrder(false);
-      setPaidReceipt({
-        id: orderId,
-        number: orderNumber,
-        totalMinor: orderTotalMinor,
-        currency: orderCurrency,
-      });
-      clearPendingOrderMarker();
-      void refreshCatalog();
+      markPaymentSucceeded();
     } catch {
       setMessage({ kind: "error", text: "无法连接服务，请重试同一笔收款操作以安全恢复结果。" });
     } finally {
+      writeLock.current = false;
       setSubmitting(false);
     }
   }
 
   async function fulfillReceipt() {
     if (!paidReceipt || !me?.id || !me.shopId) return;
+    if (writeLock.current) return;
+    writeLock.current = true;
     setFulfilling(true);
     try {
       const scope = `fulfill:${me.id}:${me.shopId}:${paidReceipt.id}`;
@@ -748,11 +753,15 @@ export default function CounterPage() {
     } catch {
       setMessage({ kind: "error", text: "无法连接服务，请重试交付操作。" });
     } finally {
+      writeLock.current = false;
       setFulfilling(false);
     }
   }
 
   async function unpaid() {
+    if (writeLock.current) return;
+    writeLock.current = true;
+    setSubmitting(true);
     try {
       const res = await browserJSON(`/api/staff/orders/${orderId}/unpaid`, "POST", {});
       if (!res.ok) {
@@ -770,6 +779,9 @@ export default function CounterPage() {
       void refreshCatalog();
     } catch {
       setMessage({ kind: "error", text: "无法连接服务，请检查网络后重试。" });
+    } finally {
+      writeLock.current = false;
+      setSubmitting(false);
     }
   }
 
@@ -778,17 +790,12 @@ export default function CounterPage() {
   const unresolvedPayCommand = orderId && me?.id && me.shopId
     ? pendingOrderCommand<{ payCodeId: string }>(`pay:${me.id}:${me.shopId}:${orderId}`)
     : null;
-  const cashReceivedMinor = toMinor(cashReceived);
-  const cashChangeMinor = activePayCode?.kind === "cash" && cashReceivedMinor !== null && orderTotalMinor > 0
-    ? cashReceivedMinor - orderTotalMinor
-    : null;
-  const cashInvalid = activePayCode?.kind === "cash" && (cashReceivedMinor === null || cashReceivedMinor < orderTotalMinor);
 
   return (
     <>
       <main className="counter-page">
         <p className="eyebrow">现场收银</p>
-        <h1>创建订单</h1>
+        <h1>现场开单</h1>
         <p>点选商品即可加一。服务器会实时计算数量优惠和固定套餐，自动选择顾客最省的组合。</p>
         {initError ? (
           <p className="counter-quote-error" role="alert">{initError} <button type="button" onClick={() => void loadInitial()}>重试</button></p>
@@ -956,19 +963,9 @@ export default function CounterPage() {
               </header>
               <strong className="pay-dialog__amount">{orderPriceLabel}</strong>
               {resumedOrder ? <p className="counter-reservation-note">收款后当前购物车会保留，请检查其中商品，避免重复开单。</p> : null}
-              {unresolvedPayCommand ? <p className="counter-reservation-note">上次收款结果尚未确认，重试将使用原收款方式和实收金额。</p> : null}
+              {unresolvedPayCommand ? <p className="counter-reservation-note">上次收款结果尚未确认，重试将使用原收款方式和金额。</p> : null}
               {!activePayCode ? <p className="counter-empty">{unresolvedPayCommand ? "上次使用的收款方式已不可用，请重试以确认原收款结果。" : "本店还没有可用收款方式，请让店铺管理员先配置。"}</p> : activePayCode.kind === "cash" ? (
-                <div className="pay-dialog__cash">
-                  <span>现金收款</span>
-                  <strong>{orderPriceLabel}</strong>
-                  <label className="field pay-cash-received">
-                    <span>实收金额（{orderCurrency}）</span>
-                    <input inputMode="decimal" value={cashReceived} disabled={submitting || Boolean(unresolvedPayCommand)} onChange={(change) => setCashReceived(change.target.value)} placeholder="顾客交付的现金金额" />
-                  </label>
-                  {cashChangeMinor !== null && !cashInvalid ? <p className="pay-cash-change">找零：{formatMoney(orderCurrency, cashChangeMinor)}</p> : null}
-                  {cashInvalid ? <p className="counter-quote-error" role="alert">实收金额不能少于订单总额。</p> : null}
-                  <small>请点收现金，确认后扣减库存。</small>
-                </div>
+                <p className="pay-dialog__cash">确认后按订单金额记入现金收款，并扣减库存。</p>
               ) : (
                 <div className="pay-dialog__qr">
                   <SafeImage src={activePayCode.imageURL} alt={`${activePayCode.name} 收款码`} width={560} height={560} unoptimized fallbackClassName="pay-dialog__qr--fallback" />
@@ -976,12 +973,12 @@ export default function CounterPage() {
                 </div>
               )}
               {codes.length > 1 ? <div className="pay-dialog__codes" role="group" aria-label="切换收款方式">
-                {codes.map((code) => <button key={code.id} type="button" data-active={code.id === payCodeId} aria-pressed={code.id === payCodeId} disabled={Boolean(unresolvedPayCommand)} onClick={() => { setPayCodeId(code.id); setCashReceived(""); }}>{code.name}</button>)}
+                {codes.map((code) => <button key={code.id} type="button" data-active={code.id === payCodeId} aria-pressed={code.id === payCodeId} disabled={Boolean(unresolvedPayCommand)} onClick={() => setPayCodeId(code.id)}>{code.name}</button>)}
               </div> : null}
               {reservationExpiresAt ? <p className="counter-reservation-note">库存已预留至 {new Date(reservationExpiresAt).toLocaleString("zh-CN")}。请在此时间前确认收款。</p>
                 : <p className="counter-reservation-note">此订单暂未设置库存预留期限。</p>}
               <div className="pay-dialog__actions">
-                <button className="button button--dark" type="button" disabled={submitting || !payCodeId || cashInvalid} onClick={confirm}>{submitting ? "正在确认…" : "顾客已付款，扣减库存"}</button>
+                <button className="button button--dark" type="button" disabled={submitting || !(activePayCode || unresolvedPayCommand)} onClick={confirm}>{submitting ? "正在确认…" : "顾客已付款，扣减库存"}</button>
                 <button className="button button--outline" type="button" disabled={submitting} onClick={() => payDialogRef.current?.close()}>稍后处理</button>
                 <button className="text-link" type="button" disabled={submitting} onClick={unpaid}>顾客未付，保留待付款</button>
               </div>

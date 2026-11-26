@@ -1,65 +1,62 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { StaffOrder } from "@/lib/api";
 import { describeRequest } from "@/lib/errors";
 import { formatMoney } from "@/lib/pricing";
 import { orderStatusLabel } from "@/lib/orders";
 import { messageClass, useMessage } from "@/lib/message";
-import { sendOrderCommand, clearPendingOrderCommand } from "@/lib/order-command";
-import { ConfirmDialog } from "@/components/confirm-dialog";
+import { clearPendingOrderCommand, pendingOrderCommand, sendOrderCommand } from "@/lib/order-command";
+import { orderActionRequestBody, orderActionsFor, type OrderAction } from "@/lib/order-actions";
+import { OrderActionDialog, type OrderActionTarget } from "@/components/order-action-dialog";
 import { ListControls, usePagedList } from "@/components/paged-list";
 import SelectMenu from "@/components/select-menu";
 
 type StatusFilter = "all" | StaffOrder["status"];
 
-type ConfirmTarget = {
-  order: StaffOrder;
-  action: "cancel" | "refund" | "fulfill";
-};
+const actionLabel: Record<OrderAction, string> = { fulfill: "标记交付", cancel: "取消订单", refund: "确认退款" };
 
 export default function AdminOrdersPage() {
   const [filter, setFilter] = useState<StatusFilter>("all");
   const { message, setError, setSuccess } = useMessage();
   const [pendingId, setPendingId] = useState("");
-  const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null);
+  const [confirmTarget, setConfirmTarget] = useState<OrderActionTarget | null>(null);
+  const inFlight = useRef(false);
 
   const list = usePagedList<StaffOrder>(`/api/admin/orders?status=${filter === "all" ? "" : encodeURIComponent(filter)}`);
   const visible = list.items;
 
-  async function runAction(target: ConfirmTarget) {
+  async function runAction(target: OrderActionTarget) {
+    // 同步锁：React 状态更新前的连点也只发一次请求；幂等键另由 sendOrderCommand 保持。
+    if (inFlight.current) return;
+    inFlight.current = true;
     const { order, action } = target;
     setPendingId(order.id);
     setError(null);
     try {
       const scope = `${action}:admin:${order.id}`;
-      const res = action === "refund"
-        ? await sendOrderCommand(scope, `/api/staff/orders/${order.id}/refund-confirm`, {})
-        : action === "fulfill"
-          ? await sendOrderCommand(scope, `/api/staff/orders/${order.id}/fulfill`, {})
-          : await sendOrderCommand(scope, `/api/staff/orders/${order.id}/cancel`, { reason: "后台取消订单" });
-      if (!res.ok) {
-        setError(describeRequest(res));
-        return;
-      }
+      // 原因已在弹窗内校验必填；后端暂不接收原因字段，见 orderActionRequestBody。
+      const body = pendingOrderCommand(scope)?.body ?? orderActionRequestBody(action);
+      const path = action === "refund" ? "refund-confirm" : action;
+      const res = await sendOrderCommand(scope, `/api/staff/orders/${order.id}/${path}`, body);
+      if (!res.ok) { setError(describeRequest(res)); return; }
       clearPendingOrderCommand(scope);
-      setSuccess(action === "refund" ? "退款已确认，订单已取消并回补库存。" : action === "fulfill" ? "订单已标记为当场交付。" : "订单已取消。");
+      setSuccess(action === "refund" ? "退款已确认，订单已取消并回补库存。" : action === "fulfill" ? "订单已标记为当场交付。" : order.status === "pending" ? "订单已取消。" : "订单已转为待退款，退款给顾客后请确认退款。");
       setConfirmTarget(null);
       list.refresh();
     } catch {
       setError("无法连接服务，请重试同一笔操作以安全恢复结果。");
     } finally {
+      inFlight.current = false;
       setPendingId("");
     }
   }
 
-  const pendingCancel = confirmTarget?.order.id === pendingId;
-
   return (
-    <main className="workspace-page">
+    <main className="workspace-page orders-page">
       <header className="workspace-page__heading">
         <p className="eyebrow">订单记录</p>
-        <h1>核对现场订单</h1>
+        <h1>订单记录</h1>
         <p>查看商品明细、收款状态与经手人。取消已收款订单会转为待退款，需再确认退款。</p>
       </header>
 
@@ -124,44 +121,19 @@ export default function AdminOrdersPage() {
                 <div className="order-row__totals">
                   <span>合计 <strong>{formatMoney(order.currency, order.totalMinor)}</strong></span>
                   {order.payCodeName ? <span>收款方式：{order.payCodeName}</span> : null}
-                  {order.cashReceivedMinor !== null ? <span>实收：{formatMoney(order.currency, order.cashReceivedMinor)}</span> : null}
-                  {order.cashChangeMinor !== null ? <span>找零：{formatMoney(order.currency, order.cashChangeMinor)}</span> : null}
                   {order.openedByLogin ? <span>开单：{order.openedByLogin}</span> : null}
                   {order.paidByLogin ? <span>收款：{order.paidByLogin}</span> : null}
                 </div>
                 <div className="order-row__actions">
-                  {order.status === "refund_required" ? (
+                  {orderActionsFor(order.status).map((action) => (
                     <button
+                      key={action}
                       type="button"
-                      className="button button--danger"
-                      disabled={pendingId === order.id}
-                      onClick={() => setConfirmTarget({ order, action: "refund" })}
-                    >确认退款</button>
-                  ) : null}
-                  {order.status === "paid" || order.status === "fulfilled" ? (
-                    <button
-                      type="button"
-                      className="button button--danger"
-                      disabled={pendingId === order.id}
-                      onClick={() => setConfirmTarget({ order, action: "cancel" })}
-                    >取消订单</button>
-                  ) : null}
-                  {order.status === "pending" ? (
-                    <button
-                      type="button"
-                      className="button button--danger"
-                      disabled={pendingId === order.id}
-                      onClick={() => setConfirmTarget({ order, action: "cancel" })}
-                    >取消订单</button>
-                  ) : null}
-                  {order.status === "paid" ? (
-                    <button
-                      type="button"
-                      className="button button--outline"
-                      disabled={pendingId === order.id}
-                      onClick={() => setConfirmTarget({ order, action: "fulfill" })}
-                    >标记交付</button>
-                  ) : null}
+                      className={action === "fulfill" ? "button button--outline" : "button button--danger"}
+                      disabled={pendingId !== ""}
+                      onClick={() => setConfirmTarget({ order, action })}
+                    >{actionLabel[action]}</button>
+                  ))}
                 </div>
               </div>
             </li>
@@ -169,44 +141,12 @@ export default function AdminOrdersPage() {
         </ul>
       )}
 
-      <ConfirmDialog
-        open={confirmTarget?.action === "refund"}
-        title="确认退款"
-        description="确认后：订单转为已取消、库存回补、金额记为已退，不可撤销。"
-        confirmLabel="确认退款"
-        danger
-        pending={pendingCancel}
-        onConfirm={() => confirmTarget && void runAction(confirmTarget)}
-        onCancel={() => setConfirmTarget(null)}
-      />
-      <ConfirmDialog
-        open={confirmTarget?.action === "cancel" && (confirmTarget.order.status === "paid" || confirmTarget.order.status === "fulfilled")}
-        title="取消已收款订单"
-        description="取消后订单转为待退款、库存不回补，需由管理员确认退款；此操作不可撤销。"
-        confirmLabel="取消订单"
-        danger
-        pending={pendingCancel}
-        onConfirm={() => confirmTarget && void runAction(confirmTarget)}
-        onCancel={() => setConfirmTarget(null)}
-      />
-      <ConfirmDialog
-        open={confirmTarget?.action === "cancel" && confirmTarget.order.status === "pending"}
-        title="取消待付款订单"
-        description="取消后订单作废，预留库存释放，未收款。"
-        confirmLabel="取消订单"
-        danger
-        pending={pendingCancel}
-        onConfirm={() => confirmTarget && void runAction(confirmTarget)}
-        onCancel={() => setConfirmTarget(null)}
-      />
-      <ConfirmDialog
-        open={confirmTarget?.action === "fulfill"}
-        title="标记当场交付"
-        description="交付后订单记为已履约，顾客凭订单号取货。"
-        confirmLabel="标记交付"
-        pending={pendingCancel}
-        onConfirm={() => confirmTarget && void runAction(confirmTarget)}
-        onCancel={() => setConfirmTarget(null)}
+      <OrderActionDialog
+        key={confirmTarget ? `${confirmTarget.action}:${confirmTarget.order.id}` : "closed"}
+        target={confirmTarget}
+        pending={pendingId !== ""}
+        onConfirm={(target) => void runAction(target)}
+        onCancel={() => { if (pendingId === "") setConfirmTarget(null); }}
       />
     </main>
   );

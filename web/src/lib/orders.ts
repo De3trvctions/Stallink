@@ -29,6 +29,7 @@ const actionText: Record<string, string> = {
   "order.cancel": "取消订单",
   "order.fulfill": "完成交付",
   "order.expire": "订单预留过期",
+  "order.refund_required": "收款后取消待退款",
   "order.refund_confirm": "确认退款",
 };
 
