@@ -23,6 +23,14 @@ var (
 	ErrEventNotOpen            = errors.New("data: event is not open for orders")
 )
 
+// ErrEventCurrencyRequired means a new event left its currency blank and the
+// shop has no default currency to fill it.
+var ErrEventCurrencyRequired = errors.New("data: event currency required")
+
+// ErrInvalidEvent means a new event's currency is unsupported even after the
+// shop default was applied.
+var ErrInvalidEvent = errors.New("data: invalid event")
+
 type Shop struct {
 	ID              ID
 	Name            string
@@ -30,6 +38,9 @@ type Shop struct {
 	Slug            string
 	Enabled         bool
 	FeaturedEventID ID
+	// BoothNumber is the shop-level booth number; public event JSON falls
+	// back to it when an event has none (K-Q1 = A).
+	BoothNumber string
 }
 
 type ShopStore struct {
@@ -66,9 +77,9 @@ func (s *ShopStore) EnabledShop(ctx context.Context, slug string) (Shop, error) 
 	var shop Shop
 	var featuredEventID int64
 	err := s.pool.QueryRow(ctx, `
-		SELECT id::text, name, notice, slug, COALESCE(featured_event_id, 0)
+		SELECT id::text, name, notice, slug, COALESCE(featured_event_id, 0), booth_number
 		FROM shops
-		WHERE slug = $1 AND is_enabled`, slug).Scan(&shop.ID, &shop.Name, &shop.Notice, &shop.Slug, &featuredEventID)
+		WHERE slug = $1 AND is_enabled`, slug).Scan(&shop.ID, &shop.Name, &shop.Notice, &shop.Slug, &featuredEventID, &shop.BoothNumber)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Shop{}, ErrNotFound
 	}

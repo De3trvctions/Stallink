@@ -349,7 +349,7 @@ func (a *API) Event(w http.ResponseWriter, r *http.Request) {
 		bundles = bundleCardsJSON(rows, "public")
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"event":   eventJSON(event),
+		"event":   publicEventJSON(event, shop),
 		"goods":   goodsJSON(goods),
 		"bundles": bundles,
 	})
@@ -580,7 +580,7 @@ func shopJSON(shop data.Shop, events []data.Event, goods []data.GoodCard, bundle
 		"ended":     make([]any, 0),
 	}
 	for _, event := range events {
-		grouped[event.Status] = append(grouped[event.Status], eventJSON(event))
+		grouped[event.Status] = append(grouped[event.Status], publicEventJSON(event, shop))
 	}
 	out := map[string]any{
 		"id": shop.ID, "name": shop.Name, "notice": shop.Notice, "coverURL": nil, "slug": shop.Slug,
@@ -599,6 +599,19 @@ func eventJSON(event data.Event) map[string]any {
 		"city": event.City, "venue": event.Venue, "boothNumber": event.BoothNumber,
 		"currency": event.Currency, "status": event.Status,
 	}
+}
+
+// publicEventJSON is eventJSON plus displayBoothNumber for customer pages: the
+// event's own booth number, else the shop's, else "" (K-Q1 = A). Workspace
+// endpoints keep plain eventJSON.
+func publicEventJSON(event data.Event, shop data.Shop) map[string]any {
+	out := eventJSON(event)
+	display := event.BoothNumber
+	if display == "" {
+		display = shop.BoothNumber
+	}
+	out["displayBoothNumber"] = display
+	return out
 }
 
 func goodsJSON(goods []data.GoodCard) []any {
@@ -695,6 +708,10 @@ func writeDataErr(w http.ResponseWriter, r *http.Request, err error) {
 		writeErr(w, http.StatusBadRequest, "event_not_open")
 	case errors.Is(err, data.ErrNotListed):
 		writeErr(w, http.StatusBadRequest, "not_listed")
+	case errors.Is(err, data.ErrEventCurrencyRequired):
+		writeErr(w, http.StatusBadRequest, "event_currency_required")
+	case errors.Is(err, data.ErrInvalidEvent):
+		writeErr(w, http.StatusBadRequest, "invalid_event")
 	case errors.Is(err, data.ErrInvalidBundle):
 		writeErr(w, http.StatusBadRequest, "invalid_bundle")
 	case errors.Is(err, data.ErrBundleComponents):

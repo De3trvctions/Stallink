@@ -47,7 +47,7 @@ func (a *API) CreateEvent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	in, ok := readEvent(w, r)
+	in, ok := readEvent(w, r, validNewEvent)
 	if !ok {
 		return
 	}
@@ -64,7 +64,7 @@ func (a *API) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	in, ok := readEvent(w, r)
+	in, ok := readEvent(w, r, validEvent)
 	if !ok {
 		return
 	}
@@ -199,7 +199,7 @@ func (a *API) CreateGood(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "event_required")
 		return
 	}
-	if body.Event != nil && !validEvent(*body.Event) {
+	if body.Event != nil && !validNewEvent(*body.Event) {
 		writeErr(w, http.StatusBadRequest, "invalid_event")
 		return
 	}
@@ -749,17 +749,28 @@ func (a *API) orderAction(w http.ResponseWriter, r *http.Request, fn func(data.A
 	writeJSON(w, http.StatusOK, orderJSON(order))
 }
 
-func readEvent(w http.ResponseWriter, r *http.Request) (data.EventInput, bool) {
+func readEvent(w http.ResponseWriter, r *http.Request, valid func(data.EventInput) bool) (data.EventInput, bool) {
 	var in data.EventInput
 	if err := readJSON(r, &in); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid_json")
 		return data.EventInput{}, false
 	}
-	if !validEvent(in) {
+	if !valid(in) {
 		writeErr(w, http.StatusBadRequest, "invalid_event")
 		return data.EventInput{}, false
 	}
 	return in, true
+}
+
+// validNewEvent validates an event being created. A blank currency is allowed
+// here because the data layer fills it from the shop default inside the create
+// transaction and rejects it there with event_currency_required if the shop
+// has none (K-Q2 = A).
+func validNewEvent(in data.EventInput) bool {
+	if in.Currency == "" {
+		in.Currency = "MYR" // placeholder only to reuse validEvent's other checks
+	}
+	return validEvent(in)
 }
 
 func validEvent(in data.EventInput) bool {

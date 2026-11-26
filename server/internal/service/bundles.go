@@ -58,7 +58,7 @@ func (a *API) CreateBundle(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_json")
 		return
 	}
-	if (body.EventID == 0) == (body.Event == nil) || (body.Event != nil && !validEvent(*body.Event)) {
+	if (body.EventID == 0) == (body.Event == nil) || (body.Event != nil && !validNewEvent(*body.Event)) {
 		writeErr(w, http.StatusBadRequest, "event_required")
 		return
 	}

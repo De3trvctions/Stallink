@@ -344,3 +344,95 @@ func TestShopProfileFeaturedEventAndOnSaleCount(t *testing.T) {
 		t.Fatalf("onSaleCount = %d %v, want 1 (listed, approved, sellable after reservations, current event only)", got.OnSaleCount, err)
 	}
 }
+
+func TestNewEventDefaultsOnAllCreatePaths(t *testing.T) {
+	pool, ctx := newIsolatedMigratedIntegrationPool(t, "event_defaults")
+	store := NewShopStore(pool)
+	shopID := insertProfileShop(t, ctx, pool, "默认店", "default-shop")
+	var actor string
+	if err := pool.QueryRow(ctx, `INSERT INTO users(login_name,password_hash,role,shop_id) VALUES ('default-owner','hash','shop_admin',$1) RETURNING id::text`, shopID).Scan(&actor); err != nil {
+		t.Fatal(err)
+	}
+	actorID := integrationID(t, actor)
+	blank := func(name string) EventInput {
+		return EventInput{Name: name, StartsOn: "2026-12-01", EndsOn: "2026-12-01", Status: "scheduled"}
+	}
+	eventOf := func(id ID) (string, string) {
+		t.Helper()
+		var booth, currency string
+		if err := pool.QueryRow(ctx, `SELECT booth_number, currency FROM events WHERE id = $1`, id).Scan(&booth, &currency); err != nil {
+			t.Fatal(err)
+		}
+		return booth, currency
+	}
+
+	draft := func(name string) *BundleGoodDraft {
+		return &BundleGoodDraft{Name: name, TotalStock: 5, ListedQty: 5, UnitPriceMinor: 100, IsListed: true}
+	}
+	bundleWith := func(event EventInput) BundleInput {
+		return BundleInput{
+			Name: "套餐", NewEvent: ptrEvent(event), UnitPriceMinor: 150, IsListed: true, Approved: true,
+			Components: []BundleComponentInput{{DraftKey: "a", Quantity: 1, Draft: draft("草稿A")}, {DraftKey: "b", Quantity: 1, Draft: draft("草稿B")}},
+		}
+	}
+
+	// No currency and no shop default: the dedicated ErrEventCurrencyRequired on all three paths.
+	if _, err := store.CreateEvent(ctx, shopID, blank("无默认")); !errors.Is(err, ErrEventCurrencyRequired) {
+		t.Fatalf("event path without a shop default: want ErrEventCurrencyRequired, got %v", err)
+	}
+	if _, _, _, err := store.CreateListedGood(ctx, shopID, actorID, ListedGood{Name: "g", TotalStock: 1, UnitPriceMinor: 100, NewEvent: ptrEvent(blank("无默认2"))}); !errors.Is(err, ErrEventCurrencyRequired) {
+		t.Fatalf("goods path without a shop default: want ErrEventCurrencyRequired, got %v", err)
+	}
+	if _, _, err := store.CreateBundle(ctx, shopID, actorID, bundleWith(blank("无默认3"))); !errors.Is(err, ErrEventCurrencyRequired) {
+		t.Fatalf("bundle path without a shop default: want ErrEventCurrencyRequired, got %v", err)
+	}
+	// Any other invalid currency stays ErrInvalidEvent.
+	bad := blank("坏货币")
+	bad.Currency = "USD"
+	if _, err := store.CreateEvent(ctx, shopID, bad); !errors.Is(err, ErrInvalidEvent) || errors.Is(err, ErrEventCurrencyRequired) {
+		t.Fatalf("unsupported currency: want ErrInvalidEvent only, got %v", err)
+	}
+	var leaked int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM events WHERE shop_id = $1`, shopID).Scan(&leaked); err != nil || leaked != 0 {
+		t.Fatalf("rejected creates must not insert events: %d %v", leaked, err)
+	}
+
+	if _, err := pool.Exec(ctx, `UPDATE shops SET booth_number = 'A-27', default_currency = 'CNY' WHERE id = $1`, shopID); err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.CreateEvent(ctx, shopID, blank("活动页"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if booth, currency := eventOf(id); booth != "A-27" || currency != "CNY" {
+		t.Fatalf("CreateEvent defaults: %q %q", booth, currency)
+	}
+	own := blank("自填")
+	own.BoothNumber, own.Currency = "B-01", "MYR"
+	if id, err = store.CreateEvent(ctx, shopID, own); err != nil {
+		t.Fatal(err)
+	}
+	if booth, currency := eventOf(id); booth != "B-01" || currency != "MYR" {
+		t.Fatalf("explicit values must win: %q %q", booth, currency)
+	}
+	_, _, goodEvent, err := store.CreateListedGood(ctx, shopID, actorID, ListedGood{Name: "g", TotalStock: 1, UnitPriceMinor: 100, IsListed: true, NewEvent: ptrEvent(blank("商品页"))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if booth, currency := eventOf(goodEvent); booth != "A-27" || currency != "CNY" {
+		t.Fatalf("goods-page NewEvent defaults: %q %q", booth, currency)
+	}
+
+	if _, _, err := store.CreateBundle(ctx, shopID, actorID, bundleWith(blank("套餐页"))); err != nil {
+		t.Fatalf("bundle with new event: %v", err)
+	}
+	var booth, currency string
+	if err := pool.QueryRow(ctx, `SELECT booth_number, currency FROM events WHERE shop_id = $1 AND name = '套餐页'`, shopID).Scan(&booth, &currency); err != nil {
+		t.Fatal(err)
+	}
+	if booth != "A-27" || currency != "CNY" {
+		t.Fatalf("bundle-page NewEvent defaults: %q %q", booth, currency)
+	}
+}
+
+func ptrEvent(in EventInput) *EventInput { return &in }

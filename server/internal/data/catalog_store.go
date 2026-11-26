@@ -109,7 +109,7 @@ type ListingEdit struct {
 
 func (s *ShopStore) SoleEnabledShop(ctx context.Context) (Shop, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id::text, name, notice, slug FROM shops WHERE is_enabled ORDER BY created_at`)
+		SELECT id::text, name, notice, slug, booth_number FROM shops WHERE is_enabled ORDER BY created_at`)
 	if err != nil {
 		return Shop{}, fmt.Errorf("list enabled shops: %w", err)
 	}
@@ -117,7 +117,7 @@ func (s *ShopStore) SoleEnabledShop(ctx context.Context) (Shop, error) {
 	var shops []Shop
 	for rows.Next() {
 		var shop Shop
-		if err := rows.Scan(&shop.ID, &shop.Name, &shop.Notice, &shop.Slug); err != nil {
+		if err := rows.Scan(&shop.ID, &shop.Name, &shop.Notice, &shop.Slug, &shop.BoothNumber); err != nil {
 			return Shop{}, fmt.Errorf("scan shop: %w", err)
 		}
 		shops = append(shops, shop)
@@ -229,6 +229,9 @@ func (s *ShopStore) CreateEvent(ctx context.Context, shopID ID, in EventInput) (
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	if err := lockShopForCatalogWrite(ctx, tx, shopID); err != nil {
+		return 0, err
+	}
+	if err := applyShopEventDefaults(ctx, tx, shopID, &in); err != nil {
 		return 0, err
 	}
 	var id ID
@@ -471,6 +474,11 @@ func (s *ShopStore) CreateListedGood(ctx context.Context, shopID, actorID ID, in
 	}
 	eventID = in.EventID
 	if in.NewEvent != nil {
+		newEvent := *in.NewEvent
+		if err := applyShopEventDefaults(ctx, tx, shopID, &newEvent); err != nil {
+			return 0, 0, 0, err
+		}
+		in.NewEvent = &newEvent
 		err = tx.QueryRow(ctx, `
 			INSERT INTO events (shop_id, name, starts_on, ends_on, city, venue, booth_number, currency, status)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id::text`,
@@ -1311,6 +1319,37 @@ func insertAudit(ctx context.Context, tx pgx.Tx, shopID, actorID ID, action, sub
 		VALUES ($1,$2,$3,$4,$5)`, shopID, actorID, action, subjectType, subjectID)
 	if err != nil {
 		return fmt.Errorf("audit: %w", err)
+	}
+	return nil
+}
+
+// applyShopEventDefaults fills a new event's blank booth number and currency
+// from the shop (K-Q1 = A, K-Q2 = A). It runs inside the create transaction,
+// after lockShopForCatalogWrite, so it reads the locked shop row. Only create
+// paths call it; editing an event never re-applies defaults. A currency that
+// is still blank afterwards (no shop default) is ErrEventCurrencyRequired;
+// any other unsupported currency is ErrInvalidEvent.
+func applyShopEventDefaults(ctx context.Context, tx pgx.Tx, shopID ID, in *EventInput) error {
+	var booth string
+	var currency *string
+	err := tx.QueryRow(ctx, `SELECT booth_number, default_currency FROM shops WHERE id = $1`, shopID).Scan(&booth, &currency)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("read shop event defaults: %w", err)
+	}
+	if in.BoothNumber == "" {
+		in.BoothNumber = booth
+	}
+	if in.Currency == "" && currency != nil {
+		in.Currency = *currency
+	}
+	if in.Currency == "" {
+		return ErrEventCurrencyRequired
+	}
+	if !catalog.ValidCurrency(in.Currency) {
+		return ErrInvalidEvent
 	}
 	return nil
 }

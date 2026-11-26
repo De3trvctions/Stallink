@@ -108,6 +108,11 @@ func (s *ShopStore) CreateBundle(ctx context.Context, shopID, actorID ID, in Bun
 	}
 	var eventID ID
 	if in.NewEvent != nil {
+		newEvent := *in.NewEvent
+		if err := applyShopEventDefaults(ctx, tx, shopID, &newEvent); err != nil {
+			return 0, 0, err
+		}
+		in.NewEvent = &newEvent
 		if !validBundleEvent(*in.NewEvent) {
 			return 0, 0, ErrInvalidBundle
 		}

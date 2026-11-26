@@ -1,6 +1,9 @@
 package service
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -72,5 +75,44 @@ func TestValidEventLengths(t *testing.T) {
 	boundary.Name = strings.Repeat("x", 120)
 	if !validEvent(boundary) {
 		t.Fatal("event at CHECK length boundaries should be accepted")
+	}
+}
+
+func TestValidNewEventAllowsOnlyBlankCurrency(t *testing.T) {
+	base := data.EventInput{Name: "展会", StartsOn: "2026-11-16", EndsOn: "2026-11-17", Status: "live"}
+	if !validNewEvent(base) {
+		t.Fatal("a new event may leave currency blank for the shop default")
+	}
+	if validEvent(base) {
+		t.Fatal("editing must still require a currency")
+	}
+	for _, bad := range []string{"USD", "myr", " MYR"} {
+		e := base
+		e.Currency = bad
+		if validNewEvent(e) {
+			t.Fatalf("currency %q must be rejected", bad)
+		}
+	}
+	e := base
+	e.Name = ""
+	if validNewEvent(e) {
+		t.Fatal("other checks still apply to new events")
+	}
+}
+
+func TestWriteDataErrEventCurrencyCodes(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		code string
+	}{
+		{data.ErrEventCurrencyRequired, "event_currency_required"},
+		{fmt.Errorf("create event: %w", data.ErrEventCurrencyRequired), "event_currency_required"},
+		{data.ErrInvalidEvent, "invalid_event"},
+	} {
+		rec := httptest.NewRecorder()
+		writeDataErr(rec, httptest.NewRequest(http.MethodPost, "/api/staff/events", nil), c.err)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"`+c.code+`"`) {
+			t.Fatalf("%v: want 400 %s, got %d %s", c.err, c.code, rec.Code, rec.Body.String())
+		}
 	}
 }
